@@ -27,7 +27,8 @@ migrate_working_dir/
 .pub/
 /build/
 
-# Android related
+# Android related (rutas locales; cada dev las genera al abrir Android Studio / flutter)
+**/android/**/local.properties
 **/android/**/gradle-wrapper.jar
 **/android/.gradle
 **/android/captures/
