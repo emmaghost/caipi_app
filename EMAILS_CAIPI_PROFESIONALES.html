@@ -1,0 +1,410 @@
+<!-- ============================================ -->
+<!-- EMAILS PROFESIONALES CAIPI -->
+<!-- Con logo oficial y colores del arcoíris -->
+<!-- ============================================ -->
+<!-- 
+INSTRUCCIONES:
+1. Ve a: https://supabase.com/dashboard
+2. Tu Proyecto → Authentication → Email Templates
+3. Copia cada sección y pégala en el template correspondiente
+4. Save
+
+Los 5 templates son:
+1. Confirm signup
+2. Invite user
+3. Magic Link
+4. Change Email Address
+5. Reset Password
+-->
+
+
+<!-- ========================================== -->
+<!-- 1. CONFIRM SIGNUP -->
+<!-- ========================================== -->
+<!-- Supabase: Authentication → Email Templates → Confirm signup -->
+<!-- Asunto sugerido: Confirma tu cuenta - CAIPI 🎓 -->
+
+<div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 600px; margin: 0 auto; background: linear-gradient(135deg, #8B5CF6 0%, #FF69B4 20%, #FFD700 40%, #90EE90 60%, #87CEEB 80%, #8B5CF6 100%); padding: 4px; border-radius: 16px;">
+  <div style="background: #ffffff; border-radius: 14px; padding: 0; overflow: hidden;">
+    
+    <!-- Header con gradiente -->
+    <div style="background: linear-gradient(135deg, #8B5CF6 0%, #FF69B4 100%); padding: 30px 20px; text-align: center;">
+      <img src="https://qxldfqnuwpucptajcazf.supabase.co/storage/v1/object/public/fotos/WhatsApp%20Image%202026-03-03%20at%2019.46.54.jpeg" 
+           alt="CAIPI Logo" 
+           style="width: 100px; height: 100px; border-radius: 50%; border: 4px solid #ffffff; box-shadow: 0 4px 12px rgba(0,0,0,0.2); margin-bottom: 15px;">
+      <h1 style="color: #ffffff; margin: 0; font-size: 28px; font-weight: 700; text-shadow: 0 2px 4px rgba(0,0,0,0.2);">¡Bienvenido/a a CAIPI! 🎉</h1>
+    </div>
+
+    <!-- Contenido -->
+    <div style="padding: 40px 30px;">
+      <p style="color: #333; font-size: 16px; line-height: 1.6; margin-bottom: 20px;">
+        Hola,
+      </p>
+      
+      <p style="color: #333; font-size: 16px; line-height: 1.6; margin-bottom: 20px;">
+        Gracias por registrarte en el <strong style="color: #8B5CF6;">Sistema Escolar CAIPI</strong>. 
+        Estamos emocionados de tenerte con nosotros. 💙
+      </p>
+      
+      <p style="color: #333; font-size: 16px; line-height: 1.6; margin-bottom: 30px;">
+        Para completar tu registro y activar tu cuenta, por favor confirma tu correo electrónico:
+      </p>
+
+      <!-- Botón con gradiente arcoíris -->
+      <div style="text-align: center; margin: 30px 0;">
+        <a href="{{ .ConfirmationURL }}" 
+           style="display: inline-block; 
+                  background: linear-gradient(135deg, #8B5CF6 0%, #FF69B4 50%, #FFD700 100%); 
+                  color: #ffffff; 
+                  text-decoration: none; 
+                  padding: 16px 40px; 
+                  border-radius: 30px; 
+                  font-weight: 700; 
+                  font-size: 16px;
+                  box-shadow: 0 4px 15px rgba(139, 92, 246, 0.4);
+                  transition: all 0.3s;">
+          ✅ Confirmar mi cuenta
+        </a>
+      </div>
+
+      <p style="color: #999; font-size: 13px; line-height: 1.5; margin-top: 30px; padding: 15px; background: #f9f9f9; border-radius: 8px; border-left: 4px solid #FFD700;">
+        💡 <strong>Nota:</strong> Si no solicitaste esta cuenta, puedes ignorar este correo de forma segura.
+      </p>
+    </div>
+
+    <!-- Footer con colores CAIPI -->
+    <div style="background: linear-gradient(135deg, #003366 0%, #8B5CF6 100%); padding: 25px; text-align: center;">
+      <p style="color: #ffffff; font-size: 14px; margin: 0 0 5px 0; font-weight: 600;">
+        Sistema Escolar CAIPI 🌈
+      </p>
+      <p style="color: rgba(255,255,255,0.8); font-size: 12px; margin: 0;">
+        Gestionando la educación con tecnología y amor 💙
+      </p>
+    </div>
+
+  </div>
+</div>
+
+
+<!-- ========================================== -->
+<!-- 2. INVITE USER -->
+<!-- ========================================== -->
+<!-- Supabase: Authentication → Email Templates → Invite user -->
+<!-- Asunto sugerido: Invitación a CAIPI 🎓 -->
+
+<div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 600px; margin: 0 auto; background: linear-gradient(135deg, #87CEEB 0%, #90EE90 20%, #FFD700 40%, #FF8C42 60%, #FF69B4 80%, #8B5CF6 100%); padding: 4px; border-radius: 16px;">
+  <div style="background: #ffffff; border-radius: 14px; padding: 0; overflow: hidden;">
+    
+    <!-- Header -->
+    <div style="background: linear-gradient(135deg, #87CEEB 0%, #8B5CF6 100%); padding: 30px 20px; text-align: center;">
+      <img src="https://qxldfqnuwpucptajcazf.supabase.co/storage/v1/object/public/fotos/WhatsApp%20Image%202026-03-03%20at%2019.46.54.jpeg" 
+           alt="CAIPI Logo" 
+           style="width: 100px; height: 100px; border-radius: 50%; border: 4px solid #ffffff; box-shadow: 0 4px 12px rgba(0,0,0,0.2); margin-bottom: 15px;">
+      <h1 style="color: #ffffff; margin: 0; font-size: 28px; font-weight: 700; text-shadow: 0 2px 4px rgba(0,0,0,0.2);">Invitación Especial 📨</h1>
+    </div>
+
+    <!-- Contenido -->
+    <div style="padding: 40px 30px;">
+      <p style="color: #333; font-size: 16px; line-height: 1.6; margin-bottom: 20px;">
+        Hola,
+      </p>
+      
+      <p style="color: #333; font-size: 16px; line-height: 1.6; margin-bottom: 20px;">
+        Has sido <strong style="color: #FF69B4;">invitado/a</strong> a formar parte del 
+        <strong style="color: #8B5CF6;">Sistema Escolar CAIPI</strong>. 🎓
+      </p>
+      
+      <p style="color: #333; font-size: 16px; line-height: 1.6; margin-bottom: 30px;">
+        Para aceptar la invitación y configurar tu contraseña, haz clic en el botón:
+      </p>
+
+      <!-- Botón -->
+      <div style="text-align: center; margin: 30px 0;">
+        <a href="{{ .ConfirmationURL }}" 
+           style="display: inline-block; 
+                  background: linear-gradient(135deg, #87CEEB 0%, #8B5CF6 50%, #FF69B4 100%); 
+                  color: #ffffff; 
+                  text-decoration: none; 
+                  padding: 16px 40px; 
+                  border-radius: 30px; 
+                  font-weight: 700; 
+                  font-size: 16px;
+                  box-shadow: 0 4px 15px rgba(135, 206, 235, 0.4);">
+          🎓 Aceptar invitación
+        </a>
+      </div>
+
+      <p style="color: #999; font-size: 13px; line-height: 1.5; margin-top: 30px; padding: 15px; background: #E0F4FF; border-radius: 8px; border-left: 4px solid #87CEEB;">
+        💡 <strong>Dato importante:</strong> Esta invitación fue enviada por la dirección de CAIPI.
+      </p>
+    </div>
+
+    <!-- Footer -->
+    <div style="background: linear-gradient(135deg, #003366 0%, #87CEEB 100%); padding: 25px; text-align: center;">
+      <p style="color: #ffffff; font-size: 14px; margin: 0 0 5px 0; font-weight: 600;">
+        Sistema Escolar CAIPI 🌈
+      </p>
+      <p style="color: rgba(255,255,255,0.8); font-size: 12px; margin: 0;">
+        Educación de calidad para un futuro brillante ✨
+      </p>
+    </div>
+
+  </div>
+</div>
+
+
+<!-- ========================================== -->
+<!-- 3. MAGIC LINK -->
+<!-- ========================================== -->
+<!-- Supabase: Authentication → Email Templates → Magic Link -->
+<!-- Asunto sugerido: Tu enlace de acceso - CAIPI 🔐 -->
+
+<div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 600px; margin: 0 auto; background: linear-gradient(135deg, #FFD700 0%, #FF8C42 25%, #FF69B4 50%, #8B5CF6 75%, #87CEEB 100%); padding: 4px; border-radius: 16px;">
+  <div style="background: #ffffff; border-radius: 14px; padding: 0; overflow: hidden;">
+    
+    <!-- Header -->
+    <div style="background: linear-gradient(135deg, #FFD700 0%, #FF69B4 100%); padding: 30px 20px; text-align: center;">
+      <img src="https://qxldfqnuwpucptajcazf.supabase.co/storage/v1/object/public/fotos/WhatsApp%20Image%202026-03-03%20at%2019.46.54.jpeg" 
+           alt="CAIPI Logo" 
+           style="width: 100px; height: 100px; border-radius: 50%; border: 4px solid #ffffff; box-shadow: 0 4px 12px rgba(0,0,0,0.2); margin-bottom: 15px;">
+      <h1 style="color: #ffffff; margin: 0; font-size: 28px; font-weight: 700; text-shadow: 0 2px 4px rgba(0,0,0,0.2);">Acceso Rápido 🔐</h1>
+    </div>
+
+    <!-- Contenido -->
+    <div style="padding: 40px 30px;">
+      <p style="color: #333; font-size: 16px; line-height: 1.6; margin-bottom: 20px;">
+        Hola,
+      </p>
+      
+      <p style="color: #333; font-size: 16px; line-height: 1.6; margin-bottom: 20px;">
+        Usa este <strong style="color: #FFD700;">enlace mágico</strong> para acceder rápidamente al 
+        <strong style="color: #8B5CF6;">Sistema Escolar CAIPI</strong> sin necesidad de contraseña. ✨
+      </p>
+      
+      <p style="color: #333; font-size: 16px; line-height: 1.6; margin-bottom: 30px;">
+        Haz clic en el botón para ingresar:
+      </p>
+
+      <!-- Botón -->
+      <div style="text-align: center; margin: 30px 0;">
+        <a href="{{ .ConfirmationURL }}" 
+           style="display: inline-block; 
+                  background: linear-gradient(135deg, #FFD700 0%, #FF8C42 50%, #FF69B4 100%); 
+                  color: #ffffff; 
+                  text-decoration: none; 
+                  padding: 16px 40px; 
+                  border-radius: 30px; 
+                  font-weight: 700; 
+                  font-size: 16px;
+                  box-shadow: 0 4px 15px rgba(255, 215, 0, 0.4);">
+          🔐 Acceder ahora
+        </a>
+      </div>
+
+      <p style="color: #999; font-size: 13px; line-height: 1.5; margin-top: 30px; padding: 15px; background: #FFF9E0; border-radius: 8px; border-left: 4px solid #FFD700;">
+        ⏰ <strong>Importante:</strong> Este enlace expira en <strong>24 horas</strong> por seguridad.
+      </p>
+    </div>
+
+    <!-- Footer -->
+    <div style="background: linear-gradient(135deg, #003366 0%, #FFD700 100%); padding: 25px; text-align: center;">
+      <p style="color: #ffffff; font-size: 14px; margin: 0 0 5px 0; font-weight: 600;">
+        Sistema Escolar CAIPI 🌈
+      </p>
+      <p style="color: rgba(255,255,255,0.9); font-size: 12px; margin: 0;">
+        Tu acceso seguro y rápido 🚀
+      </p>
+    </div>
+
+  </div>
+</div>
+
+
+<!-- ========================================== -->
+<!-- 4. CHANGE EMAIL ADDRESS -->
+<!-- ========================================== -->
+<!-- Supabase: Authentication → Email Templates → Change Email Address -->
+<!-- Asunto sugerido: Confirma tu nuevo correo - CAIPI ✉️ -->
+
+<div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 600px; margin: 0 auto; background: linear-gradient(135deg, #90EE90 0%, #87CEEB 25%, #8B5CF6 50%, #FF69B4 75%, #FFD700 100%); padding: 4px; border-radius: 16px;">
+  <div style="background: #ffffff; border-radius: 14px; padding: 0; overflow: hidden;">
+    
+    <!-- Header -->
+    <div style="background: linear-gradient(135deg, #90EE90 0%, #87CEEB 100%); padding: 30px 20px; text-align: center;">
+      <img src="https://qxldfqnuwpucptajcazf.supabase.co/storage/v1/object/public/fotos/WhatsApp%20Image%202026-03-03%20at%2019.46.54.jpeg" 
+           alt="CAIPI Logo" 
+           style="width: 100px; height: 100px; border-radius: 50%; border: 4px solid #ffffff; box-shadow: 0 4px 12px rgba(0,0,0,0.2); margin-bottom: 15px;">
+      <h1 style="color: #ffffff; margin: 0; font-size: 28px; font-weight: 700; text-shadow: 0 2px 4px rgba(0,0,0,0.2);">Cambio de Correo ✉️</h1>
+    </div>
+
+    <!-- Contenido -->
+    <div style="padding: 40px 30px;">
+      <p style="color: #333; font-size: 16px; line-height: 1.6; margin-bottom: 20px;">
+        Hola,
+      </p>
+      
+      <p style="color: #333; font-size: 16px; line-height: 1.6; margin-bottom: 20px;">
+        Recibimos una solicitud para <strong style="color: #90EE90;">cambiar el correo electrónico</strong> 
+        asociado a tu cuenta del <strong style="color: #8B5CF6;">Sistema Escolar CAIPI</strong>.
+      </p>
+      
+      <p style="color: #333; font-size: 16px; line-height: 1.6; margin-bottom: 30px;">
+        Para confirmar este cambio y actualizar tu correo, haz clic en el botón:
+      </p>
+
+      <!-- Botón -->
+      <div style="text-align: center; margin: 30px 0;">
+        <a href="{{ .ConfirmationURL }}" 
+           style="display: inline-block; 
+                  background: linear-gradient(135deg, #90EE90 0%, #87CEEB 50%, #8B5CF6 100%); 
+                  color: #ffffff; 
+                  text-decoration: none; 
+                  padding: 16px 40px; 
+                  border-radius: 30px; 
+                  font-weight: 700; 
+                  font-size: 16px;
+                  box-shadow: 0 4px 15px rgba(144, 238, 144, 0.4);">
+          ✉️ Confirmar nuevo correo
+        </a>
+      </div>
+
+      <p style="color: #d32f2f; font-size: 14px; line-height: 1.5; margin-top: 30px; padding: 15px; background: #ffebee; border-radius: 8px; border-left: 4px solid #d32f2f;">
+        ⚠️ <strong>¡Atención!</strong> Si NO realizaste este cambio, contacta al administrador de inmediato para proteger tu cuenta.
+      </p>
+    </div>
+
+    <!-- Footer -->
+    <div style="background: linear-gradient(135deg, #003366 0%, #90EE90 100%); padding: 25px; text-align: center;">
+      <p style="color: #ffffff; font-size: 14px; margin: 0 0 5px 0; font-weight: 600;">
+        Sistema Escolar CAIPI 🌈
+      </p>
+      <p style="color: rgba(255,255,255,0.9); font-size: 12px; margin: 0;">
+        Tu seguridad es nuestra prioridad 🔒
+      </p>
+    </div>
+
+  </div>
+</div>
+
+
+<!-- ========================================== -->
+<!-- 5. RESET PASSWORD (EL MÁS IMPORTANTE) -->
+<!-- ========================================== -->
+<!-- Supabase: Authentication → Email Templates → Reset Password -->
+<!-- Asunto sugerido: Recupera tu contraseña - CAIPI 🔑 -->
+
+<div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 600px; margin: 0 auto; background: linear-gradient(135deg, #FF69B4 0%, #8B5CF6 25%, #87CEEB 50%, #90EE90 75%, #FFD700 100%); padding: 4px; border-radius: 16px;">
+  <div style="background: #ffffff; border-radius: 14px; padding: 0; overflow: hidden;">
+    
+    <!-- Header -->
+    <div style="background: linear-gradient(135deg, #FF69B4 0%, #8B5CF6 100%); padding: 30px 20px; text-align: center;">
+      <img src="https://qxldfqnuwpucptajcazf.supabase.co/storage/v1/object/public/fotos/WhatsApp%20Image%202026-03-03%20at%2019.46.54.jpeg" 
+           alt="CAIPI Logo" 
+           style="width: 100px; height: 100px; border-radius: 50%; border: 4px solid #ffffff; box-shadow: 0 4px 12px rgba(0,0,0,0.2); margin-bottom: 15px;">
+      <h1 style="color: #ffffff; margin: 0; font-size: 28px; font-weight: 700; text-shadow: 0 2px 4px rgba(0,0,0,0.2);">Recuperar Contraseña 🔑</h1>
+    </div>
+
+    <!-- Contenido -->
+    <div style="padding: 40px 30px;">
+      <p style="color: #333; font-size: 16px; line-height: 1.6; margin-bottom: 20px;">
+        Hola,
+      </p>
+      
+      <p style="color: #333; font-size: 16px; line-height: 1.6; margin-bottom: 20px;">
+        Recibimos una solicitud para <strong style="color: #FF69B4;">restablecer tu contraseña</strong> 
+        del <strong style="color: #8B5CF6;">Sistema Escolar CAIPI</strong>. 🔐
+      </p>
+      
+      <p style="color: #333; font-size: 16px; line-height: 1.6; margin-bottom: 30px;">
+        Para crear una nueva contraseña segura, haz clic en el botón:
+      </p>
+
+      <!-- Botón -->
+      <div style="text-align: center; margin: 30px 0;">
+        <a href="{{ .ConfirmationURL }}" 
+           style="display: inline-block; 
+                  background: linear-gradient(135deg, #FF69B4 0%, #8B5CF6 50%, #87CEEB 100%); 
+                  color: #ffffff; 
+                  text-decoration: none; 
+                  padding: 16px 40px; 
+                  border-radius: 30px; 
+                  font-weight: 700; 
+                  font-size: 16px;
+                  box-shadow: 0 4px 15px rgba(255, 105, 180, 0.4);">
+          🔑 Restablecer contraseña
+        </a>
+      </div>
+
+      <div style="margin-top: 30px;">
+        <p style="color: #999; font-size: 13px; line-height: 1.5; margin-bottom: 10px; padding: 15px; background: #f9f9f9; border-radius: 8px; border-left: 4px solid #90EE90;">
+          ✅ <strong>Si lo solicitaste:</strong> Haz clic en el botón y sigue las instrucciones.
+        </p>
+        
+        <p style="color: #999; font-size: 13px; line-height: 1.5; padding: 15px; background: #FFF9E0; border-radius: 8px; border-left: 4px solid #FFD700;">
+          ⏰ <strong>Expira en 1 hora:</strong> Por seguridad, este enlace solo es válido por 60 minutos.
+        </p>
+        
+        <p style="color: #d32f2f; font-size: 13px; line-height: 1.5; margin-top: 10px; padding: 15px; background: #ffebee; border-radius: 8px; border-left: 4px solid #d32f2f;">
+          ⚠️ <strong>Si NO lo solicitaste:</strong> Ignora este correo. Tu contraseña actual permanecerá activa y segura.
+        </p>
+      </div>
+    </div>
+
+    <!-- Footer -->
+    <div style="background: linear-gradient(135deg, #003366 0%, #FF69B4 100%); padding: 25px; text-align: center;">
+      <p style="color: #ffffff; font-size: 14px; margin: 0 0 5px 0; font-weight: 600;">
+        Sistema Escolar CAIPI 🌈
+      </p>
+      <p style="color: rgba(255,255,255,0.9); font-size: 12px; margin: 0;">
+        Protegiendo tu acceso con la mejor seguridad 🛡️
+      </p>
+    </div>
+
+  </div>
+</div>
+
+
+<!-- ============================================ -->
+<!-- FIN DE LOS TEMPLATES -->
+<!-- ============================================ -->
+
+<!--
+✅ CHECKLIST DE IMPLEMENTACIÓN:
+
+1. [ ] Ir a: https://supabase.com/dashboard
+2. [ ] Authentication → Email Templates
+3. [ ] Template 1: Confirm signup - Copiar y pegar
+4. [ ] Template 2: Invite user - Copiar y pegar
+5. [ ] Template 3: Magic Link - Copiar y pegar
+6. [ ] Template 4: Change Email Address - Copiar y pegar
+7. [ ] Template 5: Reset Password - Copiar y pegar ⭐
+8. [ ] Probar enviando un email de prueba
+
+🎨 CARACTERÍSTICAS DE ESTOS EMAILS:
+
+✅ Logo de CAIPI incluido (desde Supabase Storage)
+✅ Colores oficiales del arcoíris CAIPI
+✅ Gradientes profesionales en headers y botones
+✅ Diseño responsive (se ve bien en móvil y desktop)
+✅ Iconos y emojis para mejor UX
+✅ Alertas con colores según importancia
+✅ Footer profesional con degradado
+✅ Sombras y efectos visuales modernos
+✅ Mensajes claros y amigables
+✅ Información de seguridad incluida
+
+🚀 MEJORAS IMPLEMENTADAS:
+
+1. Headers con gradiente arcoíris diferente para cada tipo
+2. Logo circular con sombra doble (profesional)
+3. Botones con gradiente y sombra según tipo de email
+4. Alertas con colores semánticos (verde=info, amarillo=advertencia, rojo=peligro)
+5. Footer único con degradado azul oscuro de CAIPI
+6. Diseño moderno con border-radius y espaciados optimizados
+7. Tipografía profesional y legible
+8. Responsive design para todos los dispositivos
+
+⏱️ TIEMPO DE IMPLEMENTACIÓN: 5-7 minutos (todos los templates)
+
+💡 CONSEJO: Empieza con "Reset Password" que es el más usado.
+-->

@@ -1,0 +1,6 @@
+package com.escuela.caipi
+
+import io.flutter.embedding.android.FlutterActivity
+
+class MainActivity: FlutterActivity() {
+}

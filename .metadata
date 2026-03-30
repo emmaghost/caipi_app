@@ -1,0 +1,19 @@
+# Este archivo identifica el proyecto como un proyecto Flutter
+
+version:
+  revision: 90673a4eef4ce4b211e3e6785e23ebf64fb3e52a
+  channel: stable
+
+project_type: app
+
+migration:
+  platforms:
+    - platform: root
+      create_revision: 90673a4eef4ce4b211e3e6785e23ebf64fb3e52a
+      base_revision: 90673a4eef4ce4b211e3e6785e23ebf64fb3e52a
+    - platform: android
+      create_revision: 90673a4eef4ce4b211e3e6785e23ebf64fb3e52a
+      base_revision: 90673a4eef4ce4b211e3e6785e23ebf64fb3e52a
+    - platform: ios
+      create_revision: 90673a4eef4ce4b211e3e6785e23ebf64fb3e52a
+      base_revision: 90673a4eef4ce4b211e3e6785e23ebf64fb3e52a

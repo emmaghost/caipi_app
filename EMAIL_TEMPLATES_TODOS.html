@@ -1,0 +1,76 @@
+<!-- ============================================ -->
+<!-- TODOS LOS TEMPLATES DE EMAIL - CAIPI -->
+<!-- ============================================ -->
+
+<!-- ========================================== -->
+<!-- 1. CONFIRM SIGNUP -->
+<!-- ========================================== -->
+<!-- Supabase: Authentication → Email Templates → Confirm signup -->
+
+<h2>Confirma tu cuenta - CAIPI</h2>
+<p>Hola,</p>
+<p>Gracias por registrarte en el <strong>Sistema Escolar CAIPI</strong>.</p>
+<p>Para completar tu registro, confirma tu correo electrónico:</p>
+<p><a href="{{ .ConfirmationURL }}" style="display: inline-block; background: linear-gradient(135deg, #4A90E2 0%, #7B68EE 100%); color: #ffffff; text-decoration: none; padding: 16px 40px; border-radius: 12px; font-weight: 600;">✅ Confirmar mi cuenta</a></p>
+<p style="color: #666; font-size: 12px;">Si no solicitaste esta cuenta, ignora este correo.</p>
+<hr>
+<p style="color: #999; font-size: 11px;">Sistema Escolar CAIPI - Gestionando la educación con tecnología 💙</p>
+
+
+<!-- ========================================== -->
+<!-- 2. INVITE USER -->
+<!-- ========================================== -->
+<!-- Supabase: Authentication → Email Templates → Invite user -->
+
+<h2>Invitación a CAIPI</h2>
+<p>Hola,</p>
+<p>Has sido invitado/a a unirte al <strong>Sistema Escolar CAIPI</strong>.</p>
+<p>Para aceptar la invitación y crear tu contraseña:</p>
+<p><a href="{{ .ConfirmationURL }}" style="display: inline-block; background: linear-gradient(135deg, #4A90E2 0%, #7B68EE 100%); color: #ffffff; text-decoration: none; padding: 16px 40px; border-radius: 12px; font-weight: 600;">🎓 Aceptar invitación</a></p>
+<hr>
+<p style="color: #999; font-size: 11px;">Sistema Escolar CAIPI 💙</p>
+
+
+<!-- ========================================== -->
+<!-- 3. MAGIC LINK (si lo usas) -->
+<!-- ========================================== -->
+<!-- Supabase: Authentication → Email Templates → Magic Link -->
+
+<h2>Tu enlace de acceso - CAIPI</h2>
+<p>Hola,</p>
+<p>Usa este enlace para acceder al <strong>Sistema Escolar CAIPI</strong>:</p>
+<p><a href="{{ .ConfirmationURL }}" style="display: inline-block; background: linear-gradient(135deg, #4A90E2 0%, #7B68EE 100%); color: #ffffff; text-decoration: none; padding: 16px 40px; border-radius: 12px; font-weight: 600;">🔐 Acceder ahora</a></p>
+<p style="color: #666; font-size: 12px;">Este enlace expira en 24 horas.</p>
+<hr>
+<p style="color: #999; font-size: 11px;">Sistema Escolar CAIPI 💙</p>
+
+
+<!-- ========================================== -->
+<!-- 4. CHANGE EMAIL ADDRESS -->
+<!-- ========================================== -->
+<!-- Supabase: Authentication → Email Templates → Change Email Address -->
+
+<h2>Confirma tu nuevo correo - CAIPI</h2>
+<p>Hola,</p>
+<p>Recibimos una solicitud para cambiar el correo electrónico asociado a tu cuenta CAIPI.</p>
+<p>Para confirmar este cambio:</p>
+<p><a href="{{ .ConfirmationURL }}" style="display: inline-block; background: linear-gradient(135deg, #4A90E2 0%, #7B68EE 100%); color: #ffffff; text-decoration: none; padding: 16px 40px; border-radius: 12px; font-weight: 600;">✉️ Confirmar nuevo correo</a></p>
+<p style="color: #666; font-size: 12px;">Si no realizaste este cambio, contacta al administrador inmediatamente.</p>
+<hr>
+<p style="color: #999; font-size: 11px;">Sistema Escolar CAIPI 💙</p>
+
+
+<!-- ========================================== -->
+<!-- 5. RESET PASSWORD -->
+<!-- ========================================== -->
+<!-- Supabase: Authentication → Email Templates → Reset Password -->
+
+<h2>Recupera tu contraseña - CAIPI</h2>
+<p>Hola,</p>
+<p>Recibimos una solicitud para restablecer tu contraseña del <strong>Sistema Escolar CAIPI</strong>.</p>
+<p>Para crear una nueva contraseña:</p>
+<p><a href="{{ .ConfirmationURL }}" style="display: inline-block; background: linear-gradient(135deg, #4A90E2 0%, #7B68EE 100%); color: #ffffff; text-decoration: none; padding: 16px 40px; border-radius: 12px; font-weight: 600;">🔑 Restablecer contraseña</a></p>
+<p style="color: #666; font-size: 12px;">Si no solicitaste este cambio, ignora este correo. Tu contraseña actual permanecerá activa.</p>
+<p style="color: #666; font-size: 12px;">Este enlace expira en 1 hora.</p>
+<hr>
+<p style="color: #999; font-size: 11px;">Sistema Escolar CAIPI 💙</p>

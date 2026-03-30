@@ -1,0 +1,105 @@
+========================================
+📧 5 EMAILS QUE DEBES CONFIGURAR
+========================================
+En Supabase: Authentication → Email Templates
+
+========================================
+1️⃣ CONFIRM SIGNUP (Confirmación de registro)
+========================================
+<h2>🎉 ¡Bienvenido a CAIPI!</h2>
+<p>Hola,</p>
+<p>Gracias por registrarte en el <strong>Sistema Escolar CAIPI</strong>.</p>
+<p>Para completar tu registro, confirma tu correo electrónico:</p>
+<p style="text-align: center; margin: 30px 0;">
+  <a href="{{ .ConfirmationURL }}" style="display: inline-block; background: linear-gradient(135deg, #4A90E2 0%, #7B68EE 100%); color: #ffffff; text-decoration: none; padding: 16px 40px; border-radius: 12px; font-weight: 600; font-size: 16px;">
+    ✅ Confirmar mi cuenta
+  </a>
+</p>
+<p style="color: #666; font-size: 14px;">
+  <strong>⚠️ Importante:</strong> Si no solicitaste esta cuenta, ignora este correo.
+</p>
+<p style="color: #999; font-size: 12px; margin-top: 30px; border-top: 1px solid #eee; padding-top: 20px;">
+  <strong>Sistema Escolar CAIPI</strong><br>
+  Gestionando la educación con tecnología 💙
+</p>
+
+========================================
+2️⃣ RESET PASSWORD (Recuperar contraseña) ⭐
+========================================
+<h2>🔑 Recupera tu contraseña - CAIPI</h2>
+<p>Hola,</p>
+<p>Recibimos una solicitud para restablecer tu contraseña del <strong>Sistema Escolar CAIPI</strong>.</p>
+<p>Para crear una nueva contraseña:</p>
+<p style="text-align: center; margin: 30px 0;">
+  <a href="{{ .ConfirmationURL }}" style="display: inline-block; background: linear-gradient(135deg, #4A90E2 0%, #7B68EE 100%); color: #ffffff; text-decoration: none; padding: 16px 40px; border-radius: 12px; font-weight: 600; font-size: 16px;">
+    🔒 Restablecer contraseña
+  </a>
+</p>
+<div style="background-color: #FFF9E6; border-left: 4px solid #FFB800; padding: 15px; border-radius: 8px; margin: 20px 0;">
+  <p style="color: #856404; font-size: 14px; margin: 0;">
+    <strong>⚠️ Seguridad:</strong> Si no solicitaste esto, ignora este correo.
+  </p>
+</div>
+<p style="color: #666; font-size: 13px;">
+  Este enlace expira en 1 hora por seguridad.
+</p>
+<p style="color: #999; font-size: 12px; margin-top: 30px; border-top: 1px solid #eee; padding-top: 20px;">
+  <strong>Sistema Escolar CAIPI</strong> 💙
+</p>
+
+========================================
+3️⃣ INVITE USER (Invitar usuario)
+========================================
+<h2>🎓 Invitación a CAIPI</h2>
+<p>Hola,</p>
+<p>Has sido invitado/a a unirte al <strong>Sistema Escolar CAIPI</strong>.</p>
+<p>Para aceptar la invitación:</p>
+<p style="text-align: center; margin: 30px 0;">
+  <a href="{{ .ConfirmationURL }}" style="display: inline-block; background: linear-gradient(135deg, #4A90E2 0%, #7B68EE 100%); color: #ffffff; text-decoration: none; padding: 16px 40px; border-radius: 12px; font-weight: 600; font-size: 16px;">
+    📚 Aceptar invitación
+  </a>
+</p>
+<p style="color: #999; font-size: 12px; margin-top: 30px;">
+  <strong>Sistema Escolar CAIPI</strong> 💙
+</p>
+
+========================================
+4️⃣ CHANGE EMAIL ADDRESS (Cambiar correo)
+========================================
+<h2>✉️ Confirma tu nuevo correo - CAIPI</h2>
+<p>Hola,</p>
+<p>Recibimos una solicitud para cambiar el correo de tu cuenta CAIPI.</p>
+<p>Para confirmar:</p>
+<p style="text-align: center; margin: 30px 0;">
+  <a href="{{ .ConfirmationURL }}" style="display: inline-block; background: linear-gradient(135deg, #4A90E2 0%, #7B68EE 100%); color: #ffffff; text-decoration: none; padding: 16px 40px; border-radius: 12px; font-weight: 600; font-size: 16px;">
+    ✅ Confirmar nuevo correo
+  </a>
+</p>
+<p style="color: #999; font-size: 12px; margin-top: 30px;">
+  <strong>Sistema Escolar CAIPI</strong> 💙
+</p>
+
+========================================
+5️⃣ MAGIC LINK (Enlace mágico - opcional)
+========================================
+<h2>🔐 Tu enlace de acceso - CAIPI</h2>
+<p>Hola,</p>
+<p>Usa este enlace para acceder al <strong>Sistema Escolar CAIPI</strong>:</p>
+<p style="text-align: center; margin: 30px 0;">
+  <a href="{{ .ConfirmationURL }}" style="display: inline-block; background: linear-gradient(135deg, #4A90E2 0%, #7B68EE 100%); color: #ffffff; text-decoration: none; padding: 16px 40px; border-radius: 12px; font-weight: 600; font-size: 16px;">
+    🚀 Acceder ahora
+  </a>
+</p>
+<p style="color: #666; font-size: 13px;">
+  Este enlace expira en 24 horas.
+</p>
+<p style="color: #999; font-size: 12px; margin-top: 30px;">
+  <strong>Sistema Escolar CAIPI</strong> 💙
+</p>
+
+========================================
+✅ ¡LISTO!
+========================================
+Configurar cada template toma 1 minuto.
+Total: 5 minutos para tener emails bonitos.
+========================================

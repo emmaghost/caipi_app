@@ -1,0 +1,1605 @@
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import 'package:go_router/go_router.dart';
+import 'package:google_fonts/google_fonts.dart';
+import 'package:intl/intl.dart';
+import 'package:url_launcher/url_launcher.dart';
+
+import '../../services/supabase_service.dart';
+import '../../services/exportacion_pagos_excel.dart';
+import '../../models/pago.dart';
+import '../../models/alumno.dart';
+import '../../models/grado.dart';
+import '../../config/app_colors.dart';
+import '../../widgets/app_drawer.dart';
+
+/// Formato de miles con coma (ej: 51,460.00)
+String _formatoMonto(double monto) {
+  return NumberFormat('#,##0.00', 'es_MX').format(monto);
+}
+
+class PagosScreen extends StatefulWidget {
+  const PagosScreen({super.key});
+
+  @override
+  State<PagosScreen> createState() => _PagosScreenState();
+}
+
+class _PagosScreenState extends State<PagosScreen> with SingleTickerProviderStateMixin {
+  late TabController _tabController;
+  String? _filtroGradoId;   // null = todos los grados
+  String? _filtroAlumnoId;
+  String? _filtroTipoPago; // null = todos, 'mensualidad', 'inscripcion', 'seguro', 'otro'
+  String _filtroEstado = 'todos'; // 'todos' | 'vencidos' | 'pendientes'
+
+  /// Lista de pagos pendientes: consulta HTTP (se invalida al volver de acreditar / pull / agregar).
+  Future<List<Pago>>? _pagosPendientesFuture;
+  SupabaseService? _pagosFutureService;
+
+  Future<List<Pago>> _futurePagosPendientes(SupabaseService s) {
+    if (_pagosFutureService != s) {
+      _pagosFutureService = s;
+      _pagosPendientesFuture = null;
+    }
+    _pagosPendientesFuture ??= s.obtenerTodosPagosList();
+    return _pagosPendientesFuture!;
+  }
+
+  Future<void> _refrescarPagosPendientes(SupabaseService s) async {
+    try {
+      final list = await s.obtenerTodosPagosList();
+      if (!mounted) return;
+      setState(() {
+        _pagosFutureService = s;
+        _pagosPendientesFuture = Future.value(list);
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _pagosFutureService = s;
+        _pagosPendientesFuture = Future.error(e);
+      });
+    }
+  }
+
+  Future<void> _exportarExcel(BuildContext context, SupabaseService s) async {
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => PopScope(
+        canPop: false,
+        child: Center(
+          child: Card(
+            child: Padding(
+              padding: const EdgeInsets.all(28),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const CircularProgressIndicator(color: AppColors.morado),
+                  const SizedBox(height: 16),
+                  Text(
+                    'Generando Excel…',
+                    style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    ExcelPagosGenerado? generado;
+    try {
+      generado = await ExportacionPagosExcel.generar(s);
+    } catch (e) {
+      if (context.mounted) {
+        Navigator.of(context, rootNavigator: true).pop();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('No se pudo generar el Excel: $e'),
+            backgroundColor: AppColors.rojo,
+          ),
+        );
+      }
+      return;
+    }
+
+    if (context.mounted) Navigator.of(context, rootNavigator: true).pop();
+
+    if (!context.mounted) return;
+    final ex = generado!;
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  margin: const EdgeInsets.only(bottom: 16),
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade300,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              Text(
+                'Exportar pagos',
+                style: GoogleFonts.fredoka(
+                  fontSize: 22,
+                  fontWeight: FontWeight.bold,
+                  color: AppColors.morado,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                '${ex.registros} registros · ${ex.fileName}',
+                style: GoogleFonts.poppins(fontSize: 13, color: Colors.grey[700]),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'WhatsApp, Gmail y “a quién” no se eligen aquí: al compartir, el celular te muestra el menú y tú eliges la app y el contacto o correo.',
+                style: GoogleFonts.poppins(
+                  fontSize: 13,
+                  height: 1.35,
+                  color: Colors.grey[800],
+                ),
+              ),
+              const SizedBox(height: 20),
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: CircleAvatar(
+                  backgroundColor: AppColors.morado.withOpacity(0.15),
+                  child: Icon(Icons.share_rounded, color: AppColors.morado),
+                ),
+                title: Text(
+                  'Compartir',
+                  style: GoogleFonts.poppins(fontWeight: FontWeight.w700),
+                ),
+                subtitle: Text(
+                  'Abre el menú del sistema: WhatsApp, Gmail, Drive, correo…',
+                  style: GoogleFonts.poppins(fontSize: 12),
+                ),
+                onTap: () async {
+                  Navigator.pop(ctx);
+                  try {
+                    await ExportacionPagosExcel.compartir(
+                      ex.bytes,
+                      ex.fileName,
+                      ex.registros,
+                    );
+                  } catch (e) {
+                    if (!context.mounted) return;
+                    if (ExportacionPagosExcel.esErrorPluginCompartir(e)) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(
+                            'Compartir no disponible. Cierra la app, vuelve a instalar o usa "Guardar". Detalle: $e',
+                            style: const TextStyle(fontSize: 12),
+                          ),
+                          backgroundColor: Colors.orange.shade800,
+                          duration: const Duration(seconds: 5),
+                          action: SnackBarAction(
+                            label: 'Guardar',
+                            textColor: Colors.white,
+                            onPressed: () async {
+                              try {
+                                final msg =
+                                    await ExportacionPagosExcel.guardarEnDispositivo(
+                                  ex.bytes,
+                                  ex.fileName,
+                                );
+                                if (context.mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text(msg),
+                                      backgroundColor: Colors.green.shade700,
+                                    ),
+                                  );
+                                }
+                              } catch (_) {}
+                            },
+                          ),
+                        ),
+                      );
+                    } else {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('Error: $e'),
+                          backgroundColor: AppColors.rojo,
+                        ),
+                      );
+                    }
+                  }
+                },
+              ),
+              const Divider(),
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: CircleAvatar(
+                  backgroundColor: Colors.green.shade100,
+                  child: Icon(Icons.save_alt_rounded, color: Colors.green.shade800),
+                ),
+                title: Text(
+                  'Guardar Excel en el teléfono',
+                  style: GoogleFonts.poppins(fontWeight: FontWeight.w700),
+                ),
+                subtitle: Text(
+                  'Elige carpeta (Descargas, Documentos…). Luego lo envías tú por WhatsApp o correo.',
+                  style: GoogleFonts.poppins(fontSize: 12),
+                ),
+                onTap: () async {
+                  Navigator.pop(ctx);
+                  try {
+                    final msg =
+                        await ExportacionPagosExcel.guardarEnDispositivo(
+                      ex.bytes,
+                      ex.fileName,
+                    );
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(
+                            msg,
+                            style: GoogleFonts.poppins(fontSize: 13),
+                          ),
+                          backgroundColor: Colors.green.shade700,
+                          duration: const Duration(seconds: 5),
+                        ),
+                      );
+                    }
+                  } catch (e) {
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('No se pudo guardar: $e'),
+                          backgroundColor: AppColors.rojo,
+                        ),
+                      );
+                    }
+                  }
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+  
+  @override
+  void initState() {
+    super.initState();
+    _tabController = TabController(length: 2, vsync: this);
+  }
+  
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final firestoreService = context.read<SupabaseService>();
+
+    return Scaffold(
+      backgroundColor: AppColors.rosaClaro,
+      drawer: const AppDrawer(),
+      appBar: AppBar(
+        backgroundColor: AppColors.morado,
+        foregroundColor: Colors.white,
+        title: const Text('Gestión de Pagos'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.table_chart_outlined),
+            tooltip: 'Exportar Excel y compartir',
+            onPressed: () => _exportarExcel(context, firestoreService),
+          ),
+          IconButton(
+            icon: const Icon(Icons.home),
+            onPressed: () => context.go('/directora'),
+            tooltip: 'Ir al inicio',
+          ),
+        ],
+        bottom: TabBar(
+          controller: _tabController,
+          labelColor: Colors.white,
+          unselectedLabelColor: Colors.white70,
+          indicatorColor: Colors.white,
+          indicatorWeight: 3,
+          tabs: const [
+            Tab(
+              icon: Icon(Icons.school),
+              text: 'Pagos de Alumnos',
+            ),
+            Tab(
+              icon: Icon(Icons.sports_soccer),
+              text: 'Extracurriculares',
+            ),
+          ],
+        ),
+      ),
+      body: TabBarView(
+        controller: _tabController,
+        children: [
+          _buildPagosAlumnosTab(firestoreService),
+          _buildListaPagos(
+            firestoreService,
+            filtroTipo: 'extracurriculares',
+            filtroEstado: _filtroEstado,
+          ),
+        ],
+      ),
+      floatingActionButton: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          FloatingActionButton.extended(
+            onPressed: () => _mostrarMenuAgregarPago(context),
+            heroTag: 'agregar_pago',
+            backgroundColor: AppColors.verde,
+            icon: const Icon(Icons.add),
+            label: const Text('Agregar Pago'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Pestaña "Pagos de Alumnos" con filtros por grado, alumno (con buscador) y tipo
+  Widget _buildPagosAlumnosTab(SupabaseService service) {
+    return FutureBuilder<List<dynamic>>(
+      future: Future.wait([service.obtenerAlumnos(), service.obtenerGrados()]),
+      builder: (context, snapshot) {
+        final alumnos = snapshot.hasData && snapshot.data!.isNotEmpty
+            ? (snapshot.data![0] as List<Alumno>)
+            : <Alumno>[];
+        final grados = snapshot.hasData && snapshot.data!.length > 1
+            ? (snapshot.data![1] as List<Grado>)
+            : <Grado>[];
+        final mapaNombres = {for (var a in alumnos) a.id: a.nombreCompleto};
+
+        return Column(
+          children: [
+            // Filtros: Grado → Alumno (con buscador)
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                border: Border(bottom: BorderSide(color: AppColors.rosa.withOpacity(0.3))),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.04),
+                    blurRadius: 6,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Grado',
+                    style: GoogleFonts.poppins(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: const Color(0xFF6B6080),
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  DropdownButtonFormField<String?>(
+                    value: _filtroGradoId,
+                    decoration: InputDecoration(
+                      isDense: true,
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide(color: AppColors.morado.withOpacity(0.5)),
+                      ),
+                      filled: true,
+                      fillColor: Colors.white,
+                    ),
+                    hint: Text('Todos los grados', style: GoogleFonts.poppins(fontSize: 14)),
+                    items: [
+                      const DropdownMenuItem<String?>(
+                        value: null,
+                        child: Text('Todos los grados'),
+                      ),
+                      ...grados.map((g) => DropdownMenuItem<String?>(
+                            value: g.id,
+                            child: Text(
+                              g.nombre,
+                              style: GoogleFonts.poppins(fontSize: 14),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          )),
+                    ],
+                    onChanged: (value) {
+                      setState(() {
+                        _filtroGradoId = value;
+                        if (_filtroAlumnoId != null) {
+                          final list = alumnos.where((a) => a.id == _filtroAlumnoId).toList();
+                          final sel = list.isEmpty ? null : list.first;
+                          if (sel == null || (value != null && sel.gradoId != value)) {
+                            _filtroAlumnoId = null;
+                          }
+                        }
+                      });
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    'Alumno',
+                    style: GoogleFonts.poppins(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: const Color(0xFF6B6080),
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  InkWell(
+                    onTap: () => _mostrarSelectorAlumno(context, alumnos, grados),
+                    borderRadius: BorderRadius.circular(12),
+                    child: Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: AppColors.morado.withOpacity(0.5)),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(Icons.person_search, color: Colors.grey[600], size: 22),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              _filtroAlumnoId == null
+                                  ? 'Todos los alumnos'
+                                  : (mapaNombres[_filtroAlumnoId] ?? 'Alumno'),
+                              style: GoogleFonts.poppins(
+                                fontSize: 14,
+                                color: _filtroAlumnoId == null ? Colors.grey[600] : const Color(0xFF2D2640),
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          Icon(Icons.arrow_drop_down, color: Colors.grey[600]),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    'Filtrar por tipo',
+                    style: GoogleFonts.poppins(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: const Color(0xFF6B6080),
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      children: [
+                        _buildChipTipo(null, 'Todos'),
+                        _buildChipTipo('mensualidad', 'Colegiatura'),
+                        _buildChipTipo('inscripcion', 'Inscripción'),
+                        _buildChipTipo('seguro', 'Seguro'),
+                        _buildChipTipo('otro', 'Otro'),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    'Estado',
+                    style: GoogleFonts.poppins(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: const Color(0xFF6B6080),
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      _buildChipEstado('todos', 'Todos'),
+                      _buildChipEstado('vencidos', 'Vencidos'),
+                      _buildChipEstado('pendientes', 'Pendientes'),
+                      _buildChipEstado('pagados', 'Pagados', esPagados: true),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            Expanded(
+              child: _buildListaPagos(
+                service,
+                filtroTipo: 'alumnos',
+                filtroAlumnoId: _filtroAlumnoId,
+                filtroTipoPago: _filtroTipoPago,
+                filtroEstado: _filtroEstado,
+                mapaNombresAlumnos: mapaNombres,
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildChipTipo(String? tipo, String label) {
+    final selected = _filtroTipoPago == tipo;
+    return Padding(
+      padding: const EdgeInsets.only(right: 8),
+      child: FilterChip(
+        label: Text(label, style: GoogleFonts.poppins(fontSize: 13, fontWeight: selected ? FontWeight.w600 : FontWeight.w500)),
+        selected: selected,
+        onSelected: (_) => setState(() => _filtroTipoPago = tipo),
+        backgroundColor: Colors.white,
+        selectedColor: AppColors.morado.withOpacity(0.14),
+        side: BorderSide(color: selected ? AppColors.morado.withOpacity(0.45) : Colors.grey.shade300),
+        checkmarkColor: AppColors.morado,
+        showCheckmark: selected,
+        labelStyle: TextStyle(
+          color: selected ? const Color(0xFF5C4D6B) : Colors.grey[700],
+          fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _notificarWhatsApp(
+    BuildContext context,
+    SupabaseService service,
+    String alumnoId,
+    String nombreAlumno,
+    List<Pago> pagosVencidos,
+  ) async {
+    final telefono = await service.obtenerTelefonoPadrePorAlumnoId(alumnoId);
+    if (telefono == null || telefono.isEmpty) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('No hay teléfono o WhatsApp registrado para el padre de este alumno.'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      }
+      return;
+    }
+    final conceptos = pagosVencidos.map((p) => p.concepto ?? 'Sin concepto').toList();
+    final total = pagosVencidos.fold<double>(0, (sum, p) => sum + p.saldoPendiente);
+    String detalle;
+    if (conceptos.length == 1) {
+      detalle = '${conceptos.first} por \$${_formatoMonto(total)}.';
+    } else {
+      detalle = '${conceptos.join(", ")}. *Total: \$${_formatoMonto(total)}*.';
+    }
+    final mensaje = 'CAIPI - Recordatorio de pago\n\n'
+        '$nombreAlumno tiene pendiente de pago: $detalle\n\n'
+        'Favor de regularizar. Gracias.';
+    final soloNumeros = telefono.replaceAll(RegExp(r'[^0-9]'), '');
+    final codigo = soloNumeros.length == 10 ? '52$soloNumeros' : soloNumeros;
+    final uri = Uri.parse(
+      'https://wa.me/$codigo?text=${Uri.encodeComponent(mensaje)}',
+    );
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } else {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('No se pudo abrir WhatsApp. Verifique que esté instalado.'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  Widget _buildChipEstado(String valor, String label, {bool esPagados = false}) {
+    final selected = _filtroEstado == valor;
+    final rojo = AppColors.rojo;
+    final verde = const Color(0xFF166534);
+    return FilterChip(
+      label: Text(label, style: GoogleFonts.poppins(fontSize: 13, fontWeight: selected ? FontWeight.w600 : FontWeight.w500)),
+      selected: selected,
+      onSelected: (_) => setState(() => _filtroEstado = valor),
+      backgroundColor: Colors.white,
+      selectedColor: valor == 'vencidos'
+          ? rojo.withOpacity(0.12)
+          : esPagados
+              ? verde.withOpacity(0.14)
+              : AppColors.morado.withOpacity(0.14),
+      side: BorderSide(
+        color: selected
+            ? (valor == 'vencidos'
+                ? rojo.withOpacity(0.5)
+                : esPagados
+                    ? verde.withOpacity(0.55)
+                    : AppColors.morado.withOpacity(0.45))
+            : Colors.grey.shade300,
+      ),
+      checkmarkColor: valor == 'vencidos' ? rojo : esPagados ? verde : AppColors.morado,
+      labelStyle: TextStyle(
+        color: selected
+            ? (valor == 'vencidos'
+                ? rojo
+                : esPagados
+                    ? verde
+                    : const Color(0xFF5C4D6B))
+            : Colors.grey[700],
+      ),
+    );
+  }
+
+  void _mostrarSelectorAlumno(
+    BuildContext context,
+    List<Alumno> alumnos,
+    List<Grado> grados,
+  ) {
+    List<Alumno> porGrado = _filtroGradoId == null
+        ? alumnos
+        : alumnos.where((a) => a.gradoId == _filtroGradoId).toList();
+    final mapaNombres = {for (var g in grados) g.id: g.nombre};
+
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => _SelectorAlumnoSheet(
+        alumnos: porGrado,
+        grados: grados,
+        mapaGradoNombre: mapaNombres,
+        alumnoSeleccionadoId: _filtroAlumnoId,
+        onSeleccionar: (id) {
+          setState(() => _filtroAlumnoId = id);
+          Navigator.of(ctx).pop();
+        },
+      ),
+    );
+  }
+
+  Widget _buildListaPagos(
+    SupabaseService service, {
+    required String filtroTipo,
+    String? filtroAlumnoId,
+    String? filtroTipoPago,
+    String filtroEstado = 'todos',
+    Map<String, String>? mapaNombresAlumnos,
+  }) {
+    return FutureBuilder<List<Pago>>(
+      future: _futurePagosPendientes(service),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting && !snapshot.hasData) {
+          return const Center(child: CircularProgressIndicator());
+        }
+
+        if (snapshot.hasError) {
+          return Center(
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.error_outline, size: 64, color: Colors.red[300]),
+                  const SizedBox(height: 16),
+                  Text(
+                    'Error: ${snapshot.error}',
+                    textAlign: TextAlign.center,
+                    style: GoogleFonts.poppins(fontSize: 14),
+                  ),
+                  const SizedBox(height: 20),
+                  FilledButton.icon(
+                    onPressed: () {
+                      setState(() {
+                        _pagosFutureService = service;
+                        _pagosPendientesFuture = service.obtenerTodosPagosList();
+                      });
+                    },
+                    icon: const Icon(Icons.refresh),
+                    label: const Text('Reintentar'),
+                  ),
+                ],
+              ),
+            ),
+          );
+        }
+
+        final data = snapshot.data ?? [];
+
+        var pagosFiltrados = data.where((pago) {
+          if (filtroTipo == 'alumnos') {
+            if (pago.tipoPago != 'inscripcion' &&
+                pago.tipoPago != 'mensualidad' &&
+                pago.tipoPago != 'seguro' &&
+                pago.tipoPago != null) return false;
+          } else {
+            if (pago.tipoPago != 'extracurricular') return false;
+          }
+          if (filtroAlumnoId != null && pago.alumnoId != filtroAlumnoId) return false;
+          if (filtroTipoPago != null && pago.tipoPago != filtroTipoPago) return false;
+          if (filtroEstado == 'pagados') {
+            if (!pago.estaPagado) return false;
+          } else if (filtroEstado == 'vencidos') {
+            if (pago.estaPagado || !pago.estaVencido) return false;
+          } else if (filtroEstado == 'pendientes') {
+            if (pago.estaPagado || !pago.esFechaLimiteAlcanzada) return false;
+          }
+          return true;
+        }).toList();
+
+        Future<void> onPullRefresh() => _refrescarPagosPendientes(service);
+
+        if (pagosFiltrados.isEmpty) {
+          return RefreshIndicator(
+            color: AppColors.morado,
+            onRefresh: onPullRefresh,
+            child: CustomScrollView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              slivers: [
+                SliverFillRemaining(
+                  hasScrollBody: false,
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        Icons.savings_outlined,
+                        size: 56,
+                        color: AppColors.morado.withOpacity(0.45),
+                      ),
+                      const SizedBox(height: 16),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 32),
+                        child: Text(
+                          filtroTipo == 'alumnos'
+                              ? (filtroEstado == 'pagados'
+                                  ? 'No hay pagos pagados con estos filtros.'
+                                  : 'No hay pagos con estos filtros.\nDesliza hacia abajo para actualizar.')
+                              : (filtroEstado == 'pagados'
+                                  ? 'No hay extracurriculares pagados.'
+                                  : 'No hay extracurriculares con estos filtros.'),
+                          style: GoogleFonts.poppins(fontSize: 15, color: Colors.grey[700], height: 1.4),
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          );
+        }
+
+        final esPagados = filtroEstado == 'pagados';
+        final total = esPagados
+            ? pagosFiltrados.fold<double>(0, (sum, p) => sum + p.monto)
+            : pagosFiltrados.fold<double>(0, (sum, p) => sum + p.saldoPendiente);
+        final vencidos = pagosFiltrados.where((p) => p.estaVencido).toList();
+        final totalVencidos = vencidos.fold<double>(0, (sum, p) => sum + p.saldoPendiente);
+        final puedeNotificar = filtroTipo == 'alumnos' &&
+            filtroAlumnoId != null &&
+            vencidos.isNotEmpty &&
+            !esPagados;
+
+        return RefreshIndicator(
+          color: AppColors.morado,
+          onRefresh: onPullRefresh,
+          child: ListView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 88),
+            children: [
+              Card(
+                elevation: 0,
+                color: AppColors.rosaClaro,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                  side: BorderSide(color: AppColors.rosa.withOpacity(0.35)),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.all(18),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(10),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withOpacity(0.85),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Icon(Icons.receipt_long, color: AppColors.morado, size: 26),
+                          ),
+                          const SizedBox(width: 14),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  esPagados
+                                      ? '${pagosFiltrados.length} pagos pagados'
+                                      : '${pagosFiltrados.length} pagos en esta vista',
+                                  style: GoogleFonts.poppins(
+                                    fontSize: 17,
+                                    fontWeight: FontWeight.w700,
+                                    color: const Color(0xFF4A3F55),
+                                  ),
+                                ),
+                                if (!esPagados && vencidos.isNotEmpty) ...[
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    '${vencidos.length} vencidos · \$${_formatoMonto(totalVencidos)}',
+                                    style: GoogleFonts.poppins(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w600,
+                                      color: AppColors.rojo.withOpacity(0.9),
+                                    ),
+                                  ),
+                                ],
+                                const SizedBox(height: 6),
+                                Text(
+                                  esPagados
+                                      ? 'Total cobrado (vista): \$${_formatoMonto(total)}'
+                                      : 'Por cobrar: \$${_formatoMonto(total)}',
+                                  style: GoogleFonts.poppins(
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.w600,
+                                    color: esPagados
+                                        ? const Color(0xFF166534)
+                                        : const Color(0xFF5C4D6B),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                      if (puedeNotificar) ...[
+                        const SizedBox(height: 14),
+                        SizedBox(
+                          width: double.infinity,
+                          child: OutlinedButton.icon(
+                            onPressed: () => _notificarWhatsApp(
+                              context,
+                              service,
+                              filtroAlumnoId,
+                              mapaNombresAlumnos?[filtroAlumnoId] ?? 'Alumno',
+                              vencidos,
+                            ),
+                            icon: const Icon(Icons.chat, size: 20),
+                            label: const Text('WhatsApp adeudos'),
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: const Color(0xFF25D366),
+                              side: const BorderSide(color: Color(0xFF25D366)),
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 14),
+              ...pagosFiltrados.map((pago) => _buildPagoCard(
+                    context,
+                    service,
+                    pago,
+                    nombreAlumno: mapaNombresAlumnos?[pago.alumnoId],
+                  )),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildPagoCard(
+    BuildContext context,
+    SupabaseService service,
+    Pago pago, {
+    String? nombreAlumno,
+  }) {
+    final completamentePagado = pago.estaPagado;
+    final vencido = !completamentePagado && pago.estado == EstadoPago.vencido;
+    // Vencido: naranja/ámbar (se nota que está vencido sin ser rojo fuerte)
+    const colorVencido = Color(0xFFC2410C);
+    final accent = completamentePagado
+        ? const Color(0xFF166534)
+        : vencido
+            ? colorVencido
+            : const Color(0xFF7C6BA8);
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 10),
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(color: Colors.grey.shade200, width: 1),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (nombreAlumno != null && nombreAlumno.isNotEmpty) ...[
+              Row(
+                children: [
+                  Icon(Icons.person_outline, size: 15, color: accent),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      nombreAlumno,
+                      style: GoogleFonts.poppins(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: const Color(0xFF4A3F55),
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+            ],
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        pago.concepto ?? 'Sin concepto',
+                        style: GoogleFonts.poppins(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w700,
+                          color: const Color(0xFF2D2640),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      if (completamentePagado) ...[
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF166534).withOpacity(0.12),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Text(
+                            'PAGADO',
+                            style: GoogleFonts.poppins(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w800,
+                              color: const Color(0xFF166534),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        if (pago.fechaPago != null)
+                          Text(
+                            'Fecha de pago: ${DateFormat('dd/MM/yyyy').format(pago.fechaPago!)}',
+                            style: GoogleFonts.poppins(fontSize: 13, color: Colors.grey[800]),
+                          ),
+                        if (pago.formaPago != null && pago.formaPago!.isNotEmpty) ...[
+                          const SizedBox(height: 4),
+                          Text(
+                            'Forma: ${pago.formaPago}',
+                            style: GoogleFonts.poppins(fontSize: 13, color: Colors.grey[700]),
+                          ),
+                        ],
+                        if (pago.recibidoPorNombre != null &&
+                            pago.recibidoPorNombre!.trim().isNotEmpty) ...[
+                          const SizedBox(height: 6),
+                          Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Icon(Icons.person_pin_circle_outlined,
+                                  size: 18, color: accent),
+                              const SizedBox(width: 6),
+                              Expanded(
+                                child: Text(
+                                  'Recibió: ${pago.recibidoPorNombre}',
+                                  style: GoogleFonts.poppins(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w700,
+                                    color: const Color(0xFF2D2640),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ] else if (pago.estaParcial) ...[
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(4),
+                          child: LinearProgressIndicator(
+                            value: pago.monto > 0 ? (pago.montoPagado / pago.monto).clamp(0.0, 1.0) : 0,
+                            minHeight: 6,
+                            backgroundColor: Colors.grey.shade200,
+                            color: vencido
+                                ? colorVencido.withOpacity(0.8)
+                                : AppColors.morado.withOpacity(0.65),
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'Abonado \$${_formatoMonto(pago.montoPagado)} · Pendiente \$${_formatoMonto(pago.saldoPendiente)}',
+                          style: GoogleFonts.poppins(fontSize: 13, color: Colors.grey[700], height: 1.3),
+                        ),
+                        if (pago.formaPago != null && pago.formaPago!.trim().isNotEmpty) ...[
+                          const SizedBox(height: 4),
+                          Text(
+                            'Forma de pago: ${pago.formaPago}',
+                            style: GoogleFonts.poppins(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.grey[800],
+                            ),
+                          ),
+                        ],
+                        if (pago.recibidoPorNombre != null &&
+                            pago.recibidoPorNombre!.trim().isNotEmpty) ...[
+                          const SizedBox(height: 4),
+                          Text(
+                            'Último abono recibió: ${pago.recibidoPorNombre}',
+                            style: GoogleFonts.poppins(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: const Color(0xFF6B5B95),
+                            ),
+                          ),
+                        ],
+                      ] else
+                        Text(
+                          'Monto \$${_formatoMonto(pago.monto)}',
+                          style: GoogleFonts.poppins(fontSize: 14, color: Colors.grey[600]),
+                        ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Text(
+                      completamentePagado
+                          ? '\$${_formatoMonto(pago.monto)}'
+                          : '\$${_formatoMonto(pago.saldoPendiente)}',
+                      style: GoogleFonts.poppins(
+                        fontSize: 20,
+                        fontWeight: FontWeight.w800,
+                        color: completamentePagado
+                            ? const Color(0xFF166534)
+                            : vencido
+                                ? colorVencido
+                                : const Color(0xFF5C4D6B),
+                      ),
+                    ),
+                    Text(
+                      completamentePagado
+                          ? 'liquidado'
+                          : pago.estaParcial
+                              ? 'por liquidar'
+                              : 'a cubrir',
+                      style: GoogleFonts.poppins(fontSize: 11, color: Colors.grey[600]),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                Icon(Icons.event, size: 15, color: Colors.grey[500]),
+                const SizedBox(width: 6),
+                Text(
+                  pago.fechaVencimiento != null
+                      ? 'Límite ${DateFormat('dd/MM/yyyy').format(pago.fechaVencimiento!)}'
+                      : 'Sin fecha límite',
+                  style: GoogleFonts.poppins(fontSize: 12, color: Colors.grey[600]),
+                ),
+                if (vencido) ...[
+                  const SizedBox(width: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: colorVencido.withOpacity(0.15),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      'Vencido',
+                      style: GoogleFonts.poppins(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: colorVencido,
+                      ),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+            if (!completamentePagado) ...[
+              const SizedBox(height: 14),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton.icon(
+                  onPressed: () async {
+                    await context.push('/acreditar-pago/${pago.id}');
+                    if (context.mounted) await _refrescarPagosPendientes(service);
+                  },
+                  icon: const Icon(Icons.payments_outlined, size: 20),
+                  label: const Text('Acreditar pago'),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: const Color(0xFF6B5B95),
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _mostrarMenuAgregarPago(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (context) => Container(
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              'Agregar Pago',
+              style: GoogleFonts.poppins(
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 24),
+            _buildOpcionPago(
+              context: context,
+              titulo: 'Libros',
+              icono: Icons.menu_book,
+              color: AppColors.purpura,
+              onTap: () {
+                Navigator.pop(context);
+                _mostrarDialogoAgregarLibros(context);
+              },
+            ),
+            const SizedBox(height: 12),
+            _buildOpcionPago(
+              context: context,
+              titulo: 'Uniforme',
+              icono: Icons.checkroom,
+              color: AppColors.azul,
+              onTap: () {
+                Navigator.pop(context);
+                _mostrarDialogoAgregarUniforme(context);
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildOpcionPago({
+    required BuildContext context,
+    required String titulo,
+    required IconData icono,
+    required Color color,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(16),
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: color.withOpacity(0.1),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: color.withOpacity(0.3)),
+        ),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: color,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(icono, color: Colors.white, size: 24),
+            ),
+            const SizedBox(width: 16),
+            Text(
+              titulo,
+              style: GoogleFonts.poppins(
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const Spacer(),
+            Icon(Icons.arrow_forward_ios, size: 16, color: color),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _mostrarDialogoAgregarLibros(BuildContext context) async {
+    final TextEditingController montoController = TextEditingController(text: '800');
+    String? alumnoSeleccionado;
+    
+    final supabaseService = context.read<SupabaseService>();
+    final alumnos = await supabaseService.obtenerAlumnos();
+
+    if (!context.mounted) return;
+
+    final confirmar = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Row(
+          children: [
+            const Icon(Icons.menu_book, color: AppColors.purpura),
+            const SizedBox(width: 12),
+            const Text('Agregar Pago de Libros'),
+          ],
+        ),
+        content: StatefulBuilder(
+          builder: (context, setState) => Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              DropdownButtonFormField<String>(
+                value: alumnoSeleccionado,
+                decoration: InputDecoration(
+                  labelText: 'Seleccionar alumno',
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                items: alumnos.map((alumno) {
+                  return DropdownMenuItem(
+                    value: alumno.id,
+                    child: Text(alumno.nombreCompleto),
+                  );
+                }).toList(),
+                onChanged: (value) {
+                  setState(() => alumnoSeleccionado = value);
+                },
+              ),
+              const SizedBox(height: 16),
+              TextFormField(
+                controller: montoController,
+                keyboardType: TextInputType.number,
+                decoration: InputDecoration(
+                  labelText: 'Monto',
+                  prefixText: '\$ ',
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancelar'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.purpura,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Agregar'),
+          ),
+        ],
+      ),
+    );
+
+        if (confirmar == true && alumnoSeleccionado != null) {
+      try {
+        await supabaseService.agregarPagoLibros(
+          alumnoSeleccionado!,
+          double.parse(montoController.text),
+        );
+        
+        if (!context.mounted) return;
+        await _refrescarPagosPendientes(supabaseService);
+        if (!context.mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Pago de libros agregado'),
+            backgroundColor: AppColors.verde,
+          ),
+        );
+      } catch (e) {
+        if (!context.mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error: $e'), backgroundColor: AppColors.rojo),
+        );
+      }
+    }
+  }
+
+  Future<void> _mostrarDialogoAgregarUniforme(BuildContext context) async {
+    final TextEditingController cantidadController = TextEditingController(text: '1');
+    final TextEditingController precioController = TextEditingController(text: '250');
+    String? alumnoSeleccionado;
+    
+    final supabaseService = context.read<SupabaseService>();
+    final alumnos = await supabaseService.obtenerAlumnos();
+
+    if (!context.mounted) return;
+
+    final confirmar = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Row(
+          children: [
+            const Icon(Icons.checkroom, color: AppColors.azul),
+            const SizedBox(width: 12),
+            const Text('Agregar Pago de Uniforme'),
+          ],
+        ),
+        content: StatefulBuilder(
+          builder: (context, setState) => Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              DropdownButtonFormField<String>(
+                value: alumnoSeleccionado,
+                decoration: InputDecoration(
+                  labelText: 'Seleccionar alumno',
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                items: alumnos.map((alumno) {
+                  return DropdownMenuItem(
+                    value: alumno.id,
+                    child: Text(alumno.nombreCompleto),
+                  );
+                }).toList(),
+                onChanged: (value) {
+                  setState(() => alumnoSeleccionado = value);
+                },
+              ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextFormField(
+                      controller: cantidadController,
+                      keyboardType: TextInputType.number,
+                      decoration: InputDecoration(
+                        labelText: 'Cantidad',
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: TextFormField(
+                      controller: precioController,
+                      keyboardType: TextInputType.number,
+                      decoration: InputDecoration(
+                        labelText: 'Precio c/u',
+                        prefixText: '\$ ',
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancelar'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.azul,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Agregar'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmar == true && alumnoSeleccionado != null) {
+      try {
+        await supabaseService.agregarPagoUniforme(
+          alumnoSeleccionado!,
+          int.parse(cantidadController.text),
+          double.parse(precioController.text),
+        );
+        
+        if (!context.mounted) return;
+        await _refrescarPagosPendientes(supabaseService);
+        if (!context.mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Pago de uniforme agregado'),
+            backgroundColor: AppColors.verde,
+          ),
+        );
+      } catch (e) {
+        if (!context.mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error: $e'), backgroundColor: AppColors.rojo),
+        );
+      }
+    }
+  }
+}
+
+/// Sheet con buscador para elegir alumno (filtrado por grado ya aplicado).
+class _SelectorAlumnoSheet extends StatefulWidget {
+  const _SelectorAlumnoSheet({
+    required this.alumnos,
+    required this.grados,
+    required this.mapaGradoNombre,
+    required this.alumnoSeleccionadoId,
+    required this.onSeleccionar,
+  });
+
+  final List<Alumno> alumnos;
+  final List<Grado> grados;
+  final Map<String, String> mapaGradoNombre;
+  final String? alumnoSeleccionadoId;
+  final ValueChanged<String?> onSeleccionar;
+
+  @override
+  State<_SelectorAlumnoSheet> createState() => _SelectorAlumnoSheetState();
+}
+
+class _SelectorAlumnoSheetState extends State<_SelectorAlumnoSheet> {
+  final TextEditingController _searchController = TextEditingController();
+  String _query = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _searchController.addListener(() {
+      setState(() => _query = _searchController.text.trim().toLowerCase());
+    });
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  List<Alumno> get _filtered {
+    if (_query.isEmpty) return widget.alumnos;
+    return widget.alumnos
+        .where((a) => a.nombreCompleto.toLowerCase().contains(_query))
+        .toList();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final filtered = _filtered;
+    final maxH = MediaQuery.of(context).size.height * 0.6;
+
+    return Container(
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      constraints: BoxConstraints(maxHeight: maxH),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const SizedBox(height: 12),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: TextField(
+              controller: _searchController,
+              decoration: InputDecoration(
+                hintText: 'Buscar por nombre...',
+                prefixIcon: const Icon(Icons.search),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                isDense: true,
+              ),
+              style: GoogleFonts.poppins(fontSize: 15),
+              autofocus: true,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Flexible(
+            child: ListView.builder(
+              shrinkWrap: true,
+              itemCount: 1 + filtered.length,
+              itemBuilder: (context, index) {
+                if (index == 0) {
+                  return ListTile(
+                    leading: Icon(Icons.group_off, color: Colors.grey[600]),
+                    title: Text(
+                      'Todos los alumnos',
+                      style: GoogleFonts.poppins(fontWeight: FontWeight.w600, fontSize: 15),
+                    ),
+                    selected: widget.alumnoSeleccionadoId == null,
+                    onTap: () => widget.onSeleccionar(null),
+                  );
+                }
+                final a = filtered[index - 1];
+                final gradoNombre = a.gradoId != null
+                    ? widget.mapaGradoNombre[a.gradoId] ?? ''
+                    : '';
+                return ListTile(
+                  leading: CircleAvatar(
+                    backgroundColor: AppColors.morado.withOpacity(0.2),
+                    child: Text(
+                      a.nombre.isNotEmpty ? a.nombre[0].toUpperCase() : '?',
+                      style: GoogleFonts.poppins(
+                        fontWeight: FontWeight.bold,
+                        color: AppColors.morado,
+                      ),
+                    ),
+                  ),
+                  title: Text(
+                    a.nombreCompleto,
+                    style: GoogleFonts.poppins(fontSize: 15),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  subtitle: gradoNombre.isNotEmpty
+                      ? Text(
+                          gradoNombre,
+                          style: GoogleFonts.poppins(fontSize: 12, color: Colors.grey[600]),
+                        )
+                      : null,
+                  selected: widget.alumnoSeleccionadoId == a.id,
+                  onTap: () => widget.onSeleccionar(a.id),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
