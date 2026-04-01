@@ -56,13 +56,83 @@ class ExportacionPagosExcel {
     return null;
   }
 
+  /// Misma lógica que la lista en [PagosScreen] (grado, alumno, tipo, estado).
+  static List<Pago> aplicarFiltrosVista({
+    required List<Pago> data,
+    required String filtroTipo,
+    String? filtroGradoId,
+    String? filtroAlumnoId,
+    String? filtroTipoPago,
+    String filtroEstado = 'todos',
+    required List<Alumno> alumnos,
+  }) {
+    Set<String>? idsEnGrado;
+    if (filtroTipo == 'alumnos' &&
+        filtroGradoId != null &&
+        filtroAlumnoId == null) {
+      idsEnGrado = alumnos
+          .where((a) => a.gradoId == filtroGradoId)
+          .map((a) => a.id)
+          .toSet();
+    }
+
+    return data.where((pago) {
+      if (filtroTipo == 'alumnos') {
+        if (pago.tipoPago != 'inscripcion' &&
+            pago.tipoPago != 'mensualidad' &&
+            pago.tipoPago != 'seguro' &&
+            pago.tipoPago != null) {
+          return false;
+        }
+      } else {
+        if (pago.tipoPago != 'extracurricular') return false;
+      }
+      if (idsEnGrado != null && !idsEnGrado.contains(pago.alumnoId)) {
+        return false;
+      }
+      if (filtroAlumnoId != null && pago.alumnoId != filtroAlumnoId) {
+        return false;
+      }
+      if (filtroTipoPago != null && pago.tipoPago != filtroTipoPago) {
+        return false;
+      }
+      if (filtroEstado == 'pagados') {
+        if (!pago.estaPagado) return false;
+      } else if (filtroEstado == 'vencidos') {
+        if (pago.estaPagado || !pago.estaVencido) return false;
+      } else if (filtroEstado == 'pendientes') {
+        if (pago.estaPagado || !pago.esFechaLimiteAlcanzada) return false;
+      }
+      return true;
+    }).toList();
+  }
+
   /// Solo genera el archivo en memoria (sin compartir).
-  static Future<ExcelPagosGenerado> generar(SupabaseService s) async {
-    final pagos = await s.obtenerTodosPagosList();
+  /// [pestanaIndex] 0 = Pagos de alumnos (usa grado/alumno/tipo/estado), 1 = Extracurriculares (solo estado).
+  static Future<ExcelPagosGenerado> generar(
+    SupabaseService s, {
+    required int pestanaIndex,
+    String? filtroGradoId,
+    String? filtroAlumnoId,
+    String? filtroTipoPago,
+    String filtroEstado = 'todos',
+  }) async {
+    final todosPagos = await s.obtenerTodosPagosList();
     final alumnos = await s.obtenerAlumnos();
     final grados = await s.obtenerGrados();
     final mapNombre = {for (final a in alumnos) a.id: a.nombreCompleto};
     final mapGrado = {for (final g in grados) g.id: g.nombre};
+
+    final filtroTipo = pestanaIndex == 0 ? 'alumnos' : 'extracurriculares';
+    final pagos = aplicarFiltrosVista(
+      data: todosPagos,
+      filtroTipo: filtroTipo,
+      filtroGradoId: pestanaIndex == 0 ? filtroGradoId : null,
+      filtroAlumnoId: pestanaIndex == 0 ? filtroAlumnoId : null,
+      filtroTipoPago: pestanaIndex == 0 ? filtroTipoPago : null,
+      filtroEstado: filtroEstado,
+      alumnos: alumnos,
+    );
 
     pagos.sort((a, b) {
       final na = mapNombre[a.alumnoId] ?? '';
@@ -167,8 +237,9 @@ class ExportacionPagosExcel {
       throw Exception('No se pudo generar el archivo Excel');
     }
 
+    final sufijo = pestanaIndex == 0 ? 'alumnos' : 'extracurricular';
     final name =
-        'CAIPI_pagos_${DateFormat('yyyyMMdd_HHmm').format(DateTime.now())}.xlsx';
+        'CAIPI_pagos_${sufijo}_filtrado_${DateFormat('yyyyMMdd_HHmm').format(DateTime.now())}.xlsx';
     return ExcelPagosGenerado(bytes: encoded, fileName: name, registros: pagos.length);
   }
 

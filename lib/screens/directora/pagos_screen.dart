@@ -12,6 +12,8 @@ import '../../models/alumno.dart';
 import '../../models/grado.dart';
 import '../../config/app_colors.dart';
 import '../../widgets/app_drawer.dart';
+import '../../services/auth_service.dart';
+import 'bitacora_gastos_screen.dart';
 
 /// Formato de miles con coma (ej: 51,460.00)
 String _formatoMonto(double monto) {
@@ -38,6 +40,8 @@ class _PagosScreenState extends State<PagosScreen> with SingleTickerProviderStat
   /// Lista de pagos pendientes: consulta HTTP (se invalida al volver de acreditar / pull / agregar).
   Future<List<Pago>>? _pagosPendientesFuture;
   SupabaseService? _pagosFutureService;
+  /// Cambia al refrescar para que el [FutureBuilder] de la lista vuelva a montarse (p. ej. tras agregar uniforme).
+  int _pagosListaEpoch = 0;
 
   Future<List<Pago>> _futurePagosPendientes(SupabaseService s) {
     if (_pagosFutureService != s) {
@@ -55,12 +59,14 @@ class _PagosScreenState extends State<PagosScreen> with SingleTickerProviderStat
       setState(() {
         _pagosFutureService = s;
         _pagosPendientesFuture = Future.value(list);
+        _pagosListaEpoch++;
       });
     } catch (e) {
       if (!mounted) return;
       setState(() {
         _pagosFutureService = s;
         _pagosPendientesFuture = Future.error(e);
+        _pagosListaEpoch++;
       });
     }
   }
@@ -94,7 +100,14 @@ class _PagosScreenState extends State<PagosScreen> with SingleTickerProviderStat
 
     ExcelPagosGenerado? generado;
     try {
-      generado = await ExportacionPagosExcel.generar(s);
+      generado = await ExportacionPagosExcel.generar(
+        s,
+        pestanaIndex: _tabController.index,
+        filtroGradoId: _filtroGradoId,
+        filtroAlumnoId: _filtroAlumnoId,
+        filtroTipoPago: _filtroTipoPago,
+        filtroEstado: _filtroEstado,
+      );
     } catch (e) {
       if (context.mounted) {
         Navigator.of(context, rootNavigator: true).pop();
@@ -148,7 +161,7 @@ class _PagosScreenState extends State<PagosScreen> with SingleTickerProviderStat
               ),
               const SizedBox(height: 8),
               Text(
-                '${ex.registros} registros · ${ex.fileName}',
+                '${ex.registros} registros (mismos filtros que la pestaña actual) · ${ex.fileName}',
                 style: GoogleFonts.poppins(fontSize: 13, color: Colors.grey[700]),
               ),
               const SizedBox(height: 16),
@@ -282,16 +295,45 @@ class _PagosScreenState extends State<PagosScreen> with SingleTickerProviderStat
     );
   }
   
+  void _onTabControllerChanged() {
+    if (_tabController.indexIsChanging) return;
+    setState(() {});
+  }
+
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
+    _tabController = TabController(length: 3, vsync: this);
+    _tabController.addListener(_onTabControllerChanged);
   }
-  
+
   @override
   void dispose() {
+    _tabController.removeListener(_onTabControllerChanged);
     _tabController.dispose();
     super.dispose();
+  }
+
+  Widget? _floatingActionButtonPagos(BuildContext context) {
+    final auth = context.read<AuthService>();
+    if (_tabController.index == 2) {
+      if (!auth.isDirectora) return null;
+      return FloatingActionButton.extended(
+        onPressed: () => context.push<bool>('/directora/bitacora-gastos/crear'),
+        heroTag: 'registrar_gasto_pagos_tab',
+        backgroundColor: AppColors.azulOscuro,
+        foregroundColor: Colors.white,
+        icon: const Icon(Icons.receipt_long),
+        label: Text('Registrar gasto', style: GoogleFonts.poppins(fontWeight: FontWeight.w600)),
+      );
+    }
+    return FloatingActionButton.extended(
+      onPressed: () => _mostrarMenuAgregarPago(context),
+      heroTag: 'agregar_pago',
+      backgroundColor: AppColors.verde,
+      icon: const Icon(Icons.add),
+      label: const Text('Agregar Pago'),
+    );
   }
 
   @override
@@ -306,11 +348,12 @@ class _PagosScreenState extends State<PagosScreen> with SingleTickerProviderStat
         foregroundColor: Colors.white,
         title: const Text('Gestión de Pagos'),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.table_chart_outlined),
-            tooltip: 'Exportar Excel y compartir',
-            onPressed: () => _exportarExcel(context, firestoreService),
-          ),
+          if (_tabController.index < 2)
+            IconButton(
+              icon: const Icon(Icons.table_chart_outlined),
+              tooltip: 'Exportar pagos (Excel) según filtros de esta pestaña',
+              onPressed: () => _exportarExcel(context, firestoreService),
+            ),
           IconButton(
             icon: const Icon(Icons.home),
             onPressed: () => context.go('/directora'),
@@ -323,6 +366,8 @@ class _PagosScreenState extends State<PagosScreen> with SingleTickerProviderStat
           unselectedLabelColor: Colors.white70,
           indicatorColor: Colors.white,
           indicatorWeight: 3,
+          isScrollable: true,
+          tabAlignment: TabAlignment.start,
           tabs: const [
             Tab(
               icon: Icon(Icons.school),
@@ -331,6 +376,10 @@ class _PagosScreenState extends State<PagosScreen> with SingleTickerProviderStat
             Tab(
               icon: Icon(Icons.sports_soccer),
               text: 'Extracurriculares',
+            ),
+            Tab(
+              icon: Icon(Icons.receipt_long),
+              text: 'Bitácora gastos',
             ),
           ],
         ),
@@ -344,20 +393,10 @@ class _PagosScreenState extends State<PagosScreen> with SingleTickerProviderStat
             filtroTipo: 'extracurriculares',
             filtroEstado: _filtroEstado,
           ),
+          const BitacoraGastosPanel(embeddedInPagos: true),
         ],
       ),
-      floatingActionButton: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          FloatingActionButton.extended(
-            onPressed: () => _mostrarMenuAgregarPago(context),
-            heroTag: 'agregar_pago',
-            backgroundColor: AppColors.verde,
-            icon: const Icon(Icons.add),
-            label: const Text('Agregar Pago'),
-          ),
-        ],
-      ),
+      floatingActionButton: _floatingActionButtonPagos(context),
     );
   }
 
@@ -646,6 +685,13 @@ class _PagosScreenState extends State<PagosScreen> with SingleTickerProviderStat
                 filtroTipoPago: _filtroTipoPago,
                 filtroEstado: _filtroEstado,
                 mapaNombresAlumnos: mapaNombres,
+                alumnoIdsPermitidosPorGrado: _filtroGradoId != null &&
+                        _filtroAlumnoId == null
+                    ? alumnos
+                        .where((a) => a.gradoId == _filtroGradoId)
+                        .map((a) => a.id)
+                        .toSet()
+                    : null,
               ),
             ),
           ],
@@ -794,8 +840,11 @@ class _PagosScreenState extends State<PagosScreen> with SingleTickerProviderStat
     String? filtroTipoPago,
     String filtroEstado = 'todos',
     Map<String, String>? mapaNombresAlumnos,
+    /// Si no es null y no hay [filtroAlumnoId], solo pagos de esos alumnos (filtro por grado).
+    Set<String>? alumnoIdsPermitidosPorGrado,
   }) {
     return FutureBuilder<List<Pago>>(
+      key: ValueKey('pagos_lista_$_pagosListaEpoch'),
       future: _futurePagosPendientes(service),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting && !snapshot.hasData) {
@@ -822,6 +871,7 @@ class _PagosScreenState extends State<PagosScreen> with SingleTickerProviderStat
                       setState(() {
                         _pagosFutureService = service;
                         _pagosPendientesFuture = service.obtenerTodosPagosList();
+                        _pagosListaEpoch++;
                       });
                     },
                     icon: const Icon(Icons.refresh),
@@ -843,6 +893,11 @@ class _PagosScreenState extends State<PagosScreen> with SingleTickerProviderStat
                 pago.tipoPago != null) return false;
           } else {
             if (pago.tipoPago != 'extracurricular') return false;
+          }
+          if (alumnoIdsPermitidosPorGrado != null &&
+              filtroAlumnoId == null &&
+              !alumnoIdsPermitidosPorGrado.contains(pago.alumnoId)) {
+            return false;
           }
           if (filtroAlumnoId != null && pago.alumnoId != filtroAlumnoId) return false;
           if (filtroTipoPago != null && pago.tipoPago != filtroTipoPago) return false;
@@ -1311,7 +1366,7 @@ class _PagosScreenState extends State<PagosScreen> with SingleTickerProviderStat
             _buildOpcionPago(
               context: context,
               titulo: 'Uniforme',
-              icono: Icons.checkroom,
+              icono: Icons.inventory_2_outlined,
               color: AppColors.azul,
               onTap: () {
                 Navigator.pop(context);
@@ -1380,10 +1435,16 @@ class _PagosScreenState extends State<PagosScreen> with SingleTickerProviderStat
       context: context,
       builder: (context) => AlertDialog(
         title: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Icon(Icons.menu_book, color: AppColors.purpura),
-            const SizedBox(width: 12),
-            const Text('Agregar Pago de Libros'),
+            Icon(Icons.menu_book, color: AppColors.purpura, size: 26),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                'Agregar pago de libros',
+                style: GoogleFonts.fredoka(fontSize: 18, fontWeight: FontWeight.w600),
+              ),
+            ),
           ],
         ),
         content: StatefulBuilder(
@@ -1479,10 +1540,16 @@ class _PagosScreenState extends State<PagosScreen> with SingleTickerProviderStat
       context: context,
       builder: (context) => AlertDialog(
         title: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Icon(Icons.checkroom, color: AppColors.azul),
-            const SizedBox(width: 12),
-            const Text('Agregar Pago de Uniforme'),
+            Icon(Icons.inventory_2_outlined, color: AppColors.azul, size: 26),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                'Agregar pago de uniforme',
+                style: GoogleFonts.fredoka(fontSize: 18, fontWeight: FontWeight.w600),
+              ),
+            ),
           ],
         ),
         content: StatefulBuilder(

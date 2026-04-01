@@ -387,13 +387,6 @@ class _AppDrawerState extends State<AppDrawer> {
                               ruta: '/directora/control-salidas',
                               tienePermiso: true,
                             ),
-                            _buildMenuItem(
-                              context: context,
-                              icon: Icons.restaurant_menu,
-                              title: 'Menú Maternal',
-                              ruta: '/directora/menu-maternal',
-                              tienePermiso: true,
-                            ),
                           ],
                         ],
                       ),

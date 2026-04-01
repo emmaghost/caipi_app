@@ -1,8 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:go_router/go_router.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+
 import '../../config/app_colors.dart';
 import '../../models/configuracion_costos.dart';
+import '../../widgets/app_drawer.dart';
 
 class ConfiguracionCostosScreen extends StatefulWidget {
   const ConfiguracionCostosScreen({super.key});
@@ -25,14 +29,32 @@ class _ConfiguracionCostosScreenState extends State<ConfiguracionCostosScreen> {
   ConfiguracionCostos? _configActual;
   bool _cargando = true;
 
+  void _refrescarVista() => setState(() {});
+
   @override
   void initState() {
     super.initState();
     _cargarConfiguracion();
+    for (final c in [
+      _inscripcionController,
+      _seguroController,
+      _mensualidad12Controller,
+      _mensualidad10Controller,
+    ]) {
+      c.addListener(_refrescarVista);
+    }
   }
 
   @override
   void dispose() {
+    for (final c in [
+      _inscripcionController,
+      _seguroController,
+      _mensualidad12Controller,
+      _mensualidad10Controller,
+    ]) {
+      c.removeListener(_refrescarVista);
+    }
     _inscripcionController.dispose();
     _seguroController.dispose();
     _mensualidad12Controller.dispose();
@@ -85,20 +107,18 @@ class _ConfiguracionCostosScreenState extends State<ConfiguracionCostosScreen> {
       };
 
       if (_configActual != null) {
-        // Actualizar
         await _supabase
             .from('configuracion_costos')
             .update(data)
             .eq('id', _configActual!.id);
       } else {
-        // Crear
         await _supabase.from('configuracion_costos').insert(data);
       }
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('✅ Configuración guardada'),
+            content: Text('Configuración guardada'),
             backgroundColor: Colors.green,
           ),
         );
@@ -107,27 +127,107 @@ class _ConfiguracionCostosScreenState extends State<ConfiguracionCostosScreen> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('❌ Error: $e')),
+          SnackBar(content: Text('Error: $e')),
         );
       }
     }
   }
 
+  static String _fmt(double v) => '\$${v.toStringAsFixed(2)}';
+
+  InputDecoration _fieldDecoration({
+    required String label,
+    required IconData icon,
+    String? hintText,
+  }) {
+    return InputDecoration(
+      labelText: label,
+      floatingLabelBehavior: FloatingLabelBehavior.auto,
+      filled: true,
+      fillColor: Colors.white,
+      prefixIcon: Icon(icon, color: AppColors.morado.withValues(alpha: 0.9), size: 22),
+      hintText: hintText,
+      hintStyle: GoogleFonts.poppins(color: Colors.grey.shade400, fontSize: 15),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
+      border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(14),
+        borderSide: BorderSide(color: Colors.grey.shade300, width: 1.2),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(14),
+        borderSide: const BorderSide(color: AppColors.morado, width: 2),
+      ),
+      labelStyle: GoogleFonts.poppins(fontSize: 14, color: AppColors.gris),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: const Color(0xFFF8F7FC),
+      drawer: const AppDrawer(),
       appBar: AppBar(
-        title: const Text('Configuración de Costos'),
+        title: Text(
+          'Configuración de costos',
+          style: GoogleFonts.fredoka(
+            fontWeight: FontWeight.w600,
+            color: Colors.white,
+            fontSize: 20,
+          ),
+        ),
+        iconTheme: const IconThemeData(color: Colors.white),
+        leading: Builder(
+          builder: (ctx) {
+            final canPop = ModalRoute.of(ctx)?.canPop ?? false;
+            if (canPop) {
+              return IconButton(
+                icon: const Icon(Icons.arrow_back_rounded),
+                tooltip: 'Volver',
+                onPressed: () => Navigator.maybePop(ctx),
+              );
+            }
+            return IconButton(
+              icon: const Icon(Icons.menu_rounded),
+              tooltip: 'Menú',
+              onPressed: () => Scaffold.of(ctx).openDrawer(),
+            );
+          },
+        ),
+        actions: [
+          Builder(
+            builder: (ctx) {
+              final canPop = ModalRoute.of(ctx)?.canPop ?? false;
+              if (!canPop) {
+                return const SizedBox.shrink();
+              }
+              return IconButton(
+                icon: const Icon(Icons.menu_rounded),
+                tooltip: 'Menú',
+                onPressed: () => Scaffold.of(ctx).openDrawer(),
+              );
+            },
+          ),
+          IconButton(
+            icon: const Icon(Icons.home_rounded),
+            tooltip: 'Ir al inicio',
+            onPressed: () => context.go('/directora'),
+          ),
+        ],
         flexibleSpace: Container(
-          decoration: BoxDecoration(
-            gradient: AppColors.gradienteArcoiris,
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [AppColors.morado, AppColors.purpura],
+            ),
           ),
         ),
       ),
       body: _cargando
-          ? const Center(child: CircularProgressIndicator())
+          ? const Center(child: CircularProgressIndicator(color: AppColors.morado))
           : SingleChildScrollView(
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
               child: Form(
                 key: _formKey,
                 child: Column(
@@ -135,56 +235,113 @@ class _ConfiguracionCostosScreenState extends State<ConfiguracionCostosScreen> {
                   children: [
                     _buildInfoCard(),
                     const SizedBox(height: 20),
-                    _buildCostoField(
+                    Text(
+                      'Montos',
+                      style: GoogleFonts.fredoka(
+                        fontSize: 17,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.azulOscuro,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Se usan al dar de alta alumnos y para los planes de pago. Montos en pesos (sin símbolo en el campo).',
+                      style: GoogleFonts.poppins(fontSize: 13, color: AppColors.gris),
+                    ),
+                    const SizedBox(height: 14),
+                    TextFormField(
                       controller: _inscripcionController,
-                      label: '💰 Costo de Inscripción Anual',
-                      icon: Icons.school,
+                      decoration: _fieldDecoration(
+                        label: 'Inscripción anual',
+                        icon: Icons.school_outlined,
+                        hintText: r'0.00',
+                      ),
+                      style: GoogleFonts.poppins(fontSize: 16, fontWeight: FontWeight.w500),
+                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                      inputFormatters: [
+                        FilteringTextInputFormatter.allow(RegExp(r'^\d+\.?\d{0,2}')),
+                      ],
+                      validator: _validarMonto,
                     ),
-                    const SizedBox(height: 16),
-                    _buildCostoField(
+                    const SizedBox(height: 14),
+                    TextFormField(
                       controller: _seguroController,
-                      label: '🏥 Costo Seguro + Credencial',
-                      icon: Icons.credit_card,
+                      decoration: _fieldDecoration(
+                        label: 'Seguro + credencial',
+                        icon: Icons.health_and_safety_outlined,
+                        hintText: r'0.00',
+                      ),
+                      style: GoogleFonts.poppins(fontSize: 16, fontWeight: FontWeight.w500),
+                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                      inputFormatters: [
+                        FilteringTextInputFormatter.allow(RegExp(r'^\d+\.?\d{0,2}')),
+                      ],
+                      validator: _validarMonto,
                     ),
-                    const SizedBox(height: 16),
-                    _buildCostoField(
+                    const SizedBox(height: 14),
+                    TextFormField(
                       controller: _mensualidad12Controller,
-                      label: '📅 Mensualidad (Plan 12 meses)',
-                      icon: Icons.calendar_month,
+                      decoration: _fieldDecoration(
+                        label: 'Mensualidad plan 12 meses',
+                        icon: Icons.calendar_month_outlined,
+                        hintText: r'0.00',
+                      ),
+                      style: GoogleFonts.poppins(fontSize: 16, fontWeight: FontWeight.w500),
+                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                      inputFormatters: [
+                        FilteringTextInputFormatter.allow(RegExp(r'^\d+\.?\d{0,2}')),
+                      ],
+                      validator: _validarMonto,
                     ),
-                    const SizedBox(height: 16),
-                    _buildCostoField(
+                    const SizedBox(height: 14),
+                    TextFormField(
                       controller: _mensualidad10Controller,
-                      label: '📅 Mensualidad (Plan 10 meses)',
-                      icon: Icons.calendar_today,
+                      decoration: _fieldDecoration(
+                        label: 'Mensualidad plan 10 meses',
+                        icon: Icons.event_repeat_outlined,
+                        hintText: r'0.00',
+                      ),
+                      style: GoogleFonts.poppins(fontSize: 16, fontWeight: FontWeight.w500),
+                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                      inputFormatters: [
+                        FilteringTextInputFormatter.allow(RegExp(r'^\d+\.?\d{0,2}')),
+                      ],
+                      validator: _validarMonto,
                     ),
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 14),
                     TextFormField(
                       controller: _notasController,
-                      decoration: InputDecoration(
-                        labelText: '📝 Notas (opcional)',
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        prefixIcon: const Icon(Icons.notes),
+                      decoration: _fieldDecoration(
+                        label: 'Notas (opcional)',
+                        icon: Icons.edit_note_rounded,
+                      ).copyWith(
+                        alignLabelWithHint: true,
+                        hintText: null,
                       ),
+                      style: GoogleFonts.poppins(fontSize: 15),
                       maxLines: 3,
                     ),
-                    const SizedBox(height: 24),
-                    _buildComparativaCard(),
-                    const SizedBox(height: 24),
-                    ElevatedButton(
+                    const SizedBox(height: 28),
+                    _buildComparativaSection(),
+                    const SizedBox(height: 28),
+                    FilledButton.icon(
                       onPressed: _guardarConfiguracion,
-                      style: ElevatedButton.styleFrom(
+                      style: FilledButton.styleFrom(
                         backgroundColor: AppColors.morado,
+                        foregroundColor: Colors.white,
                         padding: const EdgeInsets.symmetric(vertical: 16),
                         shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
+                          borderRadius: BorderRadius.circular(14),
                         ),
+                        elevation: 2,
                       ),
-                      child: const Text(
-                        '💾 Guardar Configuración',
-                        style: TextStyle(fontSize: 16, color: Colors.white),
+                      icon: const Icon(Icons.save_rounded, size: 22),
+                      label: Text(
+                        'Guardar configuración',
+                        style: GoogleFonts.poppins(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w700,
+                        ),
                       ),
                     ),
                   ],
@@ -194,174 +351,376 @@ class _ConfiguracionCostosScreenState extends State<ConfiguracionCostosScreen> {
     );
   }
 
+  String? _validarMonto(String? value) {
+    if (value == null || value.isEmpty) return 'Obligatorio';
+    final monto = double.tryParse(value);
+    if (monto == null || monto <= 0) return 'Monto inválido';
+    return null;
+  }
+
   Widget _buildInfoCard() {
-    return Card(
-      color: AppColors.rosa.withOpacity(0.1),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(Icons.info_outline, color: AppColors.rosa, size: 28),
-                const SizedBox(width: 12),
-                const Expanded(
-                  child: Text(
-                    'Configuración de Costos',
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            const Text(
-              '• Los padres podrán elegir entre plan de 10 o 12 meses al inscribir a su hijo.\n'
-              '• Al crear un alumno, se generarán automáticamente todos los pagos según el plan elegido.\n'
-              '• Estos costos se aplicarán a todos los nuevos alumnos.',
-              style: TextStyle(fontSize: 14, height: 1.5),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildCostoField({
-    required TextEditingController controller,
-    required String label,
-    required IconData icon,
-  }) {
-    return TextFormField(
-      controller: controller,
-      decoration: InputDecoration(
-        labelText: label,
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-        ),
-        prefixIcon: Icon(icon),
-        prefixText: '\$',
-      ),
-      keyboardType: const TextInputType.numberWithOptions(decimal: true),
-      inputFormatters: [
-        FilteringTextInputFormatter.allow(RegExp(r'^\d+\.?\d{0,2}')),
-      ],
-      validator: (value) {
-        if (value == null || value.isEmpty) {
-          return 'Este campo es obligatorio';
-        }
-        final monto = double.tryParse(value);
-        if (monto == null || monto <= 0) {
-          return 'Ingrese un monto válido';
-        }
-        return null;
-      },
-    );
-  }
-
-  Widget _buildComparativaCard() {
-    final inscripcion = double.tryParse(_inscripcionController.text) ?? 0;
-    final seguro = double.tryParse(_seguroController.text) ?? 0;
-    final mensualidad12 = double.tryParse(_mensualidad12Controller.text) ?? 0;
-    final mensualidad10 = double.tryParse(_mensualidad10Controller.text) ?? 0;
-
-    final totalPlan12 = inscripcion + seguro + (mensualidad12 * 12);
-    final totalPlan10 = inscripcion + seguro + (mensualidad10 * 10);
-
-    return Card(
-      color: AppColors.azulOscuro.withOpacity(0.05),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              '📊 Comparativa de Planes',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                color: AppColors.azulOscuro,
-              ),
-            ),
-            const SizedBox(height: 16),
-            Row(
-              children: [
-                Expanded(
-                  child: _buildPlanCard(
-                    titulo: 'Plan 12 Meses',
-                    mensualidad: mensualidad12,
-                    total: totalPlan12,
-                    color: AppColors.morado,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: _buildPlanCard(
-                    titulo: 'Plan 10 Meses',
-                    mensualidad: mensualidad10,
-                    total: totalPlan10,
-                    color: AppColors.naranja,
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildPlanCard({
-    required String titulo,
-    required double mensualidad,
-    required double total,
-    required Color color,
-  }) {
     return Container(
-      padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: color, width: 2),
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.morado.withValues(alpha: 0.2)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.06),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
       ),
-      child: Column(
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(16),
+        child: IntrinsicHeight(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Container(
+                width: 5,
+                color: AppColors.morado,
+              ),
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: AppColors.morado.withValues(alpha: 0.12),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: const Icon(Icons.info_outline_rounded,
+                                color: AppColors.morado, size: 22),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Text(
+                              'Cómo se usan estos costos',
+                              style: GoogleFonts.fredoka(
+                                fontSize: 17,
+                                fontWeight: FontWeight.w700,
+                                color: AppColors.azulOscuro,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      _infoLine('Los padres eligen plan de 10 o 12 mensualidades al inscribir.'),
+                      _infoLine('Al crear un alumno se generan los pagos según el plan.'),
+                      _infoLine('Estos valores aplican a alumnos nuevos con esta configuración.'),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _infoLine(String text) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            titulo,
-            style: TextStyle(
-              fontWeight: FontWeight.bold,
-              color: color,
-              fontSize: 14,
+          Padding(
+            padding: const EdgeInsets.only(top: 6),
+            child: Container(
+              width: 6,
+              height: 6,
+              decoration: const BoxDecoration(
+                color: AppColors.purpura,
+                shape: BoxShape.circle,
+              ),
             ),
           ),
-          const SizedBox(height: 8),
-          Text(
-            '\$${mensualidad.toStringAsFixed(2)}',
-            style: const TextStyle(
-              fontSize: 20,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          const Text(
-            'por mes',
-            style: TextStyle(fontSize: 12, color: Colors.grey),
-          ),
-          const Divider(height: 16),
-          Text(
-            'Total: \$${total.toStringAsFixed(2)}',
-            style: const TextStyle(
-              fontWeight: FontWeight.bold,
-              fontSize: 13,
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              text,
+              style: GoogleFonts.poppins(
+                fontSize: 14,
+                height: 1.45,
+                color: AppColors.grisOscuro,
+              ),
             ),
           ),
         ],
       ),
     );
+  }
+
+  Widget _buildComparativaSection() {
+    final inscripcion = double.tryParse(_inscripcionController.text) ?? 0;
+    final seguro = double.tryParse(_seguroController.text) ?? 0;
+    final mensualidad12 = double.tryParse(_mensualidad12Controller.text) ?? 0;
+    final mensualidad10 = double.tryParse(_mensualidad10Controller.text) ?? 0;
+
+    final subMeses12 = mensualidad12 * 12;
+    final subMeses10 = mensualidad10 * 10;
+    final totalPlan12 = inscripcion + seguro + subMeses12;
+    final totalPlan10 = inscripcion + seguro + subMeses10;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: AppColors.azulOscuro.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: const Icon(
+                Icons.balance_rounded,
+                color: AppColors.azulOscuro,
+                size: 22,
+              ),
+            ),
+            const SizedBox(width: 10),
+            Text(
+              'Comparativa de planes',
+              style: GoogleFonts.fredoka(
+                fontSize: 18,
+                fontWeight: FontWeight.w700,
+                color: AppColors.azulOscuro,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 6),
+        Text(
+          'Estimado del primer ciclo: inscripción + seguro + mensualidades.',
+          style: GoogleFonts.poppins(fontSize: 13, color: AppColors.gris),
+        ),
+        const SizedBox(height: 16),
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final narrow = constraints.maxWidth < 560;
+            final card12 = _buildPlanCard(
+              titulo: '12 mensualidades',
+              subtitulo: 'Pago mensual más bajo',
+              mensualidad: mensualidad12,
+              meses: 12,
+              subtotalMensualidades: subMeses12,
+              inscripcion: inscripcion,
+              seguro: seguro,
+              total: totalPlan12,
+              accent: AppColors.purpura,
+              lightAccent: const Color(0xFFF3EEFF),
+            );
+            final card10 = _buildPlanCard(
+              titulo: '10 mensualidades',
+              subtitulo: 'Menos meses, cuota mayor',
+              mensualidad: mensualidad10,
+              meses: 10,
+              subtotalMensualidades: subMeses10,
+              inscripcion: inscripcion,
+              seguro: seguro,
+              total: totalPlan10,
+              accent: AppColors.naranja,
+              lightAccent: const Color(0xFFFFF5ED),
+            );
+            if (narrow) {
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  card12,
+                  const SizedBox(height: 12),
+                  card10,
+                ],
+              );
+            }
+            return IntrinsicHeight(
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Expanded(child: card12),
+                  const SizedBox(width: 12),
+                  Expanded(child: card10),
+                ],
+              ),
+            );
+          },
+        ),
+      ],
+    );
+  }
+
+  Widget _buildPlanCard({
+    required String titulo,
+    required String subtitulo,
+    required double mensualidad,
+    required int meses,
+    required double subtotalMensualidades,
+    required double inscripcion,
+    required double seguro,
+    required double total,
+    required Color accent,
+    required Color lightAccent,
+  }) {
+    return Material(
+      elevation: 3,
+      shadowColor: Colors.black26,
+      borderRadius: BorderRadius.circular(16),
+      child: Container(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: accent.withValues(alpha: 0.35), width: 1.5),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              decoration: BoxDecoration(
+                color: lightAccent,
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(14.5)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    titulo,
+                    style: GoogleFonts.fredoka(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.negro,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitulo,
+                    style: GoogleFonts.poppins(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w500,
+                      color: AppColors.grisOscuro,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 10, 12, 4),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    _fmt(mensualidad),
+                    style: GoogleFonts.fredoka(
+                      fontSize: 22,
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.azulOscuro,
+                    ),
+                  ),
+                  Text(
+                    'por mes · $meses pagos',
+                    style: GoogleFonts.poppins(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.grisOscuro,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: Divider(height: 1, color: Colors.grey.shade200),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _miniRow('Inscripción', _fmt(inscripcion)),
+                  _miniRow('Seguro + credencial', _fmt(seguro)),
+                  _miniRow('$meses × mensualidad', _fmt(subtotalMensualidades)),
+                  const SizedBox(height: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 10),
+                    decoration: BoxDecoration(
+                      color: accent.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Flexible(
+                          child: Text(
+                            'Total estimado',
+                            style: GoogleFonts.poppins(
+                              fontWeight: FontWeight.w700,
+                              fontSize: 12,
+                              color: AppColors.negro,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          _fmt(total),
+                          style: GoogleFonts.fredoka(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 15,
+                            color: accent.darken(0.15),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _miniRow(String k, String v) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Expanded(
+            child: Text(
+              k,
+              style: GoogleFonts.poppins(fontSize: 12, color: AppColors.grisOscuro),
+            ),
+          ),
+          Text(
+            v,
+            style: GoogleFonts.poppins(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: AppColors.negro,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+extension on Color {
+  Color darken(double amount) {
+    final hsl = HSLColor.fromColor(this);
+    final l = (hsl.lightness - amount).clamp(0.0, 1.0);
+    return hsl.withLightness(l).toColor();
   }
 }
