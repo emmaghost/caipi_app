@@ -42,6 +42,8 @@ class _PagosScreenState extends State<PagosScreen> with SingleTickerProviderStat
   SupabaseService? _pagosFutureService;
   /// Cambia al refrescar para que el [FutureBuilder] de la lista vuelva a montarse (p. ej. tras agregar uniforme).
   int _pagosListaEpoch = 0;
+  /// Re-suscribe el stream de bitácora de gastos al volver de registrar un gasto (pestaña Bitácora).
+  int _bitacoraGastosListaRefreshToken = 0;
 
   Future<List<Pago>> _futurePagosPendientes(SupabaseService s) {
     if (_pagosFutureService != s) {
@@ -319,7 +321,12 @@ class _PagosScreenState extends State<PagosScreen> with SingleTickerProviderStat
     if (_tabController.index == 2) {
       if (!auth.isDirectora) return null;
       return FloatingActionButton.extended(
-        onPressed: () => context.push<bool>('/directora/bitacora-gastos/crear'),
+        onPressed: () async {
+          final ok = await context.push<bool>('/directora/bitacora-gastos/crear');
+          if (ok == true && mounted) {
+            setState(() => _bitacoraGastosListaRefreshToken++);
+          }
+        },
         heroTag: 'registrar_gasto_pagos_tab',
         backgroundColor: AppColors.azulOscuro,
         foregroundColor: Colors.white,
@@ -393,7 +400,10 @@ class _PagosScreenState extends State<PagosScreen> with SingleTickerProviderStat
             filtroTipo: 'extracurriculares',
             filtroEstado: _filtroEstado,
           ),
-          const BitacoraGastosPanel(embeddedInPagos: true),
+          BitacoraGastosPanel(
+            embeddedInPagos: true,
+            listaRefreshToken: _bitacoraGastosListaRefreshToken,
+          ),
         ],
       ),
       floatingActionButton: _floatingActionButtonPagos(context),
@@ -1425,7 +1435,7 @@ class _PagosScreenState extends State<PagosScreen> with SingleTickerProviderStat
   Future<void> _mostrarDialogoAgregarLibros(BuildContext context) async {
     final TextEditingController montoController = TextEditingController(text: '800');
     String? alumnoSeleccionado;
-    
+
     final supabaseService = context.read<SupabaseService>();
     final alumnos = await supabaseService.obtenerAlumnos();
 
@@ -1501,13 +1511,13 @@ class _PagosScreenState extends State<PagosScreen> with SingleTickerProviderStat
       ),
     );
 
-        if (confirmar == true && alumnoSeleccionado != null) {
+    if (confirmar == true && alumnoSeleccionado != null) {
       try {
         await supabaseService.agregarPagoLibros(
           alumnoSeleccionado!,
           double.parse(montoController.text),
         );
-        
+
         if (!context.mounted) return;
         await _refrescarPagosPendientes(supabaseService);
         if (!context.mounted) return;
@@ -1530,7 +1540,7 @@ class _PagosScreenState extends State<PagosScreen> with SingleTickerProviderStat
     final TextEditingController cantidadController = TextEditingController(text: '1');
     final TextEditingController precioController = TextEditingController(text: '250');
     String? alumnoSeleccionado;
-    
+
     final supabaseService = context.read<SupabaseService>();
     final alumnos = await supabaseService.obtenerAlumnos();
 
@@ -1632,7 +1642,7 @@ class _PagosScreenState extends State<PagosScreen> with SingleTickerProviderStat
           int.parse(cantidadController.text),
           double.parse(precioController.text),
         );
-        
+
         if (!context.mounted) return;
         await _refrescarPagosPendientes(supabaseService);
         if (!context.mounted) return;

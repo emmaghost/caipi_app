@@ -20,7 +20,14 @@ class BitacoraGastosPanel extends StatefulWidget {
   /// Menos padding inferior cuando el FAB está en el padre (pestaña Pagos).
   final bool embeddedInPagos;
 
-  const BitacoraGastosPanel({super.key, this.embeddedInPagos = false});
+  /// El padre incrementa este valor al volver de registrar/editar gasto para re-suscribir el stream.
+  final int listaRefreshToken;
+
+  const BitacoraGastosPanel({
+    super.key,
+    this.embeddedInPagos = false,
+    this.listaRefreshToken = 0,
+  });
 
   @override
   State<BitacoraGastosPanel> createState() => _BitacoraGastosPanelState();
@@ -37,6 +44,14 @@ class _BitacoraGastosPanelState extends State<BitacoraGastosPanel> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) => _boot());
+  }
+
+  @override
+  void didUpdateWidget(BitacoraGastosPanel oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.listaRefreshToken != oldWidget.listaRefreshToken) {
+      setState(() => _listaEpoch++);
+    }
   }
 
   Future<void> _boot() async {
@@ -62,13 +77,20 @@ class _BitacoraGastosPanelState extends State<BitacoraGastosPanel> {
     if (_alcance == 'todos') return true;
     if (_alcance == 'general') return g.esGeneralEscuela;
     if (_alcance == 'grado' && _gradoFiltroId != null) {
-      return g.gradoId == _gradoFiltroId;
+      return g.aplicaAGrado(_gradoFiltroId!);
     }
     return true;
   }
 
   String _etiquetaAlcance(BitacoraGasto g, Map<String, String> nombresGrado) {
     if (g.esGeneralEscuela) return 'Toda la escuela';
+    if (g.gruposAlcanceIds != null && g.gruposAlcanceIds!.isNotEmpty) {
+      final nombres = g.gruposAlcanceIds!
+          .map((id) => nombresGrado[id] ?? '?')
+          .toList()
+        ..sort();
+      return nombres.join(', ');
+    }
     final n = nombresGrado[g.gradoId];
     return n ?? 'Grupo';
   }
@@ -354,8 +376,15 @@ class _BitacoraGastosPanelState extends State<BitacoraGastosPanel> {
   }
 }
 
-class BitacoraGastosScreen extends StatelessWidget {
+class BitacoraGastosScreen extends StatefulWidget {
   const BitacoraGastosScreen({super.key});
+
+  @override
+  State<BitacoraGastosScreen> createState() => _BitacoraGastosScreenState();
+}
+
+class _BitacoraGastosScreenState extends State<BitacoraGastosScreen> {
+  int _listaRefreshToken = 0;
 
   @override
   Widget build(BuildContext context) {
@@ -389,7 +418,10 @@ class BitacoraGastosScreen extends StatelessWidget {
       floatingActionButton: auth.isDirectora
           ? FloatingActionButton.extended(
               onPressed: () async {
-                await context.push<bool>('/directora/bitacora-gastos/crear');
+                final ok = await context.push<bool>('/directora/bitacora-gastos/crear');
+                if (ok == true && mounted) {
+                  setState(() => _listaRefreshToken++);
+                }
               },
               backgroundColor: AppColors.azulOscuro,
               foregroundColor: Colors.white,
@@ -397,7 +429,10 @@ class BitacoraGastosScreen extends StatelessWidget {
               label: Text('Registrar gasto', style: GoogleFonts.poppins(fontWeight: FontWeight.w600)),
             )
           : null,
-      body: const BitacoraGastosPanel(embeddedInPagos: false),
+      body: BitacoraGastosPanel(
+        embeddedInPagos: false,
+        listaRefreshToken: _listaRefreshToken,
+      ),
     );
   }
 }

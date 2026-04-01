@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -25,7 +27,9 @@ class _CrearBitacoraGastoScreenState extends State<CrearBitacoraGastoScreen> {
   final _montoController = TextEditingController();
 
   DateTime _fecha = DateTime.now();
-  String? _gradoId;
+  /// true = toda la escuela; false = uno o varios grupos.
+  bool _alcanceGeneral = true;
+  final Set<String> _gradoIdsSeleccionados = {};
   List<Grado> _grados = [];
   bool _cargando = true;
   bool _enviando = false;
@@ -60,7 +64,18 @@ class _CrearBitacoraGastoScreenState extends State<CrearBitacoraGastoScreen> {
         _fecha = gasto.fecha;
         _descripcionController.text = gasto.descripcion;
         _montoController.text = gasto.monto.toStringAsFixed(2);
-        _gradoId = gasto.gradoId;
+        if (gasto.esGeneralEscuela) {
+          _alcanceGeneral = true;
+          _gradoIdsSeleccionados.clear();
+        } else {
+          _alcanceGeneral = false;
+          _gradoIdsSeleccionados.clear();
+          if (gasto.gruposAlcanceIds != null && gasto.gruposAlcanceIds!.isNotEmpty) {
+            _gradoIdsSeleccionados.addAll(gasto.gruposAlcanceIds!);
+          } else if (gasto.gradoId != null) {
+            _gradoIdsSeleccionados.add(gasto.gradoId!);
+          }
+        }
       }
     } catch (e) {
       if (mounted) {
@@ -82,6 +97,14 @@ class _CrearBitacoraGastoScreenState extends State<CrearBitacoraGastoScreen> {
   double? _parseMonto(String raw) {
     final t = raw.trim().replaceAll(',', '');
     return double.tryParse(t);
+  }
+
+  void _seleccionarPorNombre(bool Function(String lower) pred) {
+    setState(() {
+      for (final gr in _grados) {
+        if (pred(gr.nombre.toLowerCase())) _gradoIdsSeleccionados.add(gr.id);
+      }
+    });
   }
 
   Future<void> _guardar() async {
@@ -106,13 +129,41 @@ class _CrearBitacoraGastoScreenState extends State<CrearBitacoraGastoScreen> {
       return;
     }
 
+    if (!_alcanceGeneral && _gradoIdsSeleccionados.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Elige al menos un grupo, o deja «Toda la escuela»'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
     setState(() => _enviando = true);
+
+    final String? gradoIdPayload;
+    final String? gruposJsonPayload;
+
+    if (_alcanceGeneral) {
+      gradoIdPayload = null;
+      gruposJsonPayload = null;
+    } else {
+      final lista = _gradoIdsSeleccionados.toList()..sort();
+      if (lista.length == 1) {
+        gradoIdPayload = lista.first;
+        gruposJsonPayload = null;
+      } else {
+        gradoIdPayload = null;
+        gruposJsonPayload = jsonEncode(lista);
+      }
+    }
 
     final payload = <String, dynamic>{
       'fecha': DateFormat('yyyy-MM-dd').format(_fecha),
       'descripcion': desc,
       'monto': monto,
-      'grado_id': _gradoId,
+      'grado_id': gradoIdPayload,
+      'grupos_alcance_ids': gruposJsonPayload,
       'updated_at': DateTime.now().toIso8601String(),
     };
 
@@ -145,7 +196,12 @@ class _CrearBitacoraGastoScreenState extends State<CrearBitacoraGastoScreen> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
+          SnackBar(
+            content: Text(
+              'Error: $e\nSi falta la columna grupos_alcance_ids, ejecuta ADD_BITACORA_GASTOS_GRUPOS_ALCANCE.sql en Supabase.',
+            ),
+            backgroundColor: Colors.red,
+          ),
         );
       }
     } finally {
@@ -195,7 +251,7 @@ class _CrearBitacoraGastoScreenState extends State<CrearBitacoraGastoScreen> {
         );
       }
     } finally {
-      if (mounted) setState(() => _enviando = false);
+      if (mounted) setState(() => _cargando = false);
     }
   }
 
@@ -290,36 +346,97 @@ class _CrearBitacoraGastoScreenState extends State<CrearBitacoraGastoScreen> {
                     ),
                     const SizedBox(height: 16),
                     Text(
-                      'Alcance',
+                      '¿A qué aplica este gasto?',
                       style: GoogleFonts.poppins(
                         fontWeight: FontWeight.w600,
                         fontSize: 13,
                         color: AppColors.gris,
                       ),
                     ),
-                    const SizedBox(height: 6),
-                    DropdownButtonFormField<String?>(
-                      value: _gradoId,
-                      decoration: InputDecoration(
-                        filled: true,
-                        fillColor: Colors.white,
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                        labelText: '¿Es para todo CAIPI o un grupo?',
-                      ),
-                      items: [
-                        const DropdownMenuItem<String?>(
-                          value: null,
-                          child: Text('Toda la escuela (general)'),
+                    const SizedBox(height: 8),
+                    SegmentedButton<bool>(
+                      segments: const [
+                        ButtonSegment<bool>(
+                          value: true,
+                          label: Text('Toda la escuela'),
+                          icon: Icon(Icons.apartment, size: 18),
                         ),
-                        ..._grados.map(
-                          (gr) => DropdownMenuItem<String?>(
-                            value: gr.id,
-                            child: Text(gr.nombre),
-                          ),
+                        ButtonSegment<bool>(
+                          value: false,
+                          label: Text('Grupo(s)'),
+                          icon: Icon(Icons.groups_outlined, size: 18),
                         ),
                       ],
-                      onChanged: (v) => setState(() => _gradoId = v),
+                      selected: {_alcanceGeneral},
+                      onSelectionChanged: (s) => setState(() {
+                        _alcanceGeneral = s.first;
+                        if (_alcanceGeneral) _gradoIdsSeleccionados.clear();
+                      }),
                     ),
+                    if (!_alcanceGeneral) ...[
+                      const SizedBox(height: 14),
+                      Text(
+                        'Rápido',
+                        style: GoogleFonts.poppins(fontWeight: FontWeight.w600, fontSize: 12),
+                      ),
+                      const SizedBox(height: 6),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          ActionChip(
+                            avatar: const Icon(Icons.child_care, size: 18),
+                            label: const Text('Todo Maternal'),
+                            onPressed: () => _seleccionarPorNombre((n) => n.contains('maternal')),
+                          ),
+                          ActionChip(
+                            avatar: const Icon(Icons.school_outlined, size: 18),
+                            label: const Text('Todo Kinder'),
+                            onPressed: () => _seleccionarPorNombre((n) => n.contains('kinder')),
+                          ),
+                          ActionChip(
+                            label: const Text('Quitar selección'),
+                            onPressed: () => setState(() => _gradoIdsSeleccionados.clear()),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                      Text(
+                        'Grupos (uno o varios)',
+                        style: GoogleFonts.poppins(fontWeight: FontWeight.w600, fontSize: 12),
+                      ),
+                      const SizedBox(height: 6),
+                      Wrap(
+                        spacing: 6,
+                        runSpacing: 6,
+                        children: _grados.map((gr) {
+                          final sel = _gradoIdsSeleccionados.contains(gr.id);
+                          return FilterChip(
+                            label: Text(gr.nombre),
+                            selected: sel,
+                            onSelected: (_) => setState(() {
+                              if (sel) {
+                                _gradoIdsSeleccionados.remove(gr.id);
+                              } else {
+                                _gradoIdsSeleccionados.add(gr.id);
+                              }
+                            }),
+                            selectedColor: AppColors.morado.withValues(alpha: 0.25),
+                            checkmarkColor: AppColors.morado,
+                          );
+                        }).toList(),
+                      ),
+                      if (_gradoIdsSeleccionados.isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 8),
+                          child: Text(
+                            _gradoIdsSeleccionados.length == 1
+                                ? 'Un grupo seleccionado.'
+                                : '${_gradoIdsSeleccionados.length} grupos seleccionados (mismo registro de gasto).',
+                            style: GoogleFonts.poppins(fontSize: 12, color: AppColors.grisOscuro),
+                          ),
+                        ),
+                    ],
                     const SizedBox(height: 28),
                     FilledButton.icon(
                       onPressed: _cargando ? null : _guardar,
@@ -327,7 +444,7 @@ class _CrearBitacoraGastoScreenState extends State<CrearBitacoraGastoScreen> {
                         backgroundColor: AppColors.azulOscuro,
                         padding: const EdgeInsets.symmetric(vertical: 16),
                       ),
-                      icon: _cargando
+                      icon: _enviando
                           ? const SizedBox(
                               width: 22,
                               height: 22,
