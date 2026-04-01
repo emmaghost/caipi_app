@@ -372,6 +372,14 @@ class _AppDrawerState extends State<AppDrawer> {
                               ruta: '/directora/bitacoras',
                               tienePermiso: true,
                             ),
+                            if (usuario?.esDirectora == true)
+                              _buildMenuItem(
+                                context: context,
+                                icon: Icons.receipt_long,
+                                title: 'Bitácora de gastos',
+                                ruta: '/directora/bitacora-gastos',
+                                tienePermiso: true,
+                              ),
                             _buildMenuItem(
                               context: context,
                               icon: Icons.access_time,

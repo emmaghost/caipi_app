@@ -1,17 +1,31 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-import '../../services/supabase_service.dart';
-import '../../models/profesor.dart';
-import '../../models/grado.dart';
 import '../../config/app_colors.dart';
 import '../../widgets/app_drawer.dart';
 
-class ProfesoresScreen extends StatelessWidget {
+class ProfesoresScreen extends StatefulWidget {
   const ProfesoresScreen({super.key});
+
+  @override
+  State<ProfesoresScreen> createState() => _ProfesoresScreenState();
+}
+
+class _ProfesoresScreenState extends State<ProfesoresScreen> {
+  /// Al volver de crear/editar, el stream a veces no emite al instante; forzamos nueva suscripción.
+  int _streamEpoch = 0;
+
+  Future<void> _abrirCrear() async {
+    final ok = await context.push<bool>('/directora/profesores/crear');
+    if (ok == true && mounted) setState(() => _streamEpoch++);
+  }
+
+  Future<void> _abrirEditar(String id) async {
+    final ok = await context.push<bool>('/directora/profesores/editar/$id');
+    if (ok == true && mounted) setState(() => _streamEpoch++);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -34,6 +48,7 @@ class ProfesoresScreen extends StatelessWidget {
         ],
       ),
       body: StreamBuilder<List<Map<String, dynamic>>>(
+        key: ValueKey(_streamEpoch),
         stream: Supabase.instance.client
             .from('profesores')
             .stream(primaryKey: ['id']),
@@ -89,13 +104,13 @@ class ProfesoresScreen extends StatelessWidget {
             itemCount: profesoresActivos.length,
             itemBuilder: (context, index) {
               final profesorData = profesoresActivos[index];
-              return _buildProfesorCard(context, profesorData);
+              return _buildProfesorCard(context, profesorData, _abrirEditar);
             },
           );
         },
       ),
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => context.push('/directora/profesores/crear'),
+        onPressed: _abrirCrear,
         heroTag: 'crear_profesor',
         backgroundColor: AppColors.purpura,
         icon: const Icon(Icons.person_add),
@@ -104,14 +119,18 @@ class ProfesoresScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildProfesorCard(BuildContext context, Map<String, dynamic> profesorData) {
+  Widget _buildProfesorCard(
+    BuildContext context,
+    Map<String, dynamic> profesorData,
+    Future<void> Function(String id) abrirEditar,
+  ) {
     return Card(
       margin: const EdgeInsets.only(bottom: 16),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
       ),
       child: InkWell(
-        onTap: () => context.push('/directora/profesores/editar/${profesorData['id']}'),
+        onTap: () => abrirEditar(profesorData['id'] as String),
         borderRadius: BorderRadius.circular(16),
         child: Padding(
           padding: const EdgeInsets.all(16),
@@ -211,7 +230,7 @@ class ProfesoresScreen extends StatelessWidget {
                         children: [
                           IconButton(
                             icon: const Icon(Icons.edit, color: AppColors.azulOscuro),
-                            onPressed: () => context.push('/directora/profesores/editar/${profesorData['id']}'),
+                            onPressed: () => abrirEditar(profesorData['id'] as String),
                             tooltip: 'Editar',
                           ),
                           IconButton(

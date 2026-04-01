@@ -14,11 +14,16 @@ import '../../widgets/app_drawer.dart';
 class RegistrarSalidaScreen extends StatefulWidget {
   final String? controlId;
   final DateTime? fechaInicial;
+  /// Viene desde la lista por grupo; el formulario fija ese alumno.
+  final String? alumnoIdPreseleccionado;
+  final bool bloquearSelectorAlumno;
 
   const RegistrarSalidaScreen({
     super.key,
     this.controlId,
     this.fechaInicial,
+    this.alumnoIdPreseleccionado,
+    this.bloquearSelectorAlumno = false,
   });
 
   @override
@@ -35,6 +40,7 @@ class _RegistrarSalidaScreenState extends State<RegistrarSalidaScreen> {
   TimeOfDay _horaEntrada = const TimeOfDay(hour: 9, minute: 0); // Por defecto 9:00 AM
   TimeOfDay _horaSalida = const TimeOfDay(hour: 14, minute: 0); // Por defecto 2:00 PM
   String? _personaAutorizadaId;
+  bool _ausente = false;
 
   bool _cargando = false;
   bool _esEdicion = false;
@@ -42,9 +48,17 @@ class _RegistrarSalidaScreenState extends State<RegistrarSalidaScreen> {
   @override
   void initState() {
     super.initState();
-    // La fecha siempre es HOY, no necesita selector
-    _fecha = DateTime.now();
-    
+    if (widget.fechaInicial != null) {
+      final d = widget.fechaInicial!;
+      _fecha = DateTime(d.year, d.month, d.day);
+    } else {
+      final n = DateTime.now();
+      _fecha = DateTime(n.year, n.month, n.day);
+    }
+    if (widget.alumnoIdPreseleccionado != null) {
+      _alumnoSeleccionadoId = widget.alumnoIdPreseleccionado;
+    }
+
     if (widget.controlId != null) {
       _esEdicion = true;
       _cargarDatosControl();
@@ -77,6 +91,7 @@ class _RegistrarSalidaScreenState extends State<RegistrarSalidaScreen> {
         _quienTrajoController.text = control.quienTrajo ?? '';
         _quienRecogioController.text = control.quienRecogio ?? '';
         _personaAutorizadaId = control.personaAutorizadaId;
+        _ausente = control.ausente;
         _cargando = false;
       });
     } catch (e) {
@@ -141,20 +156,17 @@ class _RegistrarSalidaScreenState extends State<RegistrarSalidaScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Encabezado
+                    // Encabezado (texto oscuro sobre fondo claro — legible)
                     Container(
                       padding: const EdgeInsets.all(16),
                       decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: [AppColors.amarilloClaro, AppColors.naranjaClaro],
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                        ),
+                        color: Colors.white,
                         borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: AppColors.naranja.withOpacity(0.4)),
                       ),
                       child: Row(
                         children: [
-                          const Icon(Icons.access_time, color: Colors.white, size: 40),
+                          Icon(Icons.access_time, color: AppColors.naranja, size: 40),
                           const SizedBox(width: 16),
                           Expanded(
                             child: Column(
@@ -162,20 +174,21 @@ class _RegistrarSalidaScreenState extends State<RegistrarSalidaScreen> {
                               children: [
                                 Text(
                                   _esEdicion
-                                      ? 'Modificar Registro'
-                                      : 'Registrar Entrada/Salida',
+                                      ? 'Modificar registro del día'
+                                      : 'Registro por niño y por día',
                                   style: GoogleFonts.fredoka(
-                                    fontSize: 20,
+                                    fontSize: 19,
                                     fontWeight: FontWeight.bold,
-                                    color: Colors.white,
+                                    color: AppColors.negro,
                                   ),
                                 ),
                                 const SizedBox(height: 4),
                                 Text(
-                                  'Control de asistencia del alumno',
+                                  'Entrada: a qué hora llegó. Salida: hora y quién recogió (puedes contrastar con el QR del padre).',
                                   style: GoogleFonts.poppins(
-                                    fontSize: 14,
-                                    color: Colors.white.withOpacity(0.9),
+                                    fontSize: 13,
+                                    color: AppColors.grisOscuro,
+                                    height: 1.3,
                                   ),
                                 ),
                               ],
@@ -198,57 +211,12 @@ class _RegistrarSalidaScreenState extends State<RegistrarSalidaScreen> {
                         padding: const EdgeInsets.all(16),
                         child: Column(
                           children: [
-                            // Selector de alumno
-                            StreamBuilder<List<Map<String, dynamic>>>(
-                              stream: Supabase.instance.client
-                                  .from('alumnos')
-                                  .stream(primaryKey: ['id'])
-                                  .order('nombre', ascending: true),
-                              builder: (context, snapshot) {
-                                if (!snapshot.hasData) {
-                                  return const CircularProgressIndicator();
-                                }
-
-                                final alumnos = snapshot.data!
-                                    .map((json) => Alumno.fromJson(json))
-                                    .toList();
-
-                                return DropdownButtonFormField<String>(
-                                  value: _alumnoSeleccionadoId,
-                                  decoration: InputDecoration(
-                                    labelText: 'Alumno *',
-                                    prefixIcon: const Icon(Icons.child_care),
-                                    border: OutlineInputBorder(
-                                      borderRadius: BorderRadius.circular(12),
-                                    ),
-                                  ),
-                                  items: alumnos.map((alumno) {
-                                    return DropdownMenuItem(
-                                      value: alumno.id,
-                                      child: Text('${alumno.nombre} ${alumno.apellidos}'),
-                                    );
-                                  }).toList(),
-                                  onChanged: (value) {
-                                    setState(() {
-                                      _alumnoSeleccionadoId = value;
-                                    });
-                                  },
-                                  validator: (value) {
-                                    if (value == null || value.isEmpty) {
-                                      return 'Selecciona un alumno';
-                                    }
-                                    return null;
-                                  },
-                                );
-                              },
-                            ),
+                            _buildCampoAlumno(),
                             const SizedBox(height: 16),
-
-                            // Fecha automática (HOY)
                             Container(
                               padding: const EdgeInsets.all(16),
                               decoration: BoxDecoration(
-                                color: AppColors.amarilloClaro.withOpacity(0.3),
+                                color: AppColors.amarilloClaro.withOpacity(0.35),
                                 borderRadius: BorderRadius.circular(12),
                                 border: Border.all(color: AppColors.amarillo.withOpacity(0.5)),
                               ),
@@ -256,16 +224,33 @@ class _RegistrarSalidaScreenState extends State<RegistrarSalidaScreen> {
                                 children: [
                                   Icon(Icons.calendar_today, color: AppColors.naranja),
                                   const SizedBox(width: 12),
-                                  Text(
-                                    'Hoy: ${DateFormat('EEEE, dd/MM/yyyy', 'es').format(_fecha)}',
-                                    style: GoogleFonts.poppins(
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.w600,
-                                      color: AppColors.negro,
+                                  Expanded(
+                                    child: Text(
+                                      _leyendaFechaControl(),
+                                      style: GoogleFonts.poppins(
+                                        fontSize: 15,
+                                        fontWeight: FontWeight.w600,
+                                        color: AppColors.negro,
+                                      ),
                                     ),
                                   ),
                                 ],
                               ),
+                            ),
+                            const SizedBox(height: 8),
+                            SwitchListTile(
+                              contentPadding: EdgeInsets.zero,
+                              title: Text(
+                                'No asistió este día',
+                                style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
+                              ),
+                              subtitle: Text(
+                                'Marcar si el niño no vino (sin horarios).',
+                                style: GoogleFonts.poppins(fontSize: 12, color: AppColors.gris),
+                              ),
+                              value: _ausente,
+                              activeThumbColor: AppColors.naranja,
+                              onChanged: (v) => setState(() => _ausente = v),
                             ),
                           ],
                         ),
@@ -273,6 +258,13 @@ class _RegistrarSalidaScreenState extends State<RegistrarSalidaScreen> {
                     ),
                     const SizedBox(height: 24),
 
+                    AbsorbPointer(
+                      absorbing: _ausente,
+                      child: Opacity(
+                        opacity: _ausente ? 0.42 : 1,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
                     // ENTRADA
                     _buildSeccionTitulo('Registro de Entrada'),
                     const SizedBox(height: 12),
@@ -298,14 +290,10 @@ class _RegistrarSalidaScreenState extends State<RegistrarSalidaScreen> {
                                   ),
                                 ),
                                 child: Text(
-                                  _horaEntrada != null
-                                      ? _horaEntrada!.format(context)
-                                      : 'Seleccionar hora',
-                                  style: TextStyle(
+                                  _horaEntrada.format(context),
+                                  style: const TextStyle(
                                     fontSize: 16,
-                                    color: _horaEntrada != null
-                                        ? Colors.black
-                                        : Colors.grey,
+                                    color: Colors.black,
                                   ),
                                 ),
                               ),
@@ -355,14 +343,10 @@ class _RegistrarSalidaScreenState extends State<RegistrarSalidaScreen> {
                                   ),
                                 ),
                                 child: Text(
-                                  _horaSalida != null
-                                      ? _horaSalida!.format(context)
-                                      : 'Seleccionar hora',
-                                  style: TextStyle(
+                                  _horaSalida.format(context),
+                                  style: const TextStyle(
                                     fontSize: 16,
-                                    color: _horaSalida != null
-                                        ? Colors.black
-                                        : Colors.grey,
+                                    color: Colors.black,
                                   ),
                                 ),
                               ),
@@ -396,10 +380,13 @@ class _RegistrarSalidaScreenState extends State<RegistrarSalidaScreen> {
                                   }
 
                                   final personasAutorizadas = snapshot.data!
-                                      .map((json) => PersonaAutorizada.fromJson(json))
+                                      .map((json) => PersonaAutorizada.fromJson(
+                                            Map<String, dynamic>.from(json as Map),
+                                          ))
+                                      .where((p) => p.id.isNotEmpty)
                                       .toList();
 
-                                  return DropdownButtonFormField<String>(
+                                  return DropdownButtonFormField<String?>(
                                     value: _personaAutorizadaId,
                                     decoration: InputDecoration(
                                       labelText: 'Persona Autorizada (opcional)',
@@ -409,14 +396,16 @@ class _RegistrarSalidaScreenState extends State<RegistrarSalidaScreen> {
                                       ),
                                     ),
                                     items: [
-                                      const DropdownMenuItem(
+                                      const DropdownMenuItem<String?>(
                                         value: null,
                                         child: Text('Ninguna'),
                                       ),
                                       ...personasAutorizadas.map((persona) {
-                                        return DropdownMenuItem(
+                                        return DropdownMenuItem<String?>(
                                           value: persona.id,
-                                          child: Text('${persona.nombre} (${persona.parentesco})'),
+                                          child: Text(
+                                            '${persona.nombre} (${persona.parentesco})',
+                                          ),
                                         );
                                       }),
                                     ],
@@ -428,6 +417,10 @@ class _RegistrarSalidaScreenState extends State<RegistrarSalidaScreen> {
                                   );
                                 },
                               ),
+                          ],
+                        ),
+                      ),
+                    ),
                           ],
                         ),
                       ),
@@ -494,6 +487,99 @@ class _RegistrarSalidaScreenState extends State<RegistrarSalidaScreen> {
     );
   }
 
+  String _leyendaFechaControl() {
+    final hoy = DateTime.now();
+    final mismoDia =
+        _fecha.year == hoy.year && _fecha.month == hoy.month && _fecha.day == hoy.day;
+    final base = DateFormat('EEEE, dd/MM/yyyy', 'es').format(_fecha);
+    return mismoDia ? 'Hoy: $base' : 'Día del registro: $base';
+  }
+
+  Widget _buildCampoAlumno() {
+    final bloquear =
+        widget.bloquearSelectorAlumno && !_esEdicion && _alumnoSeleccionadoId != null;
+
+    if (bloquear) {
+      return FutureBuilder<Map<String, dynamic>>(
+        future: Supabase.instance.client
+            .from('alumnos')
+            .select('nombre, apellidos')
+            .eq('id', _alumnoSeleccionadoId!)
+            .single(),
+        builder: (context, snap) {
+          if (snap.connectionState == ConnectionState.waiting) {
+            return const Center(child: Padding(
+              padding: EdgeInsets.all(16),
+              child: CircularProgressIndicator(),
+            ));
+          }
+          if (snap.hasError || !snap.hasData) {
+            return Text('No se pudo cargar el alumno', style: GoogleFonts.poppins(color: Colors.red));
+          }
+          final r = snap.data!;
+          return InputDecorator(
+            decoration: InputDecoration(
+              labelText: 'Alumno',
+              prefixIcon: const Icon(Icons.child_care),
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+            child: Text(
+              '${r['nombre']} ${r['apellidos']}',
+              style: GoogleFonts.poppins(fontSize: 16, fontWeight: FontWeight.w600),
+            ),
+          );
+        },
+      );
+    }
+
+    return StreamBuilder<List<Map<String, dynamic>>>(
+      stream: Supabase.instance.client.from('alumnos').stream(primaryKey: ['id']).map(
+            (data) {
+              final filtrados =
+                  data.where((json) => json['activo'] == true).toList();
+              filtrados.sort(
+                (a, b) => '${a['nombre']} ${a['apellidos']}'
+                    .compareTo('${b['nombre']} ${b['apellidos']}'),
+              );
+              return filtrados;
+            },
+          ),
+      builder: (context, snapshot) {
+        if (!snapshot.hasData) {
+          return const Center(child: CircularProgressIndicator());
+        }
+
+        final alumnos = snapshot.data!.map((json) => Alumno.fromJson(json)).toList();
+
+        return DropdownButtonFormField<String>(
+          value: _alumnoSeleccionadoId,
+          decoration: InputDecoration(
+            labelText: 'Alumno *',
+            prefixIcon: const Icon(Icons.child_care),
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+          ),
+          items: alumnos.map((alumno) {
+            return DropdownMenuItem(
+              value: alumno.id,
+              child: Text('${alumno.nombre} ${alumno.apellidos}'),
+            );
+          }).toList(),
+          onChanged: (value) {
+            setState(() {
+              _alumnoSeleccionadoId = value;
+            });
+          },
+          validator: (value) {
+            if (value == null || value.isEmpty) {
+              return 'Selecciona un alumno';
+            }
+            return null;
+          },
+        );
+      },
+    );
+  }
+
   Widget _buildSeccionTitulo(String titulo) {
     return Row(
       children: [
@@ -518,28 +604,10 @@ class _RegistrarSalidaScreenState extends State<RegistrarSalidaScreen> {
     );
   }
 
-  Future<void> _seleccionarFecha() async {
-    final fecha = await showDatePicker(
-      context: context,
-      initialDate: _fecha,
-      firstDate: DateTime(2020),
-      lastDate: DateTime.now().add(const Duration(days: 365)),
-      locale: const Locale('es', 'MX'),
-    );
-
-    if (fecha != null) {
-      setState(() {
-        _fecha = fecha;
-      });
-    }
-  }
-
   Future<void> _seleccionarHora(bool esEntrada) async {
     final TimeOfDay? hora = await showTimePicker(
       context: context,
-      initialTime: esEntrada
-          ? (_horaEntrada ?? TimeOfDay.now())
-          : (_horaSalida ?? TimeOfDay.now()),
+      initialTime: esEntrada ? _horaEntrada : _horaSalida,
     );
 
     if (hora != null) {
@@ -574,36 +642,40 @@ class _RegistrarSalidaScreenState extends State<RegistrarSalidaScreen> {
       final Map<String, dynamic> controlData = {
         'alumno_id': _alumnoSeleccionadoId,
         'fecha': DateFormat('yyyy-MM-dd').format(_fecha),
-        'hora_entrada': _horaEntrada != null
-            ? '${_horaEntrada!.hour.toString().padLeft(2, '0')}:${_horaEntrada!.minute.toString().padLeft(2, '0')}:00'
-            : null,
-        'quien_trajo': _quienTrajoController.text.trim().isEmpty
-            ? null
-            : _quienTrajoController.text.trim(),
-        'hora_salida': _horaSalida != null
-            ? '${_horaSalida!.hour.toString().padLeft(2, '0')}:${_horaSalida!.minute.toString().padLeft(2, '0')}:00'
-            : null,
-        'quien_recogio': _quienRecogioController.text.trim().isEmpty
-            ? null
-            : _quienRecogioController.text.trim(),
-        'persona_autorizada_id': _personaAutorizadaId,
         'updated_at': DateTime.now().toIso8601String(),
+        'ausente': _ausente,
       };
 
+      if (_ausente) {
+        controlData['hora_entrada'] = null;
+        controlData['hora_salida'] = null;
+        controlData['quien_trajo'] = null;
+        controlData['quien_recogio'] = null;
+        controlData['persona_autorizada_id'] = null;
+      } else {
+        controlData['hora_entrada'] =
+            '${_horaEntrada.hour.toString().padLeft(2, '0')}:${_horaEntrada.minute.toString().padLeft(2, '0')}:00';
+        controlData['quien_trajo'] = _quienTrajoController.text.trim().isEmpty
+            ? null
+            : _quienTrajoController.text.trim();
+        controlData['hora_salida'] =
+            '${_horaSalida.hour.toString().padLeft(2, '0')}:${_horaSalida.minute.toString().padLeft(2, '0')}:00';
+        controlData['quien_recogio'] = _quienRecogioController.text.trim().isEmpty
+            ? null
+            : _quienRecogioController.text.trim();
+        controlData['persona_autorizada_id'] = _personaAutorizadaId;
+      }
+
       if (_esEdicion) {
-        // Actualizar control existente
         await Supabase.instance.client
             .from('control_salidas')
             .update(controlData)
             .eq('id', widget.controlId!);
       } else {
-        // Crear nuevo control
         controlData['id'] = const Uuid().v4();
         controlData['created_at'] = DateTime.now().toIso8601String();
 
-        await Supabase.instance.client
-            .from('control_salidas')
-            .insert(controlData);
+        await Supabase.instance.client.from('control_salidas').insert(controlData);
       }
 
       if (mounted) {
@@ -617,7 +689,12 @@ class _RegistrarSalidaScreenState extends State<RegistrarSalidaScreen> {
             backgroundColor: Colors.green,
           ),
         );
-        GoRouter.of(context).go('/directora/control-salidas');
+        final router = GoRouter.of(context);
+        if (router.canPop()) {
+          router.pop(true);
+        } else {
+          router.go('/directora/control-salidas');
+        }
       }
     } catch (e) {
       if (mounted) {
@@ -690,7 +767,12 @@ class _RegistrarSalidaScreenState extends State<RegistrarSalidaScreen> {
             backgroundColor: Colors.green,
           ),
         );
-        GoRouter.of(context).go('/directora/control-salidas');
+        final router = GoRouter.of(context);
+        if (router.canPop()) {
+          router.pop(true);
+        } else {
+          router.go('/directora/control-salidas');
+        }
       }
     } catch (e) {
       if (mounted) {

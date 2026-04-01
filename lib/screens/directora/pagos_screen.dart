@@ -32,6 +32,9 @@ class _PagosScreenState extends State<PagosScreen> with SingleTickerProviderStat
   String? _filtroTipoPago; // null = todos, 'mensualidad', 'inscripcion', 'seguro', 'otro'
   String _filtroEstado = 'todos'; // 'todos' | 'vencidos' | 'pendientes'
 
+  /// Panel de filtros de «Pagos de Alumnos» colapsado por defecto (más espacio para la lista en móvil).
+  bool _filtrosAlumnosExpandidos = false;
+
   /// Lista de pagos pendientes: consulta HTTP (se invalida al volver de acreditar / pull / agregar).
   Future<List<Pago>>? _pagosPendientesFuture;
   SupabaseService? _pagosFutureService;
@@ -358,6 +361,102 @@ class _PagosScreenState extends State<PagosScreen> with SingleTickerProviderStat
     );
   }
 
+  String _etiquetaTipoPagoFiltro() {
+    switch (_filtroTipoPago) {
+      case 'mensualidad':
+        return 'Colegiatura';
+      case 'inscripcion':
+        return 'Inscripción';
+      case 'seguro':
+        return 'Seguro';
+      case 'otro':
+        return 'Otro';
+      default:
+        return 'Todos los tipos';
+    }
+  }
+
+  String _etiquetaEstadoFiltroCorto() {
+    switch (_filtroEstado) {
+      case 'vencidos':
+        return 'Vencidos';
+      case 'pendientes':
+        return 'Pendientes';
+      case 'pagados':
+        return 'Pagados';
+      default:
+        return 'Todos';
+    }
+  }
+
+  Widget _buildBarraColapsarFiltrosAlumnos(
+    List<Grado> grados,
+    Map<String, String> mapaNombres,
+  ) {
+    var gradoTxt = 'Todos los grados';
+    if (_filtroGradoId != null) {
+      final idx = grados.indexWhere((g) => g.id == _filtroGradoId);
+      if (idx >= 0) gradoTxt = grados[idx].nombre;
+    }
+    final alumnoTxt = _filtroAlumnoId == null
+        ? 'Todos los alumnos'
+        : (mapaNombres[_filtroAlumnoId] ?? 'Alumno');
+    final resumen =
+        '$gradoTxt · $alumnoTxt · ${_etiquetaTipoPagoFiltro()} · ${_etiquetaEstadoFiltroCorto()}';
+
+    return Material(
+      color: Colors.white,
+      elevation: 1,
+      shadowColor: Colors.black26,
+      child: InkWell(
+        onTap: () => setState(() => _filtrosAlumnosExpandidos = !_filtrosAlumnosExpandidos),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Icon(Icons.tune_rounded, color: AppColors.morado, size: 22),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      _filtrosAlumnosExpandidos ? 'Ocultar filtros' : 'Mostrar filtros',
+                      style: GoogleFonts.fredoka(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                        color: const Color(0xFF2D2640),
+                      ),
+                    ),
+                    if (!_filtrosAlumnosExpandidos) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        resumen,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: GoogleFonts.poppins(
+                          fontSize: 11.5,
+                          height: 1.25,
+                          color: Colors.grey[700],
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              Icon(
+                _filtrosAlumnosExpandidos ? Icons.expand_less : Icons.expand_more,
+                color: AppColors.morado,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   /// Pestaña "Pagos de Alumnos" con filtros por grado, alumno (con buscador) y tipo
   Widget _buildPagosAlumnosTab(SupabaseService service) {
     return FutureBuilder<List<dynamic>>(
@@ -373,159 +472,171 @@ class _PagosScreenState extends State<PagosScreen> with SingleTickerProviderStat
 
         return Column(
           children: [
-            // Filtros: Grado → Alumno (con buscador)
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                border: Border(bottom: BorderSide(color: AppColors.rosa.withOpacity(0.3))),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.04),
-                    blurRadius: 6,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Grado',
-                    style: GoogleFonts.poppins(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      color: const Color(0xFF6B6080),
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  DropdownButtonFormField<String?>(
-                    value: _filtroGradoId,
-                    decoration: InputDecoration(
-                      isDense: true,
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                        borderSide: BorderSide(color: AppColors.morado.withOpacity(0.5)),
-                      ),
-                      filled: true,
-                      fillColor: Colors.white,
-                    ),
-                    hint: Text('Todos los grados', style: GoogleFonts.poppins(fontSize: 14)),
-                    items: [
-                      const DropdownMenuItem<String?>(
-                        value: null,
-                        child: Text('Todos los grados'),
-                      ),
-                      ...grados.map((g) => DropdownMenuItem<String?>(
-                            value: g.id,
-                            child: Text(
-                              g.nombre,
-                              style: GoogleFonts.poppins(fontSize: 14),
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          )),
-                    ],
-                    onChanged: (value) {
-                      setState(() {
-                        _filtroGradoId = value;
-                        if (_filtroAlumnoId != null) {
-                          final list = alumnos.where((a) => a.id == _filtroAlumnoId).toList();
-                          final sel = list.isEmpty ? null : list.first;
-                          if (sel == null || (value != null && sel.gradoId != value)) {
-                            _filtroAlumnoId = null;
-                          }
-                        }
-                      });
-                    },
-                  ),
-                  const SizedBox(height: 12),
-                  Text(
-                    'Alumno',
-                    style: GoogleFonts.poppins(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      color: const Color(0xFF6B6080),
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  InkWell(
-                    onTap: () => _mostrarSelectorAlumno(context, alumnos, grados),
-                    borderRadius: BorderRadius.circular(12),
-                    child: Container(
+            _buildBarraColapsarFiltrosAlumnos(grados, mapaNombres),
+            AnimatedSize(
+              duration: const Duration(milliseconds: 240),
+              curve: Curves.easeInOut,
+              alignment: Alignment.topCenter,
+              child: _filtrosAlumnosExpandidos
+                  ? Container(
                       width: double.infinity,
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
                       decoration: BoxDecoration(
                         color: Colors.white,
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: AppColors.morado.withOpacity(0.5)),
-                      ),
-                      child: Row(
-                        children: [
-                          Icon(Icons.person_search, color: Colors.grey[600], size: 22),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: Text(
-                              _filtroAlumnoId == null
-                                  ? 'Todos los alumnos'
-                                  : (mapaNombres[_filtroAlumnoId] ?? 'Alumno'),
-                              style: GoogleFonts.poppins(
-                                fontSize: 14,
-                                color: _filtroAlumnoId == null ? Colors.grey[600] : const Color(0xFF2D2640),
-                              ),
-                              overflow: TextOverflow.ellipsis,
-                            ),
+                        border: Border(bottom: BorderSide(color: AppColors.rosa.withOpacity(0.3))),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.04),
+                            blurRadius: 6,
+                            offset: const Offset(0, 2),
                           ),
-                          Icon(Icons.arrow_drop_down, color: Colors.grey[600]),
                         ],
                       ),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  Text(
-                    'Filtrar por tipo',
-                    style: GoogleFonts.poppins(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      color: const Color(0xFF6B6080),
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    child: Row(
-                      children: [
-                        _buildChipTipo(null, 'Todos'),
-                        _buildChipTipo('mensualidad', 'Colegiatura'),
-                        _buildChipTipo('inscripcion', 'Inscripción'),
-                        _buildChipTipo('seguro', 'Seguro'),
-                        _buildChipTipo('otro', 'Otro'),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  Text(
-                    'Estado',
-                    style: GoogleFonts.poppins(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      color: const Color(0xFF6B6080),
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
-                      _buildChipEstado('todos', 'Todos'),
-                      _buildChipEstado('vencidos', 'Vencidos'),
-                      _buildChipEstado('pendientes', 'Pendientes'),
-                      _buildChipEstado('pagados', 'Pagados', esPagados: true),
-                    ],
-                  ),
-                ],
-              ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Grado',
+                            style: GoogleFonts.poppins(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: const Color(0xFF6B6080),
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          DropdownButtonFormField<String?>(
+                            value: _filtroGradoId,
+                            decoration: InputDecoration(
+                              isDense: true,
+                              contentPadding:
+                                  const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12),
+                                borderSide:
+                                    BorderSide(color: AppColors.morado.withOpacity(0.5)),
+                              ),
+                              filled: true,
+                              fillColor: Colors.white,
+                            ),
+                            hint: Text('Todos los grados', style: GoogleFonts.poppins(fontSize: 14)),
+                            items: [
+                              const DropdownMenuItem<String?>(
+                                value: null,
+                                child: Text('Todos los grados'),
+                              ),
+                              ...grados.map((g) => DropdownMenuItem<String?>(
+                                    value: g.id,
+                                    child: Text(
+                                      g.nombre,
+                                      style: GoogleFonts.poppins(fontSize: 14),
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  )),
+                            ],
+                            onChanged: (value) {
+                              setState(() {
+                                _filtroGradoId = value;
+                                if (_filtroAlumnoId != null) {
+                                  final list =
+                                      alumnos.where((a) => a.id == _filtroAlumnoId).toList();
+                                  final sel = list.isEmpty ? null : list.first;
+                                  if (sel == null || (value != null && sel.gradoId != value)) {
+                                    _filtroAlumnoId = null;
+                                  }
+                                }
+                              });
+                            },
+                          ),
+                          const SizedBox(height: 12),
+                          Text(
+                            'Alumno',
+                            style: GoogleFonts.poppins(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: const Color(0xFF6B6080),
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          InkWell(
+                            onTap: () => _mostrarSelectorAlumno(context, alumnos, grados),
+                            borderRadius: BorderRadius.circular(12),
+                            child: Container(
+                              width: double.infinity,
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(color: AppColors.morado.withOpacity(0.5)),
+                              ),
+                              child: Row(
+                                children: [
+                                  Icon(Icons.person_search, color: Colors.grey[600], size: 22),
+                                  const SizedBox(width: 10),
+                                  Expanded(
+                                    child: Text(
+                                      _filtroAlumnoId == null
+                                          ? 'Todos los alumnos'
+                                          : (mapaNombres[_filtroAlumnoId] ?? 'Alumno'),
+                                      style: GoogleFonts.poppins(
+                                        fontSize: 14,
+                                        color: _filtroAlumnoId == null
+                                            ? Colors.grey[600]
+                                            : const Color(0xFF2D2640),
+                                      ),
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                  Icon(Icons.arrow_drop_down, color: Colors.grey[600]),
+                                ],
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          Text(
+                            'Filtrar por tipo',
+                            style: GoogleFonts.poppins(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: const Color(0xFF6B6080),
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          SingleChildScrollView(
+                            scrollDirection: Axis.horizontal,
+                            child: Row(
+                              children: [
+                                _buildChipTipo(null, 'Todos'),
+                                _buildChipTipo('mensualidad', 'Colegiatura'),
+                                _buildChipTipo('inscripcion', 'Inscripción'),
+                                _buildChipTipo('seguro', 'Seguro'),
+                                _buildChipTipo('otro', 'Otro'),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          Text(
+                            'Estado',
+                            style: GoogleFonts.poppins(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: const Color(0xFF6B6080),
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
+                            children: [
+                              _buildChipEstado('todos', 'Todos'),
+                              _buildChipEstado('vencidos', 'Vencidos'),
+                              _buildChipEstado('pendientes', 'Pendientes'),
+                              _buildChipEstado('pagados', 'Pagados', esPagados: true),
+                            ],
+                          ),
+                        ],
+                      ),
+                    )
+                  : const SizedBox(width: double.infinity),
             ),
             Expanded(
               child: _buildListaPagos(

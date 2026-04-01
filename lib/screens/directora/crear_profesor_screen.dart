@@ -153,7 +153,7 @@ class _CrearProfesorScreenState extends State<CrearProfesorScreen> {
               backgroundColor: AppColors.verde,
             ),
           );
-          context.pop();
+          context.pop(true);
         }
       } else {
         // CREAR profesor nuevo
@@ -232,7 +232,7 @@ class _CrearProfesorScreenState extends State<CrearProfesorScreen> {
                     duration: const Duration(seconds: 6),
                   ),
                 );
-                context.pop();
+                context.pop(true);
               }
               return;
             }
@@ -252,7 +252,7 @@ class _CrearProfesorScreenState extends State<CrearProfesorScreen> {
               duration: const Duration(seconds: 7),
             ),
           );
-          context.pop();
+          context.pop(true);
         }
       }
     } on AuthException catch (e) {

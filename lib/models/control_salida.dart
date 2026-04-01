@@ -8,6 +8,8 @@ class ControlSalida {
   final String? quienRecogio;
   final String? personaAutorizadaId;
   final String? observaciones;
+  /// Si true, el niño no asistió ese día (sin horarios de entrada/salida).
+  final bool ausente;
   final DateTime createdAt;
 
   ControlSalida({
@@ -20,17 +22,18 @@ class ControlSalida {
     this.quienRecogio,
     this.personaAutorizadaId,
     this.observaciones,
+    this.ausente = false,
     required this.createdAt,
   });
 
-  bool get tieneEntrada => horaEntrada != null;
-  bool get tieneSalida => horaSalida != null;
+  bool get tieneEntrada => !ausente && horaEntrada != null;
+  bool get tieneSalida => !ausente && horaSalida != null;
 
   factory ControlSalida.fromJson(Map<String, dynamic> json) {
     return ControlSalida(
       id: json['id'] as String,
       alumnoId: json['alumno_id'] as String,
-      fecha: DateTime.parse(json['fecha']),
+      fecha: DateTime.parse(json['fecha'].toString()),
       horaEntrada: json['hora_entrada'] != null
           ? DateTime.parse('${json['fecha']} ${json['hora_entrada']}')
           : null,
@@ -41,7 +44,8 @@ class ControlSalida {
       quienRecogio: json['quien_recogio'] as String?,
       personaAutorizadaId: json['persona_autorizada_id'] as String?,
       observaciones: json['observaciones'] as String?,
-      createdAt: DateTime.parse(json['created_at']),
+      ausente: json['ausente'] == true,
+      createdAt: DateTime.parse(json['created_at'].toString()),
     );
   }
 
@@ -56,6 +60,7 @@ class ControlSalida {
       'quien_recogio': quienRecogio,
       'persona_autorizada_id': personaAutorizadaId,
       'observaciones': observaciones,
+      'ausente': ausente,
     };
   }
 }

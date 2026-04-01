@@ -27,16 +27,16 @@ class PersonaAutorizada {
 
   factory PersonaAutorizada.fromJson(Map<String, dynamic> json) {
     return PersonaAutorizada(
-      id: json['id'] as String,
-      alumnoId: json['alumno_id'] as String,
-      nombre: json['nombre'] as String,
-      apellidos: json['apellidos'] as String,
-      parentesco: json['parentesco'] as String,
-      telefono: json['telefono'] as String,
+      id: json['id']?.toString() ?? '',
+      alumnoId: json['alumno_id']?.toString() ?? '',
+      nombre: json['nombre'] as String? ?? '',
+      apellidos: json['apellidos'] as String? ?? '',
+      parentesco: json['parentesco'] as String? ?? '',
+      telefono: json['telefono'] as String? ?? '',
       identificacion: json['identificacion'] as String?,
       fotoUrl: json['foto_url'] as String?,
       activo: json['activo'] as bool? ?? true,
-      createdAt: DateTime.parse(json['created_at']),
+      createdAt: DateTime.tryParse(json['created_at']?.toString() ?? '') ?? DateTime.now(),
     );
   }
 

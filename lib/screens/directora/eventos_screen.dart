@@ -17,6 +17,17 @@ class EventosScreen extends StatefulWidget {
 
 class _EventosScreenState extends State<EventosScreen> {
   String _filtroTipo = 'Todos';
+  int _streamEpoch = 0;
+
+  Future<void> _abrirCrearEvento() async {
+    final ok = await context.push<bool>('/directora/eventos/crear');
+    if (ok == true && mounted) setState(() => _streamEpoch++);
+  }
+
+  Future<void> _abrirEditarEvento(String id) async {
+    final ok = await context.push<bool>('/directora/eventos/editar/$id');
+    if (ok == true && mounted) setState(() => _streamEpoch++);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -33,7 +44,7 @@ class _EventosScreenState extends State<EventosScreen> {
         actions: [
           IconButton(
             icon: const Icon(Icons.add),
-            onPressed: () => context.push('/directora/eventos/crear'),
+            onPressed: _abrirCrearEvento,
             tooltip: 'Crear evento',
           ),
           IconButton(
@@ -66,6 +77,7 @@ class _EventosScreenState extends State<EventosScreen> {
           // Lista de eventos
           Expanded(
             child: StreamBuilder<List<Map<String, dynamic>>>(
+              key: ValueKey(_streamEpoch),
               stream: Supabase.instance.client
                   .from('eventos')
                   .stream(primaryKey: ['id'])
@@ -120,7 +132,7 @@ class _EventosScreenState extends State<EventosScreen> {
                         ),
                         const SizedBox(height: 8),
                         ElevatedButton.icon(
-                          onPressed: () => context.push('/directora/eventos/crear'),
+                          onPressed: _abrirCrearEvento,
                           icon: const Icon(Icons.add),
                           label: const Text('Crear primer evento'),
                           style: ElevatedButton.styleFrom(
@@ -249,7 +261,7 @@ class _EventosScreenState extends State<EventosScreen> {
         borderRadius: BorderRadius.circular(16),
       ),
       child: InkWell(
-        onTap: () => context.push('/directora/eventos/editar/${evento.id}'),
+        onTap: () => _abrirEditarEvento(evento.id),
         borderRadius: BorderRadius.circular(16),
         child: Opacity(
           opacity: pasado ? 0.6 : 1.0,

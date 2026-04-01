@@ -157,7 +157,7 @@ class _CrearEventoScreenState extends State<CrearEventoScreen> {
       }
 
       if (mounted) {
-        context.pop();
+        context.pop(true);
       }
     } catch (e) {
       print('Error guardando evento: $e');

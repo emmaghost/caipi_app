@@ -29,7 +29,9 @@ import '../screens/directora/tipos_incidentes_screen.dart';
 import '../screens/directora/grados_screen.dart';
 import '../screens/directora/crear_grado_screen.dart';
 import '../screens/directora/bitacoras_screen.dart';
+import '../screens/directora/bitacora_gastos_screen.dart';
 import '../screens/directora/crear_bitacora_screen.dart';
+import '../screens/directora/crear_bitacora_gasto_screen.dart';
 import '../screens/directora/control_salidas_screen.dart';
 import '../screens/directora/registrar_salida_screen.dart';
 import '../screens/directora/calificaciones_screen.dart';
@@ -286,6 +288,21 @@ GoRouter createRouter(AuthService authService) {
       },
     ),
     GoRoute(
+      path: '/directora/bitacora-gastos',
+      builder: (context, state) => const BitacoraGastosScreen(),
+    ),
+    GoRoute(
+      path: '/directora/bitacora-gastos/crear',
+      builder: (context, state) => const CrearBitacoraGastoScreen(),
+    ),
+    GoRoute(
+      path: '/directora/bitacora-gastos/editar/:id',
+      builder: (context, state) {
+        final id = state.pathParameters['id']!;
+        return CrearBitacoraGastoScreen(gastoId: id);
+      },
+    ),
+    GoRoute(
       path: '/directora/control-salidas',
       builder: (context, state) => const ControlSalidasScreen(),
     ),
@@ -294,7 +311,12 @@ GoRouter createRouter(AuthService authService) {
       builder: (context, state) {
         final extra = state.extra as Map<String, dynamic>?;
         final fecha = extra?['fecha'] as DateTime?;
-        return RegistrarSalidaScreen(fechaInicial: fecha);
+        final alumnoId = extra?['alumnoId'] as String?;
+        return RegistrarSalidaScreen(
+          fechaInicial: fecha,
+          alumnoIdPreseleccionado: alumnoId,
+          bloquearSelectorAlumno: alumnoId != null,
+        );
       },
     ),
     GoRoute(
