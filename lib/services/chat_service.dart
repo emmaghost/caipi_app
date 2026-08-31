@@ -225,6 +225,61 @@ class ChatService {
     return count;
   }
 
+  /// Conversaciones con mensajes de papás aún no leídos por la escuela.
+  Future<Set<String>> idsConversacionesNoLeidasEscuela() async {
+    final idsPadres = await _supabase
+        .from('usuarios')
+        .select('id')
+        .eq('rol', 'padre');
+
+    final padreIds = (idsPadres as List).map((u) => u['id'] as String).toSet();
+    if (padreIds.isEmpty) return {};
+
+    final response = await _supabase
+        .from('mensajes_chat')
+        .select('conversacion_id, remitente_id')
+        .eq('leido', false);
+
+    final convIds = <String>{};
+    for (final m in response as List) {
+      final remitenteId = m['remitente_id'] as String?;
+      final convId = m['conversacion_id'] as String?;
+      if (convId != null &&
+          remitenteId != null &&
+          padreIds.contains(remitenteId)) {
+        convIds.add(convId);
+      }
+    }
+    return convIds;
+  }
+
+  /// Stream de IDs de conversación con mensajes no leídos de papás.
+  Stream<Set<String>> streamConversacionesNoLeidasEscuela() {
+    return _supabase
+        .from('mensajes_chat')
+        .stream(primaryKey: ['id'])
+        .asyncMap((rows) async {
+      final idsPadres = await _supabase
+          .from('usuarios')
+          .select('id')
+          .eq('rol', 'padre');
+      final padreIds =
+          (idsPadres as List).map((u) => u['id'] as String).toSet();
+      final convIds = <String>{};
+      for (final m in rows) {
+        if (m['leido'] == true) continue;
+        final remitenteId = m['remitente_id'] as String?;
+        final convId = m['conversacion_id'] as String?;
+        if (convId != null &&
+            remitenteId != null &&
+            padreIds.contains(remitenteId)) {
+          convIds.add(convId);
+        }
+      }
+      return convIds;
+    });
+  }
+
   Future<int> contarNoLeidosPadre(String padreId) async {
     final conv = await obtenerConversacionPorPadre(padreId);
     if (conv == null) return 0;

@@ -26,6 +26,9 @@ class _ChatListaEscuelaScreenState extends State<ChatListaEscuelaScreen> {
   bool _filtroListo = false;
   bool _puedeElegirGrado = false;
   String _filtroGrado = 'Todos';
+  /// todos | con_mensajes | no_leidos
+  String _filtroActividad = 'todos';
+  String _busqueda = '';
   List<Grado> _grados = [];
   Map<String, Set<String>> _padreAGrados = {};
 
@@ -142,7 +145,11 @@ class _ChatListaEscuelaScreenState extends State<ChatListaEscuelaScreen> {
     }
   }
 
-  List<Map<String, dynamic>> _aplicarFiltros(List<Map<String, dynamic>> padres) {
+  List<Map<String, dynamic>> _aplicarFiltros(
+    List<Map<String, dynamic>> padres, {
+    required Map<String, Conversacion> convPorPadre,
+    required Set<String> convNoLeidas,
+  }) {
     var lista = List<Map<String, dynamic>>.from(padres);
     if (_padreIdsPermitidos != null) {
       lista = lista
@@ -155,6 +162,33 @@ class _ChatListaEscuelaScreenState extends State<ChatListaEscuelaScreen> {
         return grados.contains(_filtroGrado);
       }).toList();
     }
+
+    final q = _busqueda.trim().toLowerCase();
+    if (q.isNotEmpty) {
+      lista = lista.where((p) {
+        final nombre = (p['nombre'] as String? ?? '').toLowerCase();
+        final apellidos = (p['apellidos'] as String? ?? '').toLowerCase();
+        final email = (p['email'] as String? ?? '').toLowerCase();
+        return nombre.contains(q) ||
+            apellidos.contains(q) ||
+            email.contains(q) ||
+            '$nombre $apellidos'.trim().contains(q);
+      }).toList();
+    }
+
+    if (_filtroActividad == 'con_mensajes') {
+      lista = lista.where((p) {
+        final conv = convPorPadre[p['id'] as String];
+        final texto = conv?.ultimoMensaje?.trim();
+        return texto != null && texto.isNotEmpty;
+      }).toList();
+    } else if (_filtroActividad == 'no_leidos') {
+      lista = lista.where((p) {
+        final conv = convPorPadre[p['id'] as String];
+        return conv != null && convNoLeidas.contains(conv.id);
+      }).toList();
+    }
+
     return lista;
   }
 
@@ -184,16 +218,64 @@ class _ChatListaEscuelaScreenState extends State<ChatListaEscuelaScreen> {
           ? const Center(child: CircularProgressIndicator())
           : Column(
               children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                  child: TextField(
+                    decoration: InputDecoration(
+                      hintText: 'Buscar por nombre o correo...',
+                      prefixIcon: const Icon(Icons.search),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      filled: true,
+                      fillColor: Colors.white,
+                      isDense: true,
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 10,
+                      ),
+                    ),
+                    onChanged: (v) => setState(() => _busqueda = v),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                SizedBox(
+                  height: 44,
+                  child: ListView(
+                    scrollDirection: Axis.horizontal,
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    children: [
+                      _FiltroChip(
+                        label: 'Todos',
+                        isSelected: _filtroActividad == 'todos',
+                        onTap: () =>
+                            setState(() => _filtroActividad = 'todos'),
+                      ),
+                      _FiltroChip(
+                        label: 'Con mensajes',
+                        isSelected: _filtroActividad == 'con_mensajes',
+                        onTap: () => setState(
+                            () => _filtroActividad = 'con_mensajes'),
+                      ),
+                      _FiltroChip(
+                        label: 'No leídos',
+                        isSelected: _filtroActividad == 'no_leidos',
+                        onTap: () =>
+                            setState(() => _filtroActividad = 'no_leidos'),
+                      ),
+                    ],
+                  ),
+                ),
                 if (_puedeElegirGrado || _filtroGrado != 'Todos')
                   SizedBox(
-                    height: 48,
+                    height: 44,
                     child: ListView(
                       scrollDirection: Axis.horizontal,
-                      padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                      padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
                       children: [
                         if (_puedeElegirGrado)
                           _FiltroChip(
-                            label: 'Todos',
+                            label: 'Todos los grupos',
                             isSelected: _filtroGrado == 'Todos',
                             onTap: () =>
                                 setState(() => _filtroGrado = 'Todos'),
@@ -227,143 +309,255 @@ class _ChatListaEscuelaScreenState extends State<ChatListaEscuelaScreen> {
                       return StreamBuilder<List<Conversacion>>(
                         stream: chatService.streamConversaciones(),
                         builder: (context, convSnapshot) {
-                          if (padresSnapshot.connectionState ==
-                                  ConnectionState.waiting ||
-                              convSnapshot.connectionState ==
-                                  ConnectionState.waiting) {
-                            return const Center(
-                                child: CircularProgressIndicator());
-                          }
+                          return StreamBuilder<Set<String>>(
+                            stream: chatService
+                                .streamConversacionesNoLeidasEscuela(),
+                            initialData: const {},
+                            builder: (context, unreadSnapshot) {
+                              if (padresSnapshot.connectionState ==
+                                      ConnectionState.waiting ||
+                                  convSnapshot.connectionState ==
+                                      ConnectionState.waiting) {
+                                return const Center(
+                                    child: CircularProgressIndicator());
+                              }
 
-                          if (padresSnapshot.hasError ||
-                              convSnapshot.hasError) {
-                            return Center(
-                              child: Padding(
-                                padding: const EdgeInsets.all(24),
-                                child: Text(
-                                  'Error al cargar chats.\n¿Ejecutaste ADD_CHAT_PADRES_ESCUELA.sql?',
-                                  textAlign: TextAlign.center,
-                                  style: GoogleFonts.poppins(
-                                      color: AppColors.gris),
-                                ),
-                              ),
-                            );
-                          }
-
-                          var padres = _aplicarFiltros(
-                            List<Map<String, dynamic>>.from(
-                                padresSnapshot.data ?? []),
-                          );
-
-                          final conversaciones = convSnapshot.data ?? [];
-                          final convPorPadre = {
-                            for (final c in conversaciones) c.padreId: c,
-                          };
-
-                          if (padres.isEmpty) {
-                            return Center(
-                              child: Text(
-                                _padreIdsPermitidos != null
-                                    ? 'No hay chats de padres de tu grupo'
-                                    : (_filtroGrado != 'Todos'
-                                        ? 'No hay padres en este grado/grupo'
-                                        : 'No hay padres registrados'),
-                                style: GoogleFonts.poppins(
-                                  color: AppColors.gris,
-                                  fontSize: 16,
-                                ),
-                              ),
-                            );
-                          }
-
-                          padres.sort((a, b) {
-                            final convA = convPorPadre[a['id'] as String];
-                            final convB = convPorPadre[b['id'] as String];
-                            final fechaA =
-                                convA?.ultimoMensajeAt ?? convA?.createdAt;
-                            final fechaB =
-                                convB?.ultimoMensajeAt ?? convB?.createdAt;
-                            if (fechaA == null && fechaB == null) {
-                              return (a['nombre'] as String? ?? '')
-                                  .compareTo(b['nombre'] as String? ?? '');
-                            }
-                            if (fechaA == null) return 1;
-                            if (fechaB == null) return -1;
-                            return fechaB.compareTo(fechaA);
-                          });
-
-                          return ListView.builder(
-                            padding: const EdgeInsets.all(16),
-                            itemCount: padres.length,
-                            itemBuilder: (context, index) {
-                              final padre = padres[index];
-                              final padreId = padre['id'] as String;
-                              final conv = convPorPadre[padreId];
-                              final nombre = _nombrePadre(padre);
-
-                              return Card(
-                                margin: const EdgeInsets.only(bottom: 12),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(16),
-                                ),
-                                child: ListTile(
-                                  contentPadding:
-                                      const EdgeInsets.symmetric(
-                                    horizontal: 16,
-                                    vertical: 8,
-                                  ),
-                                  leading: CircleAvatar(
-                                    backgroundColor:
-                                        AppColors.rosa.withOpacity(0.2),
-                                    child: const Icon(Icons.person,
-                                        color: AppColors.rosa),
-                                  ),
-                                  title: Text(
-                                    nombre,
-                                    style: GoogleFonts.poppins(
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                  subtitle: Text(
-                                    conv?.ultimoMensaje ??
-                                        'Toca para iniciar conversación',
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: GoogleFonts.poppins(
-                                      fontSize: 13,
-                                      color: conv?.ultimoMensaje != null
-                                          ? AppColors.gris
-                                          : AppColors.gris.withOpacity(0.7),
-                                      fontStyle: conv?.ultimoMensaje == null
-                                          ? FontStyle.italic
-                                          : FontStyle.normal,
-                                    ),
-                                  ),
-                                  trailing: conv?.ultimoMensajeAt != null
-                                      ? Text(
-                                          DateFormat('dd/MM HH:mm').format(
-                                            conv!.ultimoMensajeAt!
-                                                .toLocal(),
-                                          ),
-                                          style: GoogleFonts.poppins(
-                                            fontSize: 11,
-                                            color: AppColors.gris,
-                                          ),
-                                        )
-                                      : const Icon(Icons.chevron_right,
+                              if (padresSnapshot.hasError ||
+                                  convSnapshot.hasError) {
+                                return Center(
+                                  child: Padding(
+                                    padding: const EdgeInsets.all(24),
+                                    child: Text(
+                                      'Error al cargar chats.\n¿Ejecutaste ADD_CHAT_PADRES_ESCUELA.sql?',
+                                      textAlign: TextAlign.center,
+                                      style: GoogleFonts.poppins(
                                           color: AppColors.gris),
-                                  onTap: () async {
-                                    final conversacion = conv ??
-                                        await chatService
-                                            .obtenerOCrearConversacion(
-                                                padreId);
-                                    if (!context.mounted) return;
-                                    context.push(
-                                      '/directora/chat/${conversacion.id}',
-                                      extra: {'titulo': nombre},
-                                    );
-                                  },
-                                ),
+                                    ),
+                                  ),
+                                );
+                              }
+
+                              final conversaciones =
+                                  convSnapshot.data ?? [];
+                              final convPorPadre = {
+                                for (final c in conversaciones)
+                                  c.padreId: c,
+                              };
+                              final convNoLeidas =
+                                  unreadSnapshot.data ?? {};
+
+                              var padres = _aplicarFiltros(
+                                List<Map<String, dynamic>>.from(
+                                    padresSnapshot.data ?? []),
+                                convPorPadre: convPorPadre,
+                                convNoLeidas: convNoLeidas,
+                              );
+
+                              if (padres.isEmpty) {
+                                String msg;
+                                if (_busqueda.trim().isNotEmpty) {
+                                  msg = 'Sin resultados para esa búsqueda';
+                                } else if (_filtroActividad == 'no_leidos') {
+                                  msg = 'No hay chats sin leer';
+                                } else if (_filtroActividad ==
+                                    'con_mensajes') {
+                                  msg =
+                                      'Nadie tiene mensajes todavía en este filtro';
+                                } else if (_padreIdsPermitidos != null) {
+                                  msg =
+                                      'No hay chats de padres de tu grupo';
+                                } else if (_filtroGrado != 'Todos') {
+                                  msg =
+                                      'No hay padres en este grado/grupo';
+                                } else {
+                                  msg = 'No hay padres registrados';
+                                }
+                                return Center(
+                                  child: Text(
+                                    msg,
+                                    style: GoogleFonts.poppins(
+                                      color: AppColors.gris,
+                                      fontSize: 16,
+                                    ),
+                                  ),
+                                );
+                              }
+
+                              padres.sort((a, b) {
+                                final convA =
+                                    convPorPadre[a['id'] as String];
+                                final convB =
+                                    convPorPadre[b['id'] as String];
+                                final unreadA = convA != null &&
+                                    convNoLeidas.contains(convA.id);
+                                final unreadB = convB != null &&
+                                    convNoLeidas.contains(convB.id);
+                                if (unreadA != unreadB) {
+                                  return unreadA ? -1 : 1;
+                                }
+                                final fechaA = convA?.ultimoMensajeAt ??
+                                    convA?.createdAt;
+                                final fechaB = convB?.ultimoMensajeAt ??
+                                    convB?.createdAt;
+                                if (fechaA == null && fechaB == null) {
+                                  return (a['nombre'] as String? ?? '')
+                                      .compareTo(
+                                          b['nombre'] as String? ?? '');
+                                }
+                                if (fechaA == null) return 1;
+                                if (fechaB == null) return -1;
+                                return fechaB.compareTo(fechaA);
+                              });
+
+                              return ListView.builder(
+                                padding: const EdgeInsets.all(16),
+                                itemCount: padres.length,
+                                itemBuilder: (context, index) {
+                                  final padre = padres[index];
+                                  final padreId = padre['id'] as String;
+                                  final conv = convPorPadre[padreId];
+                                  final nombre = _nombrePadre(padre);
+                                  final noLeido = conv != null &&
+                                      convNoLeidas.contains(conv.id);
+
+                                  return Card(
+                                    margin:
+                                        const EdgeInsets.only(bottom: 12),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius:
+                                          BorderRadius.circular(16),
+                                      side: noLeido
+                                          ? const BorderSide(
+                                              color: AppColors.azul,
+                                              width: 1.5,
+                                            )
+                                          : BorderSide.none,
+                                    ),
+                                    child: ListTile(
+                                      contentPadding:
+                                          const EdgeInsets.symmetric(
+                                        horizontal: 16,
+                                        vertical: 8,
+                                      ),
+                                      leading: Stack(
+                                        clipBehavior: Clip.none,
+                                        children: [
+                                          CircleAvatar(
+                                            backgroundColor: AppColors.rosa
+                                                .withOpacity(0.2),
+                                            child: const Icon(Icons.person,
+                                                color: AppColors.rosa),
+                                          ),
+                                          if (noLeido)
+                                            Positioned(
+                                              right: -2,
+                                              top: -2,
+                                              child: Container(
+                                                width: 12,
+                                                height: 12,
+                                                decoration:
+                                                    const BoxDecoration(
+                                                  color: AppColors.azul,
+                                                  shape: BoxShape.circle,
+                                                ),
+                                              ),
+                                            ),
+                                        ],
+                                      ),
+                                      title: Text(
+                                        nombre,
+                                        style: GoogleFonts.poppins(
+                                          fontWeight: noLeido
+                                              ? FontWeight.w700
+                                              : FontWeight.w600,
+                                        ),
+                                      ),
+                                      subtitle: Text(
+                                        conv?.ultimoMensaje ??
+                                            'Toca para iniciar conversación',
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: GoogleFonts.poppins(
+                                          fontSize: 13,
+                                          color: conv?.ultimoMensaje !=
+                                                  null
+                                              ? AppColors.gris
+                                              : AppColors.gris
+                                                  .withOpacity(0.7),
+                                          fontStyle:
+                                              conv?.ultimoMensaje == null
+                                                  ? FontStyle.italic
+                                                  : FontStyle.normal,
+                                          fontWeight: noLeido
+                                              ? FontWeight.w600
+                                              : FontWeight.normal,
+                                        ),
+                                      ),
+                                      trailing: Column(
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.center,
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.end,
+                                        children: [
+                                          if (conv?.ultimoMensajeAt !=
+                                              null)
+                                            Text(
+                                              DateFormat('dd/MM HH:mm')
+                                                  .format(
+                                                conv!.ultimoMensajeAt!
+                                                    .toLocal(),
+                                              ),
+                                              style: GoogleFonts.poppins(
+                                                fontSize: 11,
+                                                color: AppColors.gris,
+                                              ),
+                                            )
+                                          else
+                                            const Icon(
+                                                Icons.chevron_right,
+                                                color: AppColors.gris),
+                                          if (noLeido) ...[
+                                            const SizedBox(height: 4),
+                                            Container(
+                                              padding: const EdgeInsets
+                                                  .symmetric(
+                                                horizontal: 8,
+                                                vertical: 2,
+                                              ),
+                                              decoration: BoxDecoration(
+                                                color: AppColors.azul,
+                                                borderRadius:
+                                                    BorderRadius.circular(
+                                                        10),
+                                              ),
+                                              child: Text(
+                                                'Nuevo',
+                                                style:
+                                                    GoogleFonts.poppins(
+                                                  fontSize: 10,
+                                                  color: Colors.white,
+                                                  fontWeight:
+                                                      FontWeight.w600,
+                                                ),
+                                              ),
+                                            ),
+                                          ],
+                                        ],
+                                      ),
+                                      onTap: () async {
+                                        final conversacion = conv ??
+                                            await chatService
+                                                .obtenerOCrearConversacion(
+                                                    padreId);
+                                        if (!context.mounted) return;
+                                        context.push(
+                                          '/directora/chat/${conversacion.id}',
+                                          extra: {'titulo': nombre},
+                                        );
+                                      },
+                                    ),
+                                  );
+                                },
                               );
                             },
                           );
@@ -376,13 +570,16 @@ class _ChatListaEscuelaScreenState extends State<ChatListaEscuelaScreen> {
             ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _mostrarDialogoMensajeMasivo,
-        backgroundColor: AppColors.verdeClaro,
+        backgroundColor: AppColors.exitoPago,
+        foregroundColor: Colors.white,
+        elevation: 4,
         icon: const Icon(Icons.campaign, color: Colors.white),
         label: Text(
           'Mensaje masivo',
           style: GoogleFonts.poppins(
             color: Colors.white,
-            fontWeight: FontWeight.w600,
+            fontWeight: FontWeight.w700,
+            fontSize: 14,
           ),
         ),
       ),
