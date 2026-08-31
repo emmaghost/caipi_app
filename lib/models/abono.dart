@@ -9,6 +9,7 @@ class Abono {
   final String? formaPago; // Efectivo, Transferencia, Tarjeta
   final String? referencia; // Número de referencia/transacción
   final String? notas;
+  final String? recibidoPorNombre;
   final String? reciboFolio; // REC-2026-0001
   final DateTime createdAt;
   final String? createdBy;
@@ -21,6 +22,7 @@ class Abono {
     this.formaPago,
     this.referencia,
     this.notas,
+    this.recibidoPorNombre,
     this.reciboFolio,
     required this.createdAt,
     this.createdBy,
@@ -50,6 +52,7 @@ class Abono {
       formaPago: json['forma_pago'] as String?,
       referencia: json['referencia'] as String?,
       notas: json['notas'] as String?,
+      recibidoPorNombre: json['recibido_por_nombre'] as String?,
       reciboFolio: json['recibo_folio'] as String?,
       createdAt: DateTime.parse(json['created_at'] as String),
       createdBy: json['created_by'] as String?,
@@ -65,6 +68,7 @@ class Abono {
       'forma_pago': formaPago,
       'referencia': referencia,
       'notas': notas,
+      'recibido_por_nombre': recibidoPorNombre,
       'recibo_folio': reciboFolio,
       'created_at': createdAt.toIso8601String(),
       'created_by': createdBy,
@@ -79,6 +83,7 @@ class Abono {
     String? formaPago,
     String? referencia,
     String? notas,
+    String? recibidoPorNombre,
     String? reciboFolio,
     DateTime? createdAt,
     String? createdBy,
@@ -91,6 +96,7 @@ class Abono {
       formaPago: formaPago ?? this.formaPago,
       referencia: referencia ?? this.referencia,
       notas: notas ?? this.notas,
+      recibidoPorNombre: recibidoPorNombre ?? this.recibidoPorNombre,
       reciboFolio: reciboFolio ?? this.reciboFolio,
       createdAt: createdAt ?? this.createdAt,
       createdBy: createdBy ?? this.createdBy,

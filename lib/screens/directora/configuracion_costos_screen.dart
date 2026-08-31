@@ -23,6 +23,7 @@ class _ConfiguracionCostosScreenState extends State<ConfiguracionCostosScreen> {
   final _inscripcionController = TextEditingController();
   final _seguroController = TextEditingController();
   final _mensualidad12Controller = TextEditingController();
+  final _mensualidad11Controller = TextEditingController();
   final _mensualidad10Controller = TextEditingController();
   final _notasController = TextEditingController();
 
@@ -39,6 +40,7 @@ class _ConfiguracionCostosScreenState extends State<ConfiguracionCostosScreen> {
       _inscripcionController,
       _seguroController,
       _mensualidad12Controller,
+      _mensualidad11Controller,
       _mensualidad10Controller,
     ]) {
       c.addListener(_refrescarVista);
@@ -51,6 +53,7 @@ class _ConfiguracionCostosScreenState extends State<ConfiguracionCostosScreen> {
       _inscripcionController,
       _seguroController,
       _mensualidad12Controller,
+      _mensualidad11Controller,
       _mensualidad10Controller,
     ]) {
       c.removeListener(_refrescarVista);
@@ -58,6 +61,7 @@ class _ConfiguracionCostosScreenState extends State<ConfiguracionCostosScreen> {
     _inscripcionController.dispose();
     _seguroController.dispose();
     _mensualidad12Controller.dispose();
+    _mensualidad11Controller.dispose();
     _mensualidad10Controller.dispose();
     _notasController.dispose();
     super.dispose();
@@ -78,6 +82,7 @@ class _ConfiguracionCostosScreenState extends State<ConfiguracionCostosScreen> {
         _inscripcionController.text = _configActual!.costoInscripcion.toString();
         _seguroController.text = _configActual!.costoSeguroCredencial.toString();
         _mensualidad12Controller.text = _configActual!.costoMensualidad12.toString();
+        _mensualidad11Controller.text = _configActual!.costoMensualidad11.toString();
         _mensualidad10Controller.text = _configActual!.costoMensualidad10.toString();
         _notasController.text = _configActual!.notas ?? '';
       }
@@ -100,6 +105,7 @@ class _ConfiguracionCostosScreenState extends State<ConfiguracionCostosScreen> {
         'costo_inscripcion': double.parse(_inscripcionController.text),
         'costo_seguro_credencial': double.parse(_seguroController.text),
         'costo_mensualidad_12': double.parse(_mensualidad12Controller.text),
+        'costo_mensualidad_11': double.parse(_mensualidad11Controller.text),
         'costo_mensualidad_10': double.parse(_mensualidad10Controller.text),
         'notas': _notasController.text.trim().isEmpty ? null : _notasController.text.trim(),
         'vigente': true,
@@ -122,7 +128,12 @@ class _ConfiguracionCostosScreenState extends State<ConfiguracionCostosScreen> {
             backgroundColor: Colors.green,
           ),
         );
-        Navigator.pop(context);
+        // go() deja sin stack: pop() → pantalla negra
+        if (Navigator.of(context).canPop()) {
+          Navigator.of(context).pop();
+        } else {
+          context.go('/directora');
+        }
       }
     } catch (e) {
       if (mounted) {
@@ -252,7 +263,7 @@ class _ConfiguracionCostosScreenState extends State<ConfiguracionCostosScreen> {
                     TextFormField(
                       controller: _inscripcionController,
                       decoration: _fieldDecoration(
-                        label: 'Inscripción anual',
+                        label: 'Inscripción anual (referencia)',
                         icon: Icons.school_outlined,
                         hintText: r'0.00',
                       ),
@@ -267,8 +278,28 @@ class _ConfiguracionCostosScreenState extends State<ConfiguracionCostosScreen> {
                     TextFormField(
                       controller: _seguroController,
                       decoration: _fieldDecoration(
-                        label: 'Seguro + credencial',
+                        label: 'Seguro + credencial (referencia)',
                         icon: Icons.health_and_safety_outlined,
+                        hintText: r'0.00',
+                      ),
+                      style: GoogleFonts.poppins(fontSize: 16, fontWeight: FontWeight.w500),
+                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                      inputFormatters: [
+                        FilteringTextInputFormatter.allow(RegExp(r'^\d+\.?\d{0,2}')),
+                      ],
+                      validator: _validarMonto,
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Inscripción y seguro se calculan en costos, pero no aparecen en el cuadro de pagos (solo colegiaturas).',
+                      style: GoogleFonts.poppins(fontSize: 12, color: AppColors.gris),
+                    ),
+                    const SizedBox(height: 14),
+                    TextFormField(
+                      controller: _mensualidad12Controller,
+                      decoration: _fieldDecoration(
+                        label: 'Mensualidad plan 12 meses',
+                        icon: Icons.calendar_month_outlined,
                         hintText: r'0.00',
                       ),
                       style: GoogleFonts.poppins(fontSize: 16, fontWeight: FontWeight.w500),
@@ -280,10 +311,10 @@ class _ConfiguracionCostosScreenState extends State<ConfiguracionCostosScreen> {
                     ),
                     const SizedBox(height: 14),
                     TextFormField(
-                      controller: _mensualidad12Controller,
+                      controller: _mensualidad11Controller,
                       decoration: _fieldDecoration(
-                        label: 'Mensualidad plan 12 meses',
-                        icon: Icons.calendar_month_outlined,
+                        label: 'Mensualidad plan 11 meses',
+                        icon: Icons.date_range_outlined,
                         hintText: r'0.00',
                       ),
                       style: GoogleFonts.poppins(fontSize: 16, fontWeight: FontWeight.w500),
@@ -413,7 +444,7 @@ class _ConfiguracionCostosScreenState extends State<ConfiguracionCostosScreen> {
                         ],
                       ),
                       const SizedBox(height: 12),
-                      _infoLine('Los padres eligen plan de 10 o 12 mensualidades al inscribir.'),
+                      _infoLine('Al inscribir se elige plan de 10, 11 o 12 mensualidades.'),
                       _infoLine('Al crear un alumno se generan los pagos según el plan.'),
                       _infoLine('Estos valores aplican a alumnos nuevos con esta configuración.'),
                     ],
@@ -461,15 +492,17 @@ class _ConfiguracionCostosScreenState extends State<ConfiguracionCostosScreen> {
   }
 
   Widget _buildComparativaSection() {
-    final inscripcion = double.tryParse(_inscripcionController.text) ?? 0;
-    final seguro = double.tryParse(_seguroController.text) ?? 0;
     final mensualidad12 = double.tryParse(_mensualidad12Controller.text) ?? 0;
+    final mensualidad11 = double.tryParse(_mensualidad11Controller.text) ?? 0;
     final mensualidad10 = double.tryParse(_mensualidad10Controller.text) ?? 0;
 
     final subMeses12 = mensualidad12 * 12;
+    final subMeses11 = mensualidad11 * 11;
     final subMeses10 = mensualidad10 * 10;
-    final totalPlan12 = inscripcion + seguro + subMeses12;
-    final totalPlan10 = inscripcion + seguro + subMeses10;
+    // Totales solo de colegiaturas (sin inscripción ni seguro).
+    final totalPlan12 = subMeses12;
+    final totalPlan11 = subMeses11;
+    final totalPlan10 = subMeses10;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -501,42 +534,50 @@ class _ConfiguracionCostosScreenState extends State<ConfiguracionCostosScreen> {
         ),
         const SizedBox(height: 6),
         Text(
-          'Estimado del primer ciclo: inscripción + seguro + mensualidades.',
+          'Total = solo colegiaturas (sin inscripción ni seguro).',
           style: GoogleFonts.poppins(fontSize: 13, color: AppColors.gris),
         ),
         const SizedBox(height: 16),
         LayoutBuilder(
           builder: (context, constraints) {
-            final narrow = constraints.maxWidth < 560;
+            final narrow = constraints.maxWidth < 720;
             final card12 = _buildPlanCard(
               titulo: '12 mensualidades',
-              subtitulo: 'Pago mensual más bajo',
+              subtitulo: 'Agosto - Julio',
               mensualidad: mensualidad12,
               meses: 12,
               subtotalMensualidades: subMeses12,
-              inscripcion: inscripcion,
-              seguro: seguro,
               total: totalPlan12,
-              accent: AppColors.purpura,
-              lightAccent: const Color(0xFFF3EEFF),
+              accent: AppColors.exitoPago,
+              lightAccent: const Color(0xFFE8F8F0),
+            );
+            final card11 = _buildPlanCard(
+              titulo: '11 mensualidades',
+              subtitulo: 'Agosto - Junio',
+              mensualidad: mensualidad11,
+              meses: 11,
+              subtotalMensualidades: subMeses11,
+              total: totalPlan11,
+              accent: AppColors.azul,
+              lightAccent: const Color(0xFFE8F4FC),
             );
             final card10 = _buildPlanCard(
               titulo: '10 mensualidades',
-              subtitulo: 'Menos meses, cuota mayor',
+              subtitulo: 'Agosto - Mayo',
               mensualidad: mensualidad10,
               meses: 10,
               subtotalMensualidades: subMeses10,
-              inscripcion: inscripcion,
-              seguro: seguro,
               total: totalPlan10,
-              accent: AppColors.naranja,
-              lightAccent: const Color(0xFFFFF5ED),
+              accent: AppColors.purpura,
+              lightAccent: const Color(0xFFF3EEFF),
             );
             if (narrow) {
               return Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   card12,
+                  const SizedBox(height: 12),
+                  card11,
                   const SizedBox(height: 12),
                   card10,
                 ],
@@ -547,6 +588,8 @@ class _ConfiguracionCostosScreenState extends State<ConfiguracionCostosScreen> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   Expanded(child: card12),
+                  const SizedBox(width: 12),
+                  Expanded(child: card11),
                   const SizedBox(width: 12),
                   Expanded(child: card10),
                 ],
@@ -564,8 +607,6 @@ class _ConfiguracionCostosScreenState extends State<ConfiguracionCostosScreen> {
     required double mensualidad,
     required int meses,
     required double subtotalMensualidades,
-    required double inscripcion,
-    required double seguro,
     required double total,
     required Color accent,
     required Color lightAccent,
@@ -623,7 +664,7 @@ class _ConfiguracionCostosScreenState extends State<ConfiguracionCostosScreen> {
                     style: GoogleFonts.fredoka(
                       fontSize: 22,
                       fontWeight: FontWeight.bold,
-                      color: AppColors.azulOscuro,
+                      color: accent,
                     ),
                   ),
                   Text(
@@ -647,14 +688,12 @@ class _ConfiguracionCostosScreenState extends State<ConfiguracionCostosScreen> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  _miniRow('Inscripción', _fmt(inscripcion)),
-                  _miniRow('Seguro + credencial', _fmt(seguro)),
                   _miniRow('$meses × mensualidad', _fmt(subtotalMensualidades)),
                   const SizedBox(height: 8),
                   Container(
                     padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 10),
                     decoration: BoxDecoration(
-                      color: accent.withValues(alpha: 0.1),
+                      color: accent.withValues(alpha: 0.12),
                       borderRadius: BorderRadius.circular(10),
                     ),
                     child: Row(
@@ -662,11 +701,11 @@ class _ConfiguracionCostosScreenState extends State<ConfiguracionCostosScreen> {
                       children: [
                         Flexible(
                           child: Text(
-                            'Total estimado',
+                            'Total colegiaturas',
                             style: GoogleFonts.poppins(
                               fontWeight: FontWeight.w700,
                               fontSize: 12,
-                              color: AppColors.negro,
+                              color: accent,
                             ),
                           ),
                         ),
@@ -675,8 +714,8 @@ class _ConfiguracionCostosScreenState extends State<ConfiguracionCostosScreen> {
                           _fmt(total),
                           style: GoogleFonts.fredoka(
                             fontWeight: FontWeight.bold,
-                            fontSize: 15,
-                            color: accent.darken(0.15),
+                            fontSize: 16,
+                            color: accent,
                           ),
                         ),
                       ],

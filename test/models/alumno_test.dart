@@ -40,6 +40,7 @@ void main() {
         apellidos: 'Pérez',
         fechaNacimiento: fechaNacimiento,
         padreId: 'padre-123',
+        fechaIngreso: DateTime.now(),
         createdAt: DateTime.now(),
         updatedAt: DateTime.now(),
       );
@@ -63,6 +64,7 @@ void main() {
         gradoId: 'maternal-1',
         padreId: 'padre-123',
         activo: true,
+        fechaIngreso: DateTime.now(),
         createdAt: DateTime.now(),
         updatedAt: DateTime.now(),
       );
@@ -89,6 +91,7 @@ void main() {
         fechaNacimiento: DateTime(2020, 1, 1),
         padreId: 'padre-123',
         alergias: 'Lactosa',
+        fechaIngreso: DateTime.now(),
         createdAt: DateTime.now(),
         updatedAt: DateTime.now(),
       );
@@ -99,6 +102,7 @@ void main() {
         apellidos: 'López',
         fechaNacimiento: DateTime(2020, 1, 1),
         padreId: 'padre-456',
+        fechaIngreso: DateTime.now(),
         createdAt: DateTime.now(),
         updatedAt: DateTime.now(),
       );

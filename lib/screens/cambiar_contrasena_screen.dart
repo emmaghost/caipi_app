@@ -1,12 +1,14 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 
 import '../config/app_colors.dart';
 import '../services/auth_service.dart';
+import '../widgets/app_drawer.dart';
 
-/// Cambio de contraseña para usuario ya autenticado (directora, profesora, padre).
+/// Cambio de contraseña para usuario ya autenticado (directora, secretaria, profesora, padre).
 class CambiarContrasenaScreen extends StatefulWidget {
   const CambiarContrasenaScreen({super.key});
 
@@ -30,9 +32,16 @@ class _CambiarContrasenaScreenState extends State<CambiarContrasenaScreen> {
     super.dispose();
   }
 
+  void _irAlInicio() {
+    final u = context.read<AuthService>().currentUser;
+    context.go(u?.esPadre == true ? '/padre' : '/directora');
+  }
+
   Future<void> _guardar() async {
     if (!_formKey.currentState!.validate()) return;
-    if (_nueva.text != _confirmar.text) {
+    final nueva = _nueva.text.trim();
+    final confirmar = _confirmar.text.trim();
+    if (nueva != confirmar) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Las contraseñas no coinciden'),
@@ -44,13 +53,17 @@ class _CambiarContrasenaScreenState extends State<CambiarContrasenaScreen> {
 
     setState(() => _cargando = true);
     final auth = Provider.of<AuthService>(context, listen: false);
-    final err = await auth.cambiarPassword(_nueva.text);
+    final err = await auth.cambiarPassword(nueva);
     if (!mounted) return;
     setState(() => _cargando = false);
 
     if (err != null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(err), backgroundColor: AppColors.rojo),
+        SnackBar(
+          content: Text(err),
+          backgroundColor: AppColors.rojo,
+          duration: const Duration(seconds: 6),
+        ),
       );
       return;
     }
@@ -58,7 +71,7 @@ class _CambiarContrasenaScreenState extends State<CambiarContrasenaScreen> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
-          'Contraseña actualizada correctamente',
+          'Contraseña actualizada. Ya puedes entrar con la nueva.',
           style: GoogleFonts.poppins(),
         ),
         backgroundColor: AppColors.verde,
@@ -67,10 +80,7 @@ class _CambiarContrasenaScreenState extends State<CambiarContrasenaScreen> {
     if (context.canPop()) {
       context.pop();
     } else {
-      final u = auth.currentUser;
-      context.go(
-        u?.esPadre == true ? '/padre' : '/directora',
-      );
+      _irAlInicio();
     }
   }
 
@@ -78,6 +88,7 @@ class _CambiarContrasenaScreenState extends State<CambiarContrasenaScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.grisClaro,
+      drawer: const AppDrawer(),
       appBar: AppBar(
         title: Text(
           'Cambiar contraseña',
@@ -85,6 +96,13 @@ class _CambiarContrasenaScreenState extends State<CambiarContrasenaScreen> {
         ),
         backgroundColor: Colors.white,
         elevation: 0,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.home_outlined),
+            tooltip: 'Inicio',
+            onPressed: _irAlInicio,
+          ),
+        ],
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(24),
@@ -97,10 +115,11 @@ class _CambiarContrasenaScreenState extends State<CambiarContrasenaScreen> {
                 child: Padding(
                   padding: const EdgeInsets.all(16),
                   child: Text(
-                    'Si entraste con la contraseña temporal Caipi2026 (o la que te dieron), '
-                    'aquí puedes poner una contraseña solo tuya. Mínimo 6 caracteres.\n\n'
-                    'Si olvidas la contraseña, en el inicio de sesión usa «Olvidé mi contraseña» '
-                    'para recibir un correo de recuperación.',
+                    'La cuenta temporal entra con Caipi2026. Aquí pones una contraseña solo tuya '
+                    '(mínimo 6 caracteres).\n\n'
+                    'Escríbela dos veces. Puedes mostrar u ocultar con el ojito.\n\n'
+                    'Si no puedes cambiarla: cierra sesión, entra otra vez y reintenta. '
+                    'Si olvidas la nueva, en el login usa «¿Olvidaste tu contraseña?».',
                     style: GoogleFonts.poppins(
                       fontSize: 14,
                       height: 1.4,
@@ -113,15 +132,23 @@ class _CambiarContrasenaScreenState extends State<CambiarContrasenaScreen> {
               TextFormField(
                 controller: _nueva,
                 obscureText: _obscure1,
+                autocorrect: false,
+                enableSuggestions: false,
+                keyboardType: TextInputType.visiblePassword,
+                textInputAction: TextInputAction.next,
+                inputFormatters: [
+                  FilteringTextInputFormatter.deny(RegExp(r'\s')),
+                ],
+                autofillHints: const [AutofillHints.newPassword],
                 decoration: InputDecoration(
                   labelText: 'Nueva contraseña',
+                  helperText: 'Mínimo 6 caracteres, sin espacios',
                   prefixIcon: const Icon(Icons.lock_outline),
                   suffixIcon: IconButton(
                     icon: Icon(
                       _obscure1 ? Icons.visibility : Icons.visibility_off,
                     ),
-                    onPressed: () =>
-                        setState(() => _obscure1 = !_obscure1),
+                    onPressed: () => setState(() => _obscure1 = !_obscure1),
                   ),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
@@ -130,7 +157,8 @@ class _CambiarContrasenaScreenState extends State<CambiarContrasenaScreen> {
                   fillColor: Colors.white,
                 ),
                 validator: (v) {
-                  if (v == null || v.length < 6) {
+                  final t = v?.trim() ?? '';
+                  if (t.length < 6) {
                     return 'Mínimo 6 caracteres';
                   }
                   return null;
@@ -140,15 +168,25 @@ class _CambiarContrasenaScreenState extends State<CambiarContrasenaScreen> {
               TextFormField(
                 controller: _confirmar,
                 obscureText: _obscure2,
+                autocorrect: false,
+                enableSuggestions: false,
+                keyboardType: TextInputType.visiblePassword,
+                textInputAction: TextInputAction.done,
+                onFieldSubmitted: (_) {
+                  if (!_cargando) _guardar();
+                },
+                inputFormatters: [
+                  FilteringTextInputFormatter.deny(RegExp(r'\s')),
+                ],
+                autofillHints: const [AutofillHints.newPassword],
                 decoration: InputDecoration(
-                  labelText: 'Confirmar contraseña',
+                  labelText: 'Repite la contraseña',
                   prefixIcon: const Icon(Icons.lock_outline),
                   suffixIcon: IconButton(
                     icon: Icon(
                       _obscure2 ? Icons.visibility : Icons.visibility_off,
                     ),
-                    onPressed: () =>
-                        setState(() => _obscure2 = !_obscure2),
+                    onPressed: () => setState(() => _obscure2 = !_obscure2),
                   ),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
@@ -157,7 +195,11 @@ class _CambiarContrasenaScreenState extends State<CambiarContrasenaScreen> {
                   fillColor: Colors.white,
                 ),
                 validator: (v) {
-                  if (v == null || v.isEmpty) return 'Repite la contraseña';
+                  final t = v?.trim() ?? '';
+                  if (t.isEmpty) return 'Repite la contraseña';
+                  if (t != _nueva.text.trim()) {
+                    return 'No coinciden. Revísalas con el ojito.';
+                  }
                   return null;
                 },
               ),

@@ -1,14 +1,11 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../config/app_colors.dart';
-import '../../widgets/app_drawer.dart';
 import '../../models/entrevista_padres.dart';
-import '../../services/supabase_service.dart';
 
 class EntrevistaPadresScreen extends StatefulWidget {
   final String? alumnoId;
@@ -123,7 +120,95 @@ class _EntrevistaPadresScreenState extends State<EntrevistaPadresScreen> {
   }
 
   Future<void> _cargarEntrevista() async {
-    // TODO: Cargar datos de entrevista existente si es edición
+    if (widget.entrevistaId == null) return;
+    try {
+      final response = await Supabase.instance.client
+          .from('entrevistas_padres')
+          .select()
+          .eq('id', widget.entrevistaId!)
+          .maybeSingle();
+      if (response == null || !mounted) return;
+      final e = EntrevistaPadres.fromJson(response);
+      setState(() {
+        _madreNombreController.text = e.madreNombre ?? '';
+        _madreEdadController.text = e.madreEdad?.toString() ?? '';
+        _madreOcupacionController.text = e.madreOcupacion ?? '';
+        _madreDireccionController.text = e.madreDireccion ?? '';
+        _madreGradoEstudiosController.text = e.madreGradoEstudios ?? '';
+        _madreTelefonoController.text = e.madreTelefono ?? '';
+        _padreNombreController.text = e.padreNombre ?? '';
+        _padreEdadController.text = e.padreEdad?.toString() ?? '';
+        _padreOcupacionController.text = e.padreOcupacion ?? '';
+        _padreDireccionController.text = e.padreDireccion ?? '';
+        _padreGradoEstudiosController.text = e.padreGradoEstudios ?? '';
+        _padreTelefonoController.text = e.padreTelefono ?? '';
+        _viveCalleController.text = e.viveCalle ?? '';
+        _viveColoniaController.text = e.viveColonia ?? '';
+        _viveNumeroController.text = e.viveNumero ?? '';
+        _viveReferenciaController.text = e.viveReferencia ?? '';
+        _viveTipo = e.viveTipo ?? 'Casa';
+        _viveCondicion = e.viveCondicion ?? 'Propia';
+        _personasVivenConController.text = e.personasVivenCon ?? '';
+        _quienCuidaController.text = e.quienCuidaCuandoNoEscuela ?? '';
+        _enfermedadesController.text = e.enfermedadesPadecimientos ?? '';
+        _alergiasController.text = e.alergiasCuidados ?? '';
+        _controlEsfinteres = e.controlEsfinteres ?? false;
+        _controlEsfinteresEdadController.text = e.controlEsfinteresEdad ?? '';
+        _necesidadesEducativasController.text =
+            e.necesidadesEducativasEspeciales ?? '';
+        _dificultadesController.text = e.dificultadesRealizar ?? '';
+        _motivoInasistenciasController.text = e.motivoInasistencias ?? '';
+        _embarazoPlaneado = e.embarazoPlaneado ?? 'Sí';
+        _tiempoEmbarazoController.text = e.tiempoEmbarazo ?? '';
+        _dificultadesEmbarazoController.text = e.dificultadesEmbarazo ?? '';
+        _edadCaminoController.text = e.edadCamino ?? '';
+        _edadHabloController.text = e.edadHablo ?? '';
+        _padresSeparados = e.padresSeparados;
+        _quienPatriaPotestadController.text = e.quienPatriaPotestad ?? '';
+        _conviveOtraParteController.text = e.conviveOtraParte ?? '';
+        _tienePadrastroController.text = e.tienePadrastroMadrastra ?? '';
+        _relacionPadrastroController.text = e.relacionPadrastroMadrastra ?? '';
+        _comoSeRefiereController.text = e.comoSeRefiereAEl ?? '';
+        _tieneHermanastrosController.text = e.tieneHermanastros ?? '';
+        _relacionHermanastrosController.text = e.relacionHermanastros ?? '';
+        _caracterHijoController.text = e.caracterHijo ?? '';
+        _queHaceEnojarController.text = e.queLaHaceEnojar ?? '';
+        _quePoneTristeController.text = e.queLaPoneTriste ?? '';
+        _comoActuaController.text = e.comoActuaCuandoAsi ?? '';
+        _queMasGustaController.text = e.queMasLeGustaHacer ?? '';
+        _seVisteSola = e.seVisteSola ?? false;
+        _seAtaCordonesController.text = e.seAtaCordonesSola ?? '';
+        _habitosHigieneController.text = e.habitosHigiene ?? '';
+        _rutinaDespuesController.text = e.rutinaDespuesEscuela ?? '';
+        _horaDuermeController.text = e.horaDuerme ?? '';
+        _horaDespiertaController.text = e.horaDespierta ?? '';
+        _saleFinesSemana = e.saleFineSemana ?? false;
+        _saleADondeController.text = e.saleADonde ?? '';
+        _actividadesFamiliaController.text = e.actividadesFamilia ?? '';
+        _haceAmigosFacilidad = e.haceAmigosFacilidad ?? false;
+        _nombresAmigosController.text = e.nombresAmigos ?? '';
+        _tieneMascotas = e.tieneMascotas ?? false;
+        _mascotasCualesController.text = e.mascotasCuales ?? '';
+        _ayudaQuehaceres = e.ayudaQuehaceres ?? false;
+        _cuandoPortaMalController.text = e.cuandoPortaMalActua ?? '';
+        _hayCastigosController.text = e.hayCastigosCuales ?? '';
+        _cuandoPortaBienController.text = e.cuandoPortaBienActua ?? '';
+        _dicenGroceriasController.text = e.dicenGroceriasQuien ?? '';
+        _juguetesFrecuenciaController.text = e.juguetesUsaFrecuencia ?? '';
+        _queEsperaMaestraController.text = e.queEsperaMaestra ?? '';
+        _queEsperaEscuelaController.text = e.queEsperaEscuela ?? '';
+        _dispuestoApoyar = e.dispuestoApoyarEscuela ?? true;
+      });
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('No se pudo cargar la entrevista: $e'),
+            backgroundColor: AppColors.rojo,
+          ),
+        );
+      }
+    }
   }
 
   @override
@@ -188,12 +273,15 @@ class _EntrevistaPadresScreenState extends State<EntrevistaPadresScreen> {
     super.dispose();
   }
 
-  Future<void> _guardarEntrevista() async {
-    if (!_formKey.currentState!.validate()) {
+  Future<void> _guardarEntrevista({bool marcarCompleta = true}) async {
+    final alumnoId = widget.alumnoId;
+    if (alumnoId == null || alumnoId.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Por favor completa todos los campos requeridos'),
-          backgroundColor: AppColors.naranja,
+          content: Text(
+            'Debes seleccionar un alumno. Ve a Entrevistas y elige el hijo.',
+          ),
+          backgroundColor: Colors.orange,
         ),
       );
       return;
@@ -205,10 +293,18 @@ class _EntrevistaPadresScreenState extends State<EntrevistaPadresScreen> {
       final entrevistaId = widget.entrevistaId ?? const Uuid().v4();
       final userId = Supabase.instance.client.auth.currentUser!.id;
 
+      String? padreUsuarioId;
+      final alumnoRow = await Supabase.instance.client
+          .from('alumnos')
+          .select('padre_id')
+          .eq('id', alumnoId)
+          .maybeSingle();
+      padreUsuarioId = alumnoRow?['padre_id'] as String?;
+
       final entrevistaData = {
         'id': entrevistaId,
-        'alumno_id': widget.alumnoId,
-        'padre_usuario_id': userId,
+        'alumno_id': alumnoId,
+        'padre_usuario_id': padreUsuarioId,
         // Madre
         'madre_nombre': _madreNombreController.text.trim(),
         'madre_edad': int.tryParse(_madreEdadController.text.trim()),
@@ -286,8 +382,9 @@ class _EntrevistaPadresScreenState extends State<EntrevistaPadresScreen> {
         'que_espera_escuela': _queEsperaEscuelaController.text.trim(),
         'dispuesto_apoyar_escuela': _dispuestoApoyar,
         // Metadatos
-        'completado': true,
+        'completado': marcarCompleta,
         'created_by': userId,
+        'updated_at': DateTime.now().toIso8601String(),
       };
 
       if (widget.entrevistaId != null) {
@@ -305,8 +402,12 @@ class _EntrevistaPadresScreenState extends State<EntrevistaPadresScreen> {
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('✅ Entrevista guardada exitosamente'),
+          SnackBar(
+            content: Text(
+              marcarCompleta
+                  ? 'Entrevista guardada como completa'
+                  : 'Avance guardado. Puedes continuar después.',
+            ),
             backgroundColor: AppColors.verde,
           ),
         );
@@ -332,7 +433,6 @@ class _EntrevistaPadresScreenState extends State<EntrevistaPadresScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.grisClaro,
-      drawer: const AppDrawer(),
       appBar: AppBar(
         title: Text(
           'Entrevista a Padres',
@@ -341,6 +441,12 @@ class _EntrevistaPadresScreenState extends State<EntrevistaPadresScreen> {
         backgroundColor: Colors.white,
         elevation: 0,
         actions: [
+          TextButton(
+            onPressed: _isLoading
+                ? null
+                : () => _guardarEntrevista(marcarCompleta: false),
+            child: const Text('Guardar avance'),
+          ),
           IconButton(
             icon: const Icon(Icons.home),
             onPressed: () => context.go('/directora'),
@@ -357,7 +463,7 @@ class _EntrevistaPadresScreenState extends State<EntrevistaPadresScreen> {
             if (_currentStep < 8) {
               setState(() => _currentStep++);
             } else {
-              _guardarEntrevista();
+              _guardarEntrevista(marcarCompleta: true);
             }
           },
           onStepCancel: () {
@@ -368,25 +474,42 @@ class _EntrevistaPadresScreenState extends State<EntrevistaPadresScreen> {
           controlsBuilder: (context, details) {
             return Padding(
               padding: const EdgeInsets.only(top: 16),
-              child: Row(
+              child: Wrap(
+                spacing: 10,
+                runSpacing: 8,
                 children: [
                   ElevatedButton(
                     onPressed: _isLoading ? null : details.onStepContinue,
                     style: ElevatedButton.styleFrom(
                       backgroundColor: AppColors.purpura,
-                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                      foregroundColor: Colors.white,
+                      disabledForegroundColor: Colors.white70,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 24,
+                        vertical: 12,
+                      ),
                     ),
                     child: _isLoading
                         ? const SizedBox(
                             width: 20,
                             height: 20,
-                            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
                           )
-                        : Text(_currentStep == 8 ? 'Guardar' : 'Continuar'),
+                        : Text(
+                            _currentStep == 8
+                                ? 'Guardar completa'
+                                : 'Siguiente',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
                   ),
-                  const SizedBox(width: 12),
                   if (_currentStep > 0)
-                    TextButton(
+                    OutlinedButton(
                       onPressed: details.onStepCancel,
                       child: const Text('Atrás'),
                     ),

@@ -78,12 +78,7 @@ class ExportacionPagosExcel {
 
     return data.where((pago) {
       if (filtroTipo == 'alumnos') {
-        if (pago.tipoPago != 'inscripcion' &&
-            pago.tipoPago != 'mensualidad' &&
-            pago.tipoPago != 'seguro' &&
-            pago.tipoPago != null) {
-          return false;
-        }
+        if (pago.tipoPago == 'extracurricular') return false;
       } else {
         if (pago.tipoPago != 'extracurricular') return false;
       }
@@ -107,8 +102,144 @@ class ExportacionPagosExcel {
     }).toList();
   }
 
+  static String _nombreHojaExcel(String? tipo) {
+    switch (tipo) {
+      case 'inscripcion':
+        return 'Inscripcion';
+      case 'mensualidad':
+        return 'Colegiatura';
+      case 'seguro':
+        return 'Seguro';
+      case 'extracurricular':
+        return 'Extracurricular';
+      case 'libros':
+        return 'Libros';
+      case 'uniforme':
+        return 'Uniforme';
+      case 'otro':
+        return 'Otros gastos';
+      default:
+        return 'Sin clasificar';
+    }
+  }
+
+  static String _claveGrupoExportacion(Pago p, int pestanaIndex) {
+    if (pestanaIndex == 1) {
+      final c = (p.concepto ?? p.mes ?? '').toLowerCase();
+      if (c.contains('libro')) return 'libros';
+      if (c.contains('uniforme')) return 'uniforme';
+      return 'extracurricular';
+    }
+    return p.tipoPago ?? 'sin_tipo';
+  }
+
+  static void _escribirHojaPagos({
+    required Sheet sheet,
+    required List<Pago> pagos,
+    required Map<String, String> mapNombre,
+    required Map<String, String> mapGrado,
+    required List<Alumno> alumnos,
+  }) {
+    final headers = [
+      'Alumno',
+      'Grado',
+      'Tipo',
+      'Periodo',
+      'Concepto',
+      'Monto total',
+      'Monto pagado',
+      'Saldo pendiente',
+      'Estatus',
+      'Fecha límite',
+      'Fecha pago',
+      'Forma de pago',
+      'Cuenta',
+      'No. recibo',
+      'Comentario',
+    ];
+    sheet.appendRow(headers.map((h) => TextCellValue(h)).toList());
+
+    final headerStyle = CellStyle(
+      bold: true,
+      horizontalAlign: HorizontalAlign.Center,
+      backgroundColorHex: ExcelColor.fromHexString('FFE8DEF8'),
+    );
+    for (var c = 0; c < headers.length; c++) {
+      sheet
+          .cell(CellIndex.indexByColumnRow(columnIndex: c, rowIndex: 0))
+          .cellStyle = headerStyle;
+    }
+
+    for (final p in pagos) {
+      final alumno = _alumnoDe(alumnos, p.alumnoId);
+      final gid = alumno?.gradoId;
+      final grado = gid != null ? (mapGrado[gid] ?? '') : '';
+
+      sheet.appendRow([
+        TextCellValue(mapNombre[p.alumnoId] ?? '—'),
+        TextCellValue(grado),
+        TextCellValue(_tipoLabel(p.tipoPago)),
+        TextCellValue(p.mes ?? ''),
+        TextCellValue(p.concepto ?? ''),
+        DoubleCellValue(p.monto),
+        DoubleCellValue(p.montoPagado),
+        DoubleCellValue(p.saldoPendiente),
+        TextCellValue(_estatus(p)),
+        TextCellValue(
+          p.fechaVencimiento != null
+              ? DateFormat('yyyy-MM-dd').format(p.fechaVencimiento!)
+              : '',
+        ),
+        TextCellValue(
+          p.fechaPago != null
+              ? DateFormat('yyyy-MM-dd').format(p.fechaPago!)
+              : '',
+        ),
+        TextCellValue(p.formaPago ?? ''),
+        TextCellValue(p.recibidoPorNombre ?? ''),
+        TextCellValue(p.referencia ?? ''),
+        TextCellValue(p.notas ?? ''),
+      ]);
+    }
+
+    if (pagos.isEmpty) return;
+
+    final tm = pagos.fold<double>(0, (sum, p) => sum + p.monto);
+    final tp = pagos.fold<double>(0, (sum, p) => sum + p.montoPagado);
+    final ts = pagos.fold<double>(0, (sum, p) => sum + p.saldoPendiente);
+
+    final totalStyle = CellStyle(
+        bold: true,
+        backgroundColorHex: ExcelColor.fromHexString('FFF5F0FF'));
+    final totalRowIndex = 1 + pagos.length;
+    sheet.appendRow([
+      TextCellValue('TOTALES'),
+      TextCellValue(''),
+      TextCellValue(''),
+      TextCellValue(''),
+      TextCellValue(''),
+      DoubleCellValue(tm),
+      DoubleCellValue(tp),
+      DoubleCellValue(ts),
+      TextCellValue(''),
+      TextCellValue(''),
+      TextCellValue(''),
+      TextCellValue(''),
+      TextCellValue(''),
+      TextCellValue(''),
+      TextCellValue(''),
+    ]);
+    for (var c = 0; c < headers.length; c++) {
+      sheet
+          .cell(CellIndex.indexByColumnRow(
+              columnIndex: c, rowIndex: totalRowIndex))
+          .cellStyle = totalStyle;
+    }
+  }
+
   /// Solo genera el archivo en memoria (sin compartir).
   /// [pestanaIndex] 0 = Pagos de alumnos (usa grado/alumno/tipo/estado), 1 = Extracurriculares (solo estado).
+  /// Crea una hoja por tipo de pago dentro del Excel.
   static Future<ExcelPagosGenerado> generar(
     SupabaseService s, {
     required int pestanaIndex,
@@ -142,94 +273,51 @@ class ExportacionPagosExcel {
       return (a.concepto ?? '').compareTo(b.concepto ?? '');
     });
 
-    final excel = Excel.createExcel();
-    final nombreHoja = excel.getDefaultSheet() ?? excel.tables.keys.first;
-    excel.rename(nombreHoja, 'Pagos');
-    final sheet = excel['Pagos'];
-
-    final headers = [
-      'Alumno',
-      'Grado',
-      'Concepto',
-      'Tipo',
-      'Monto total',
-      'Monto pagado',
-      'Saldo pendiente',
-      'Estatus',
-      'Fecha límite',
-      'Fecha pago',
-      'Forma de pago',
-      'Recibió',
-    ];
-    sheet.appendRow(headers.map((h) => TextCellValue(h)).toList());
-
-    final headerStyle = CellStyle(
-      bold: true,
-      horizontalAlign: HorizontalAlign.Center,
-      backgroundColorHex: ExcelColor.fromHexString('FFE8DEF8'),
-    );
-    for (var c = 0; c < headers.length; c++) {
-      sheet
-          .cell(CellIndex.indexByColumnRow(columnIndex: c, rowIndex: 0))
-          .cellStyle = headerStyle;
-    }
-
+    final grupos = <String, List<Pago>>{};
     for (final p in pagos) {
-      final alumno = _alumnoDe(alumnos, p.alumnoId);
-      final gid = alumno?.gradoId;
-      final grado = gid != null ? (mapGrado[gid] ?? '') : '';
-
-      sheet.appendRow([
-        TextCellValue(mapNombre[p.alumnoId] ?? '—'),
-        TextCellValue(grado),
-        TextCellValue(p.concepto ?? ''),
-        TextCellValue(_tipoLabel(p.tipoPago)),
-        DoubleCellValue(p.monto),
-        DoubleCellValue(p.montoPagado),
-        DoubleCellValue(p.saldoPendiente),
-        TextCellValue(_estatus(p)),
-        TextCellValue(
-          p.fechaVencimiento != null
-              ? DateFormat('yyyy-MM-dd').format(p.fechaVencimiento!)
-              : '',
-        ),
-        TextCellValue(
-          p.fechaPago != null
-              ? DateFormat('yyyy-MM-dd').format(p.fechaPago!)
-              : '',
-        ),
-        TextCellValue(p.formaPago ?? ''),
-        TextCellValue(p.recibidoPorNombre ?? ''),
-      ]);
+      final key = _claveGrupoExportacion(p, pestanaIndex);
+      grupos.putIfAbsent(key, () => []).add(p);
     }
 
-    final tm = pagos.fold<double>(0, (sum, p) => sum + p.monto);
-    final tp = pagos.fold<double>(0, (sum, p) => sum + p.montoPagado);
-    final ts = pagos.fold<double>(0, (sum, p) => sum + p.saldoPendiente);
+    final ordenTipos = pestanaIndex == 0
+        ? ['inscripcion', 'mensualidad', 'seguro', 'otro', 'sin_tipo']
+        : ['libros', 'uniforme', 'extracurricular'];
 
-    final totalStyle = CellStyle(
-        bold: true,
-        backgroundColorHex: ExcelColor.fromHexString('FFF5F0FF'));
-    final totalRowIndex = 1 + pagos.length;
-    sheet.appendRow([
-      TextCellValue('TOTALES'),
-      TextCellValue(''),
-      TextCellValue(''),
-      TextCellValue(''),
-      DoubleCellValue(tm),
-      DoubleCellValue(tp),
-      DoubleCellValue(ts),
-      TextCellValue(''),
-      TextCellValue(''),
-      TextCellValue(''),
-      TextCellValue(''),
-      TextCellValue(''),
-    ]);
-    for (var c = 0; c < headers.length; c++) {
-      sheet
-          .cell(CellIndex.indexByColumnRow(
-              columnIndex: c, rowIndex: totalRowIndex))
-          .cellStyle = totalStyle;
+    final excel = Excel.createExcel();
+    final defaultSheet = excel.getDefaultSheet()!;
+    String? primeraHoja;
+    var hojasCreadas = 0;
+
+    for (final tipo in ordenTipos) {
+      final lista = grupos[tipo];
+      if (lista == null || lista.isEmpty) continue;
+
+      final nombreHoja = _nombreHojaExcel(tipo == 'sin_tipo' ? null : tipo);
+      if (primeraHoja == null) {
+        excel.rename(defaultSheet, nombreHoja);
+        primeraHoja = nombreHoja;
+      } else {
+        excel.copy(primeraHoja, nombreHoja);
+      }
+
+      final sheet = excel[nombreHoja];
+      while (sheet.maxRows > 0) {
+        sheet.removeRow(sheet.maxRows - 1);
+      }
+
+      _escribirHojaPagos(
+        sheet: sheet,
+        pagos: lista,
+        mapNombre: mapNombre,
+        mapGrado: mapGrado,
+        alumnos: alumnos,
+      );
+      hojasCreadas++;
+    }
+
+    if (hojasCreadas == 0) {
+      excel.rename(defaultSheet, 'Sin datos');
+      excel['Sin datos'].appendRow([TextCellValue('No hay pagos con los filtros actuales')]);
     }
 
     final encoded = excel.encode();
@@ -239,7 +327,7 @@ class ExportacionPagosExcel {
 
     final sufijo = pestanaIndex == 0 ? 'alumnos' : 'extracurricular';
     final name =
-        'CAIPI_pagos_${sufijo}_filtrado_${DateFormat('yyyyMMdd_HHmm').format(DateTime.now())}.xlsx';
+        'CAIPI_pagos_${sufijo}_por_tipo_${DateFormat('yyyyMMdd_HHmm').format(DateTime.now())}.xlsx';
     return ExcelPagosGenerado(bytes: encoded, fileName: name, registros: pagos.length);
   }
 

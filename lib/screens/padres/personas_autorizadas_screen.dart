@@ -669,11 +669,12 @@ class PersonasAutorizadasPadreScreen extends StatelessWidget {
       if (codigo == null || codigo.isEmpty) throw Exception('No se obtuvo código QR');
       
       // Crear QR temporal (válido por 24 horas)
+      final expiracion = DateTime.now().add(const Duration(hours: 24));
       await Supabase.instance.client.from('qr_temporales').insert({
         'codigo': codigo,
         'persona_autorizada_id': persona['id'],
         'alumno_id': alumnoId,
-        'fecha_expiracion': DateTime.now().add(const Duration(hours: 24)).toIso8601String(),
+        'fecha_expiracion': expiracion.toIso8601String(),
         'generado_por': Supabase.instance.client.auth.currentUser?.id,
         'notas': 'QR generado desde app móvil',
       });
@@ -686,6 +687,7 @@ class PersonasAutorizadasPadreScreen extends StatelessWidget {
             'codigo': codigo,
             'nombrePersona': persona['nombre'],
             'alumnoNombre': alumnoNombre,
+            'fechaExpiracion': expiracion,
           },
         );
       }

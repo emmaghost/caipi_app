@@ -7,8 +7,38 @@ import '../../config/app_colors.dart';
 import '../../models/grado.dart';
 import '../../widgets/app_drawer.dart';
 
-class GradosScreen extends StatelessWidget {
+class GradosScreen extends StatefulWidget {
   const GradosScreen({super.key});
+
+  @override
+  State<GradosScreen> createState() => _GradosScreenState();
+}
+
+class _GradosScreenState extends State<GradosScreen> {
+  late Future<List<Grado>> _gradosFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _recargar();
+  }
+
+  void _recargar() {
+    _gradosFuture = Supabase.instance.client
+        .from('grados')
+        .select()
+        .order('nombre', ascending: true)
+        .then((data) => data.map(Grado.fromJson).toList());
+  }
+
+  Future<void> _abrirFormulario([String? gradoId]) async {
+    final ruta = gradoId == null
+        ? '/directora/grados/crear'
+        : '/directora/grados/editar/$gradoId';
+    await GoRouter.of(context).push(ruta);
+    if (!mounted) return;
+    setState(_recargar);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -48,11 +78,8 @@ class GradosScreen extends StatelessWidget {
             ],
           ),
         ),
-        child: StreamBuilder<List<Map<String, dynamic>>>(
-          stream: Supabase.instance.client
-              .from('grados')
-              .stream(primaryKey: ['id'])
-              .order('nombre', ascending: true),
+        child: FutureBuilder<List<Grado>>(
+          future: _gradosFuture,
           builder: (context, snapshot) {
             if (snapshot.connectionState == ConnectionState.waiting) {
               return const Center(child: CircularProgressIndicator());
@@ -68,6 +95,24 @@ class GradosScreen extends StatelessWidget {
                     Text(
                       'Error al cargar grados',
                       style: GoogleFonts.poppins(fontSize: 18),
+                    ),
+                    const SizedBox(height: 8),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 24),
+                      child: Text(
+                        snapshot.error.toString(),
+                        textAlign: TextAlign.center,
+                        style: GoogleFonts.poppins(
+                          fontSize: 12,
+                          color: Colors.grey[700],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    OutlinedButton.icon(
+                      onPressed: () => setState(_recargar),
+                      icon: const Icon(Icons.refresh),
+                      label: const Text('Reintentar'),
                     ),
                   ],
                 ),
@@ -91,7 +136,7 @@ class GradosScreen extends StatelessWidget {
                     const SizedBox(height: 24),
                     ElevatedButton.icon(
                       onPressed: () {
-                        GoRouter.of(context).push('/directora/grados/crear');
+                        _abrirFormulario();
                       },
                       icon: const Icon(Icons.add, color: Colors.white),
                       label: const Text('Agregar Primer Grado'),
@@ -109,24 +154,24 @@ class GradosScreen extends StatelessWidget {
               );
             }
 
-            final gradosData = snapshot.data!;
-            final grados = gradosData.map((json) => Grado.fromJson(json)).toList();
+            final grados = snapshot.data!;
 
             return ListView.builder(
               padding: const EdgeInsets.all(16),
               itemCount: grados.length,
               itemBuilder: (context, index) {
                 final grado = grados[index];
-                return _GradoCard(grado: grado);
+                return _GradoCard(
+                  grado: grado,
+                  onEdit: () => _abrirFormulario(grado.id),
+                );
               },
             );
           },
         ),
       ),
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: () {
-          GoRouter.of(context).push('/directora/grados/crear');
-        },
+        onPressed: _abrirFormulario,
         backgroundColor: const Color(0xFF166534),
         icon: const Icon(Icons.add, color: Colors.white),
         label: Text(
@@ -143,8 +188,9 @@ class GradosScreen extends StatelessWidget {
 
 class _GradoCard extends StatelessWidget {
   final Grado grado;
+  final VoidCallback onEdit;
 
-  const _GradoCard({required this.grado});
+  const _GradoCard({required this.grado, required this.onEdit});
 
   @override
   Widget build(BuildContext context) {
@@ -155,9 +201,7 @@ class _GradoCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(16),
       ),
       child: InkWell(
-        onTap: () {
-          GoRouter.of(context).push('/directora/grados/editar/${grado.id}');
-        },
+        onTap: onEdit,
         borderRadius: BorderRadius.circular(16),
         child: Padding(
           padding: const EdgeInsets.all(16),
@@ -219,9 +263,7 @@ class _GradoCard extends StatelessWidget {
                 children: [
                   IconButton(
                     icon: Icon(Icons.edit, color: AppColors.morado),
-                    onPressed: () {
-                      GoRouter.of(context).push('/directora/grados/editar/${grado.id}');
-                    },
+                    onPressed: onEdit,
                   ),
                   IconButton(
                     icon: Icon(

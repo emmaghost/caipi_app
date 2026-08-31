@@ -52,7 +52,21 @@ class AnunciosScreen extends StatelessWidget {
           stream: Supabase.instance.client
               .from('anuncios')
               .stream(primaryKey: ['id'])
-              .order('fecha', ascending: false),
+              .map((rows) {
+            final list = List<Map<String, dynamic>>.from(rows);
+            list.sort((a, b) {
+              final fa = DateTime.tryParse(
+                    (a['fecha_publicacion'] ?? a['fecha'] ?? '').toString(),
+                  ) ??
+                  DateTime.fromMillisecondsSinceEpoch(0);
+              final fb = DateTime.tryParse(
+                    (b['fecha_publicacion'] ?? b['fecha'] ?? '').toString(),
+                  ) ??
+                  DateTime.fromMillisecondsSinceEpoch(0);
+              return fb.compareTo(fa);
+            });
+            return list;
+          }),
           builder: (context, snapshot) {
             if (snapshot.connectionState == ConnectionState.waiting) {
               return const Center(child: CircularProgressIndicator());
@@ -145,11 +159,22 @@ class _AnuncioCard extends StatelessWidget {
 
   const _AnuncioCard({required this.anuncio});
 
+  DateTime get _fecha {
+    final raw = anuncio['fecha_publicacion'] ?? anuncio['fecha'];
+    return DateTime.tryParse(raw?.toString() ?? '') ?? DateTime.now();
+  }
+
+  List<String> get _grados {
+    final raw = anuncio['para_grados'] ?? anuncio['grados'];
+    if (raw is! List) return const [];
+    return raw.map((e) => e.toString()).where((e) => e.isNotEmpty).toList();
+  }
+
   @override
   Widget build(BuildContext context) {
-    final fecha = DateTime.parse(anuncio['fecha']);
+    final fecha = _fecha;
     final paraTodos = anuncio['para_todos'] as bool? ?? false;
-    final grados = (anuncio['grados'] as List<dynamic>?)?.cast<String>() ?? [];
+    final grados = _grados;
 
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
@@ -324,7 +349,7 @@ class _AnuncioCard extends StatelessWidget {
   }
 
   void _mostrarDetalleAnuncio(BuildContext context) {
-    final fecha = DateTime.parse(anuncio['fecha']);
+    final fecha = _fecha;
     final paraTodos = anuncio['para_todos'] as bool? ?? false;
 
     showDialog(

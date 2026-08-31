@@ -1,14 +1,14 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:intl/intl.dart';
 
 import '../../services/supabase_service.dart';
+import '../../services/recibo_pago_pdf.dart';
 import '../../models/pago.dart';
 import '../../models/alumno.dart';
 import '../../config/app_colors.dart';
+import '../../utils/constantes.dart';
 
 class AcreditarPagoScreen extends StatefulWidget {
   final String pagoId;
@@ -23,10 +23,10 @@ class _AcreditarPagoScreenState extends State<AcreditarPagoScreen> {
   final _formKey = GlobalKey<FormState>();
   final _referenciaController = TextEditingController();
   final _montoController = TextEditingController();
-  final _otroNombreController = TextEditingController();
+  final _comentarioController = TextEditingController();
 
   String? _metodoPago = 'Efectivo';
-  String? _recibidoPor = 'directora';
+  final Set<String> _pagadoA = {};
   bool _isLoading = true;
   bool _isSaving = false;
   Pago? _pago;
@@ -38,23 +38,7 @@ class _AcreditarPagoScreenState extends State<AcreditarPagoScreen> {
     {'valor': 'Tarjeta', 'icono': Icons.credit_card, 'color': AppColors.purpura},
   ];
 
-  final List<Map<String, dynamic>> _receptores = [
-    {'valor': 'directora', 'nombre': 'Directora', 'icono': Icons.person},
-    {'valor': 'joss', 'nombre': 'Joss', 'icono': Icons.person_outline},
-    {'valor': 'otro', 'nombre': 'Otro (escribir quién recibió)', 'icono': Icons.edit_note},
-  ];
-
-  String _nombreQuienRecibio() {
-    switch (_recibidoPor) {
-      case 'joss':
-        return 'Joss';
-      case 'otro':
-        final t = _otroNombreController.text.trim();
-        return t.isEmpty ? 'Otro' : t;
-      default:
-        return 'Directora';
-    }
-  }
+  String get _pagadoATexto => _pagadoA.join(', ');
 
   @override
   void initState() {
@@ -65,22 +49,23 @@ class _AcreditarPagoScreenState extends State<AcreditarPagoScreen> {
   Future<void> _cargarDatos() async {
     try {
       final supabaseService = context.read<SupabaseService>();
-      
-      // Cargar pago
+
       _pago = await supabaseService.obtenerPagoPorId(widget.pagoId);
-      
+
       if (_pago == null) {
         throw Exception('Pago no encontrado');
       }
-      
-      // Cargar alumno
+
       _alumno = await supabaseService.obtenerAlumnoPorId(_pago!.alumnoId);
-      
+
       if (_alumno == null) {
         throw Exception('Alumno no encontrado');
       }
-      
+
       _montoController.text = _pago!.saldoPendiente.toStringAsFixed(2);
+      if (_pago!.notas != null && _pago!.notas!.trim().isNotEmpty) {
+        _comentarioController.text = _pago!.notas!;
+      }
       setState(() => _isLoading = false);
     } catch (e) {
       if (mounted) {
@@ -95,10 +80,10 @@ class _AcreditarPagoScreenState extends State<AcreditarPagoScreen> {
   Future<void> _acreditarPago() async {
     if (!_formKey.currentState!.validate()) return;
 
-    if (_recibidoPor == 'otro' && _otroNombreController.text.trim().isEmpty) {
+    if (_pagadoA.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Escribe quién recibió el pago'),
+          content: Text('Selecciona al menos una cuenta'),
           backgroundColor: AppColors.rojo,
         ),
       );
@@ -122,22 +107,24 @@ class _AcreditarPagoScreenState extends State<AcreditarPagoScreen> {
 
     try {
       final supabaseService = context.read<SupabaseService>();
-      
-      await supabaseService.acreditarPagoParcial(
+
+      final abono = await supabaseService.acreditarPagoParcial(
         pagoId: widget.pagoId,
         montoAbonar: montoAbonar,
         metodoPago: _metodoPago!,
-        recibidoPorNombre: _nombreQuienRecibio(),
+        recibidoPorNombre: _pagadoATexto,
         referencia: _referenciaController.text.trim().isEmpty
             ? null
             : _referenciaController.text.trim(),
+        notas: _comentarioController.text.trim().isEmpty
+            ? null
+            : _comentarioController.text.trim(),
       );
 
       if (mounted) {
-        final quien = _nombreQuienRecibio();
         final msg = montoAbonar >= _pago!.saldoPendiente
-            ? '¡Pago acreditado! Lo recibió: $quien'
-            : 'Abono registrado (\$${montoAbonar.toStringAsFixed(2)}). Lo recibió: $quien · Pendiente: \$${(_pago!.saldoPendiente - montoAbonar).toStringAsFixed(2)}';
+            ? '¡Pago acreditado! Cuenta: $_pagadoATexto'
+            : 'Abono registrado (\$${montoAbonar.toStringAsFixed(2)}). Cuenta: $_pagadoATexto · Pendiente: \$${(_pago!.saldoPendiente - montoAbonar).toStringAsFixed(2)}';
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(msg),
@@ -145,6 +132,52 @@ class _AcreditarPagoScreenState extends State<AcreditarPagoScreen> {
             duration: const Duration(seconds: 3),
           ),
         );
+        await showDialog<void>(
+          context: context,
+          barrierDismissible: false,
+          builder: (dialogContext) => AlertDialog(
+            icon: const Icon(
+              Icons.check_circle,
+              color: AppColors.verde,
+              size: 48,
+            ),
+            title: const Text('Pago registrado'),
+            content: Text(
+              'Folio: ${abono.reciboFolio ?? 'generado'}\n\n'
+              'Puedes enviar el recibo PDF por WhatsApp, correo '
+              'o cualquier aplicación disponible en el teléfono.',
+              textAlign: TextAlign.center,
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext),
+                child: const Text('Cerrar'),
+              ),
+              FilledButton.icon(
+                onPressed: () async {
+                  try {
+                    await ReciboPagoPdf.compartir(
+                      abono: abono,
+                      pago: _pago!,
+                      alumno: _alumno!,
+                    );
+                  } catch (e) {
+                    if (!mounted) return;
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('No se pudo compartir el recibo: $e'),
+                        backgroundColor: AppColors.rojo,
+                      ),
+                    );
+                  }
+                },
+                icon: const Icon(Icons.picture_as_pdf),
+                label: const Text('Compartir PDF'),
+              ),
+            ],
+          ),
+        );
+        if (!mounted) return;
         context.pop();
       }
     } catch (e) {
@@ -167,12 +200,14 @@ class _AcreditarPagoScreenState extends State<AcreditarPagoScreen> {
   void dispose() {
     _referenciaController.dispose();
     _montoController.dispose();
-    _otroNombreController.dispose();
+    _comentarioController.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    final bottomInset = MediaQuery.viewPaddingOf(context).bottom;
+
     return Scaffold(
       backgroundColor: AppColors.grisClaro,
       appBar: AppBar(
@@ -185,367 +220,336 @@ class _AcreditarPagoScreenState extends State<AcreditarPagoScreen> {
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
-          : SingleChildScrollView(
-              padding: const EdgeInsets.all(20),
-              child: Form(
-                key: _formKey,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    // Información del alumno
-                    Container(
-                      padding: const EdgeInsets.all(20),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(16),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withOpacity(0.05),
-                            blurRadius: 10,
-                            offset: const Offset(0, 4),
-                          ),
-                        ],
-                      ),
+          : Form(
+              key: _formKey,
+              child: Column(
+                children: [
+                  Expanded(
+                    child: SingleChildScrollView(
+                      padding: EdgeInsets.fromLTRB(20, 20, 20, 12 + bottomInset),
                       child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          CircleAvatar(
-                            radius: 40,
-                            backgroundColor: AppColors.purpura.withOpacity(0.2),
-                            child: Text(
-                              _alumno!.nombre.substring(0, 1).toUpperCase(),
-                              style: GoogleFonts.poppins(
-                                fontSize: 32,
-                                fontWeight: FontWeight.bold,
-                                color: AppColors.purpura,
+                          _buildInfoAlumno(),
+                          const SizedBox(height: 24),
+                          _buildMontoField(),
+                          const SizedBox(height: 24),
+                          _buildMetodoPago(),
+                          const SizedBox(height: 24),
+                          _buildPagadoA(),
+                          const SizedBox(height: 24),
+                          TextFormField(
+                            controller: _referenciaController,
+                            decoration: InputDecoration(
+                              labelText: 'Número de recibo (opcional)',
+                              hintText: 'Ej: REC-001',
+                              prefixIcon: const Icon(Icons.receipt_long, color: AppColors.naranja),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(16),
                               ),
+                              filled: true,
+                              fillColor: Colors.white,
                             ),
-                          ),
-                          const SizedBox(height: 12),
-                          Text(
-                            _alumno!.nombreCompleto,
-                            style: GoogleFonts.poppins(
-                              fontSize: 20,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            _pago!.concepto ?? 'Sin concepto',
-                            style: GoogleFonts.poppins(
-                              fontSize: 16,
-                              color: AppColors.gris,
-                            ),
+                            textCapitalization: TextCapitalization.characters,
                           ),
                           const SizedBox(height: 16),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 20,
-                              vertical: 12,
-                            ),
-                            decoration: BoxDecoration(
-                              gradient: const LinearGradient(
-                                colors: [AppColors.verde, AppColors.turquesa],
+                          TextFormField(
+                            controller: _comentarioController,
+                            maxLines: 3,
+                            decoration: InputDecoration(
+                              labelText: 'Comentario (opcional)',
+                              hintText: 'Notas sobre este pago…',
+                              prefixIcon: const Icon(Icons.comment_outlined, color: AppColors.gris),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(16),
                               ),
-                              borderRadius: BorderRadius.circular(12),
+                              filled: true,
+                              fillColor: Colors.white,
                             ),
-                            child: Text(
-                              '\$${_pago!.monto.toStringAsFixed(2)}',
-                              style: GoogleFonts.poppins(
-                                fontSize: 28,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.white,
-                              ),
-                              textAlign: TextAlign.center,
-                            ),
+                            textCapitalization: TextCapitalization.sentences,
                           ),
-                          if (_pago!.montoPagado > 0) ...[
-                            const SizedBox(height: 8),
-                            Text(
-                              'Pagado: \$${_pago!.montoPagado.toStringAsFixed(2)} · Saldo: \$${_pago!.saldoPendiente.toStringAsFixed(2)}',
-                              style: GoogleFonts.poppins(
-                                fontSize: 13,
-                                color: AppColors.gris,
-                              ),
-                            ),
-                          ],
                         ],
                       ),
                     ),
-                    const SizedBox(height: 24),
+                  ),
+                  _buildBotonAcreditar(bottomInset),
+                ],
+              ),
+            ),
+    );
+  }
 
-                    // Monto a acreditar (permite pagos parciales)
-                    Text(
-                      'Monto a acreditar',
-                      style: GoogleFonts.poppins(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    TextFormField(
-                      controller: _montoController,
-                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                      decoration: InputDecoration(
-                        hintText: 'Máx. \$${_pago!.saldoPendiente.toStringAsFixed(2)}',
-                        prefixText: '\$ ',
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(16),
-                        ),
-                        filled: true,
-                        fillColor: Colors.white,
-                      ),
-                      validator: (value) {
-                        if (value == null || value.isEmpty) return 'Ingresa el monto';
-                        final n = double.tryParse(value.replaceAll(',', '.'));
-                        if (n == null || n <= 0) return 'Monto inválido';
-                        if (n > _pago!.saldoPendiente) {
-                          return 'Máximo \$${_pago!.saldoPendiente.toStringAsFixed(2)}';
-                        }
-                        return null;
-                      },
-                    ),
-                    const SizedBox(height: 24),
+  Widget _buildInfoAlumno() {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        children: [
+          CircleAvatar(
+            radius: 40,
+            backgroundColor: AppColors.purpura.withOpacity(0.2),
+            child: Text(
+              _alumno!.nombre.substring(0, 1).toUpperCase(),
+              style: GoogleFonts.poppins(
+                fontSize: 32,
+                fontWeight: FontWeight.bold,
+                color: AppColors.purpura,
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          Text(
+            _alumno!.nombreCompleto,
+            style: GoogleFonts.poppins(
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            decoration: BoxDecoration(
+              color: AppColors.azulClaro,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: AppColors.azul.withOpacity(0.2)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Concepto del pago',
+                  style: GoogleFonts.poppins(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.gris,
+                    letterSpacing: 0.5,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  _pago!.descripcionCompleta,
+                  style: GoogleFonts.poppins(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.azulOscuro,
+                  ),
+                ),
+                if (_pago!.concepto != null &&
+                    _pago!.mes != null &&
+                    _pago!.concepto!.trim().isNotEmpty &&
+                    _pago!.concepto!.trim() != _pago!.mes!.trim()) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    _pago!.concepto!,
+                    style: GoogleFonts.poppins(fontSize: 13, color: AppColors.gris),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                colors: [AppColors.verde, AppColors.turquesa],
+              ),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Text(
+              'Total: \$${_pago!.monto.toStringAsFixed(2)}',
+              style: GoogleFonts.poppins(
+                fontSize: 24,
+                fontWeight: FontWeight.bold,
+                color: Colors.white,
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ),
+          if (_pago!.montoPagado > 0) ...[
+            const SizedBox(height: 8),
+            Text(
+              'Pagado: \$${_pago!.montoPagado.toStringAsFixed(2)} · Saldo: \$${_pago!.saldoPendiente.toStringAsFixed(2)}',
+              style: GoogleFonts.poppins(fontSize: 13, color: AppColors.gris),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
 
-                    // Método de pago
-                    Text(
-                      'Método de Pago',
-                      style: GoogleFonts.poppins(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    ..._metodosPago.map((metodo) {
-                      final isSelected = _metodoPago == metodo['valor'];
-                      return Padding(
-                        padding: const EdgeInsets.only(bottom: 12),
-                        child: InkWell(
-                          onTap: () {
-                            setState(() => _metodoPago = metodo['valor'] as String);
-                          },
-                          borderRadius: BorderRadius.circular(16),
-                          child: Container(
-                            padding: const EdgeInsets.all(16),
-                            decoration: BoxDecoration(
-                              color: Colors.white,
-                              borderRadius: BorderRadius.circular(16),
-                              border: Border.all(
-                                color: isSelected 
-                                    ? (metodo['color'] as Color)
-                                    : Colors.grey.shade300,
-                                width: isSelected ? 2 : 1,
-                              ),
-                              boxShadow: isSelected
-                                  ? [
-                                      BoxShadow(
-                                        color: (metodo['color'] as Color).withOpacity(0.3),
-                                        blurRadius: 10,
-                                        offset: const Offset(0, 4),
-                                      ),
-                                    ]
-                                  : null,
-                            ),
-                            child: Row(
-                              children: [
-                                Container(
-                                  padding: const EdgeInsets.all(12),
-                                  decoration: BoxDecoration(
-                                    color: (metodo['color'] as Color).withOpacity(0.1),
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                  child: Icon(
-                                    metodo['icono'] as IconData,
-                                    color: metodo['color'] as Color,
-                                    size: 28,
-                                  ),
-                                ),
-                                const SizedBox(width: 16),
-                                Expanded(
-                                  child: Text(
-                                    metodo['valor'] as String,
-                                    style: GoogleFonts.poppins(
-                                      fontSize: 16,
-                                      fontWeight: isSelected 
-                                          ? FontWeight.bold 
-                                          : FontWeight.normal,
-                                    ),
-                                  ),
-                                ),
-                                if (isSelected)
-                                  Icon(
-                                    Icons.check_circle,
-                                    color: metodo['color'] as Color,
-                                    size: 24,
-                                  ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      );
-                    }),
-                    const SizedBox(height: 24),
+  Widget _buildMontoField() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Monto a acreditar',
+          style: GoogleFonts.poppins(fontSize: 16, fontWeight: FontWeight.bold),
+        ),
+        const SizedBox(height: 8),
+        TextFormField(
+          controller: _montoController,
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          decoration: InputDecoration(
+            hintText: 'Máx. \$${_pago!.saldoPendiente.toStringAsFixed(2)}',
+            prefixText: '\$ ',
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
+            filled: true,
+            fillColor: Colors.white,
+          ),
+          validator: (value) {
+            if (value == null || value.isEmpty) return 'Ingresa el monto';
+            final n = double.tryParse(value.replaceAll(',', '.'));
+            if (n == null || n <= 0) return 'Monto inválido';
+            if (n > _pago!.saldoPendiente) {
+              return 'Máximo \$${_pago!.saldoPendiente.toStringAsFixed(2)}';
+            }
+            return null;
+          },
+        ),
+      ],
+    );
+  }
 
-                    // Recibido por
-                    Text(
-                      'Recibido por',
-                      style: GoogleFonts.poppins(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    ..._receptores.map((receptor) {
-                      final isSelected = _recibidoPor == receptor['valor'];
-                      return Padding(
-                        padding: const EdgeInsets.only(bottom: 12),
-                        child: InkWell(
-                          onTap: () {
-                            setState(() => _recibidoPor = receptor['valor'] as String);
-                          },
-                          borderRadius: BorderRadius.circular(16),
-                          child: Container(
-                            padding: const EdgeInsets.all(16),
-                            decoration: BoxDecoration(
-                              color: Colors.white,
-                              borderRadius: BorderRadius.circular(16),
-                              border: Border.all(
-                                color: isSelected 
-                                    ? AppColors.rosa
-                                    : Colors.grey.shade300,
-                                width: isSelected ? 2 : 1,
-                              ),
-                              boxShadow: isSelected
-                                  ? [
-                                      BoxShadow(
-                                        color: AppColors.rosa.withOpacity(0.3),
-                                        blurRadius: 10,
-                                        offset: const Offset(0, 4),
-                                      ),
-                                    ]
-                                  : null,
-                            ),
-                            child: Row(
-                              children: [
-                                Container(
-                                  padding: const EdgeInsets.all(12),
-                                  decoration: BoxDecoration(
-                                    color: AppColors.rosa.withOpacity(0.1),
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                  child: Icon(
-                                    receptor['icono'] as IconData,
-                                    color: AppColors.rosa,
-                                    size: 28,
-                                  ),
-                                ),
-                                const SizedBox(width: 16),
-                                Expanded(
-                                  child: Text(
-                                    receptor['nombre'] as String,
-                                    style: GoogleFonts.poppins(
-                                      fontSize: 16,
-                                      fontWeight: isSelected 
-                                          ? FontWeight.bold 
-                                          : FontWeight.normal,
-                                    ),
-                                  ),
-                                ),
-                                if (isSelected)
-                                  const Icon(
-                                    Icons.check_circle,
-                                    color: AppColors.rosa,
-                                    size: 24,
-                                  ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      );
-                    }),
-                    if (_recibidoPor == 'otro') ...[
-                      const SizedBox(height: 12),
-                      TextFormField(
-                        controller: _otroNombreController,
-                        decoration: InputDecoration(
-                          labelText: 'Nombre de quien recibió *',
-                          hintText: 'Ej: María, contadora…',
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(16),
-                          ),
-                          filled: true,
-                          fillColor: Colors.white,
-                        ),
-                        textCapitalization: TextCapitalization.words,
-                      ),
-                    ],
-                    const SizedBox(height: 24),
-
-                    // Referencia/Recibo
-                    TextFormField(
-                      controller: _referenciaController,
-                      decoration: InputDecoration(
-                        labelText: 'Número de Recibo (opcional)',
-                        hintText: 'Ej: REC-001',
-                        prefixIcon: const Icon(Icons.receipt_long, color: AppColors.naranja),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(16),
-                        ),
-                        filled: true,
-                        fillColor: Colors.white,
-                      ),
-                      textCapitalization: TextCapitalization.characters,
-                    ),
-                    const SizedBox(height: 32),
-
-                    // Botón acreditar
-                    Container(
-                      height: 56,
-                      decoration: BoxDecoration(
-                        gradient: const LinearGradient(
-                          colors: [AppColors.verde, AppColors.turquesa],
-                        ),
-                        borderRadius: BorderRadius.circular(16),
-                        boxShadow: [
-                          BoxShadow(
-                            color: AppColors.verde.withOpacity(0.4),
-                            blurRadius: 20,
-                            offset: const Offset(0, 10),
-                          ),
-                        ],
-                      ),
-                      child: ElevatedButton.icon(
-                        onPressed: _isSaving ? null : _acreditarPago,
-                        icon: _isSaving
-                            ? const SizedBox(
-                                width: 20,
-                                height: 20,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                                ),
-                              )
-                            : const Icon(Icons.check_circle, color: Colors.white),
-                        label: Text(
-                          _isSaving ? 'Acreditando...' : 'Acreditar Pago',
-                          style: GoogleFonts.poppins(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.white,
-                          ),
-                        ),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.transparent,
-                          shadowColor: Colors.transparent,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(16),
-                          ),
+  Widget _buildMetodoPago() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Método de pago',
+          style: GoogleFonts.poppins(fontSize: 16, fontWeight: FontWeight.bold),
+        ),
+        const SizedBox(height: 12),
+        ..._metodosPago.map((metodo) {
+          final isSelected = _metodoPago == metodo['valor'];
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: InkWell(
+              onTap: () => setState(() => _metodoPago = metodo['valor'] as String),
+              borderRadius: BorderRadius.circular(16),
+              child: Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(
+                    color: isSelected ? (metodo['color'] as Color) : Colors.grey.shade300,
+                    width: isSelected ? 2 : 1,
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Icon(metodo['icono'] as IconData, color: metodo['color'] as Color),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Text(
+                        metodo['valor'] as String,
+                        style: GoogleFonts.poppins(
+                          fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
                         ),
                       ),
                     ),
+                    if (isSelected)
+                      Icon(Icons.check_circle, color: metodo['color'] as Color),
                   ],
                 ),
               ),
             ),
+          );
+        }),
+      ],
+    );
+  }
+
+  Widget _buildPagadoA() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Cuenta',
+          style: GoogleFonts.poppins(fontSize: 16, fontWeight: FontWeight.bold),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          'Elige una o varias cuentas destino',
+          style: GoogleFonts.poppins(fontSize: 12, color: AppColors.gris),
+        ),
+        const SizedBox(height: 12),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: Constantes.opcionesPagadoA.map((opcion) {
+            final selected = _pagadoA.contains(opcion);
+            return FilterChip(
+              label: Text(opcion),
+              selected: selected,
+              onSelected: (value) {
+                setState(() {
+                  if (value) {
+                    _pagadoA.add(opcion);
+                  } else {
+                    _pagadoA.remove(opcion);
+                  }
+                });
+              },
+              selectedColor: AppColors.rosa.withOpacity(0.35),
+              checkmarkColor: AppColors.morado,
+              labelStyle: GoogleFonts.poppins(
+                fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+              ),
+            );
+          }).toList(),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildBotonAcreditar(double bottomInset) {
+    return Container(
+      padding: EdgeInsets.fromLTRB(20, 12, 20, 12 + bottomInset),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.08),
+            blurRadius: 8,
+            offset: const Offset(0, -2),
+          ),
+        ],
+      ),
+      child: SizedBox(
+        height: 52,
+        width: double.infinity,
+        child: ElevatedButton.icon(
+          onPressed: _isSaving ? null : _acreditarPago,
+          icon: _isSaving
+              ? const SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                )
+              : const Icon(Icons.check_circle, color: Colors.white),
+          label: Text(
+            _isSaving ? 'Acreditando…' : 'Acreditar pago',
+            style: GoogleFonts.poppins(fontSize: 17, fontWeight: FontWeight.bold, color: Colors.white),
+          ),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: AppColors.verde,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+          ),
+        ),
+      ),
     );
   }
 }

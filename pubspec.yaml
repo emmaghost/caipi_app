@@ -1,7 +1,7 @@
 name: escuela_caipi
 description: Sistema de gestión escolar para padres y directora
 publish_to: 'none'
-version: 1.0.0+1
+version: 1.0.7+4008
 
 environment:
   sdk: '>=3.0.0 <4.0.0'
@@ -38,10 +38,14 @@ dependencies:
   
   # Notificaciones
   flutter_local_notifications: ^18.0.1
+  firebase_core: ^3.15.2
+  firebase_messaging: ^15.2.10
   excel: ^4.0.6
   share_plus: ^12.0.1
   path_provider: ^2.1.5
   file_saver: ^0.3.1
+  pdf: ^3.12.0
+  printing: ^5.14.3
 
 dev_dependencies:
   flutter_test:
@@ -61,7 +65,7 @@ flutter:
 flutter_launcher_icons:
   android: true
   ios: false
-  image_path: "assets/images/logo_caipi.png"
+  image_path: "assets/images/icono_caipi_launcher.png"
   adaptive_icon_background: "#FFFFFF"
-  adaptive_icon_foreground: "assets/images/logo_caipi.png"
+  adaptive_icon_foreground: "assets/images/icono_caipi_launcher.png"
   min_sdk_android: 21

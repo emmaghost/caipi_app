@@ -12,8 +12,11 @@ class Pago {
   final String id;
   final String alumnoId;
   final String? concepto;
+  final String? mes;
   final double monto;
   final double montoPagado; // Nuevo: monto acumulado de abonos
+  /// Descuento aplicado sobre el bruto; [monto] ya es el neto a cobrar.
+  final double descuento;
   final String estatus; // 'pendiente', 'parcial', 'pagado', 'vencido', 'cancelado'
   final DateTime? fechaVencimiento; // Nullable
   final DateTime? fechaPago;
@@ -31,8 +34,10 @@ class Pago {
     required this.id,
     required this.alumnoId,
     this.concepto,
+    this.mes,
     required this.monto,
     this.montoPagado = 0.0,
+    this.descuento = 0.0,
     this.estatus = 'pendiente',
     this.fechaVencimiento, // Ahora nullable
     this.fechaPago,
@@ -67,6 +72,17 @@ class Pago {
     return estatus == 'parcial' || (montoPagado > 0 && montoPagado < monto);
   }
 
+  /// Monto bruto antes de descuento (neto + descuento).
+  double get montoBruto => monto + descuento;
+
+  /// Se puede borrar solo si no tiene abonos ni está liquidado.
+  bool get puedeEliminarse {
+    if (estaPagado || estaParcial) return false;
+    if (montoPagado > 0) return false;
+    if (estatus == 'cancelado') return false;
+    return true;
+  }
+
   static DateTime get _hoy {
     final now = DateTime.now();
     return DateTime(now.year, now.month, now.day);
@@ -88,24 +104,54 @@ class Pago {
   bool get estaVencido {
     if (fechaVencimiento == null) return false;
     if (estaPagado) return false;
+    if (estatus == 'cancelado') return false;
     final limite = _fechaSolo(fechaVencimiento!);
     return _hoy.isAfter(limite);
   }
 
-  /// Estado del pago como enum
+  /// Meses aún no exigibles (fecha límite futura).
+  bool get esFuturo {
+    if (fechaVencimiento == null || estaPagado) return false;
+    if (estatus == 'cancelado') return false;
+    final limite = _fechaSolo(fechaVencimiento!);
+    return _hoy.isBefore(limite);
+  }
+
+  /// Estado del pago: la fecha manda sobre el texto `estatus` para vencido/futuro.
   EstadoPago get estado {
-    switch (estatus) {
-      case 'pagado':
-        return EstadoPago.pagado;
-      case 'parcial':
-        return EstadoPago.parcial;
-      case 'vencido':
-        return EstadoPago.vencido;
-      case 'cancelado':
-        return EstadoPago.cancelado;
+    if (estatus == 'pagado' || estaPagado) return EstadoPago.pagado;
+    if (estatus == 'cancelado') return EstadoPago.cancelado;
+    if (estatus == 'parcial' || estaParcial) return EstadoPago.parcial;
+    if (estaVencido) return EstadoPago.vencido;
+    return EstadoPago.pendiente;
+  }
+
+  String get tipoPagoEtiqueta {
+    switch (tipoPago) {
+      case 'inscripcion':
+        return 'Inscripción';
+      case 'mensualidad':
+        return 'Colegiatura';
+      case 'seguro':
+        return 'Seguro';
+      case 'extracurricular':
+        return 'Extracurricular';
+      case 'otro':
+        return 'Otro gasto';
       default:
-        return EstadoPago.pendiente;
+        return tipoPago ?? 'Pago';
     }
+  }
+
+  /// Descripción legible del cargo (tipo + periodo/concepto).
+  String get descripcionCompleta {
+    final partes = <String>[tipoPagoEtiqueta];
+    if (mes != null && mes!.trim().isNotEmpty) {
+      partes.add(mes!.trim());
+    } else if (concepto != null && concepto!.trim().isNotEmpty) {
+      partes.add(concepto!.trim());
+    }
+    return partes.join(' · ');
   }
 
   /// Formatea el monto
@@ -139,10 +185,12 @@ class Pago {
       id: id,
       alumnoId: alumnoId,
       concepto: json['concepto'] as String?,
+      mes: json['mes'] as String?,
       monto: (json['monto'] as num?)?.toDouble() ?? 0.0,
       montoPagado: json['monto_pagado'] != null
           ? (json['monto_pagado'] as num).toDouble()
           : 0.0,
+      descuento: (json['descuento'] as num?)?.toDouble() ?? 0.0,
       estatus: json['estatus'] as String? ?? 'pendiente',
       fechaVencimiento: json['fecha_vencimiento'] != null
           ? DateTime.tryParse(json['fecha_vencimiento'].toString())
@@ -166,8 +214,10 @@ class Pago {
       'id': id,
       'alumno_id': alumnoId,
       'concepto': concepto,
+      'mes': mes,
       'monto': monto,
       'monto_pagado': montoPagado,
+      'descuento': descuento,
       'estatus': estatus,
       'fecha_vencimiento': fechaVencimiento?.toIso8601String().split('T')[0],
       'fecha_pago': fechaPago?.toIso8601String().split('T')[0],
@@ -184,8 +234,10 @@ class Pago {
     String? id,
     String? alumnoId,
     String? concepto,
+    String? mes,
     double? monto,
     double? montoPagado,
+    double? descuento,
     String? estatus,
     DateTime? fechaVencimiento,
     DateTime? fechaPago,
@@ -202,8 +254,10 @@ class Pago {
       id: id ?? this.id,
       alumnoId: alumnoId ?? this.alumnoId,
       concepto: concepto ?? this.concepto,
+      mes: mes ?? this.mes,
       monto: monto ?? this.monto,
       montoPagado: montoPagado ?? this.montoPagado,
+      descuento: descuento ?? this.descuento,
       estatus: estatus ?? this.estatus,
       fechaVencimiento: fechaVencimiento ?? this.fechaVencimiento,
       fechaPago: fechaPago ?? this.fechaPago,

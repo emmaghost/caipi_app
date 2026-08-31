@@ -2,11 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
+import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../config/app_colors.dart';
 import '../../models/alumno.dart';
+import '../../services/auth_service.dart';
+import '../../utils/constantes.dart';
 import '../../widgets/app_drawer.dart';
 
 class CalificacionesAlumnoScreen extends StatefulWidget {
@@ -23,6 +26,17 @@ class _CalificacionesAlumnoScreenState
     extends State<CalificacionesAlumnoScreen> {
   Alumno? _alumno;
   bool _cargando = true;
+
+  bool get _soloIngles =>
+      context.read<AuthService>().currentUser?.esMaestraIngles == true;
+
+  bool _esMateriaIngles(String? materia) {
+    final n = (materia ?? '')
+        .toLowerCase()
+        .replaceAll('é', 'e')
+        .replaceAll('í', 'i');
+    return n.contains('ingles');
+  }
 
   @override
   void initState() {
@@ -66,7 +80,7 @@ class _CalificacionesAlumnoScreenState
             const Icon(Icons.grade, color: Colors.white),
             const SizedBox(width: 8),
             Text(
-              'Calificaciones',
+              _soloIngles ? 'Inglés' : 'Calificaciones',
               style: GoogleFonts.fredoka(
                 fontSize: 22,
                 fontWeight: FontWeight.w600,
@@ -208,7 +222,7 @@ class _CalificacionesAlumnoScreenState
                                         size: 80, color: Colors.grey[400]),
                                     const SizedBox(height: 16),
                                     Text(
-                                      'No hay calificaciones registradas',
+                                      'No hay calificaciones ${_soloIngles ? 'de Inglés ' : ''}registradas',
                                       style: GoogleFonts.fredoka(
                                         fontSize: 18,
                                         color: Colors.grey[600],
@@ -231,7 +245,42 @@ class _CalificacionesAlumnoScreenState
                               );
                             }
 
-                            final calificacionesData = snapshot.data!;
+                            var calificacionesData = snapshot.data!;
+                            if (_soloIngles) {
+                              calificacionesData = calificacionesData
+                                  .where((c) => _esMateriaIngles(
+                                      c['materia'] as String?))
+                                  .toList();
+                            }
+
+                            if (calificacionesData.isEmpty) {
+                              return Center(
+                                child: Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Icon(Icons.grade_outlined,
+                                        size: 80, color: Colors.grey[400]),
+                                    const SizedBox(height: 16),
+                                    Text(
+                                      'No hay calificaciones ${_soloIngles ? 'de Inglés ' : ''}registradas',
+                                      style: GoogleFonts.fredoka(
+                                        fontSize: 18,
+                                        color: Colors.grey[600],
+                                      ),
+                                    ),
+                                    const SizedBox(height: 24),
+                                    ElevatedButton.icon(
+                                      onPressed: () =>
+                                          _mostrarDialogoNuevaCalificacion(),
+                                      icon: const Icon(Icons.add),
+                                      label: Text(_soloIngles
+                                          ? 'Agregar Inglés'
+                                          : 'Agregar Calificación'),
+                                    ),
+                                  ],
+                                ),
+                              );
+                            }
 
                             // Agrupar por periodo
                             final Map<String, List<Map<String, dynamic>>>
@@ -267,7 +316,7 @@ class _CalificacionesAlumnoScreenState
         backgroundColor: AppColors.verdeClaro,
         icon: const Icon(Icons.add, color: Colors.white),
         label: Text(
-          'Agregar',
+          _soloIngles ? 'Inglés' : 'Agregar',
           style: GoogleFonts.poppins(
             color: Colors.white,
             fontWeight: FontWeight.w600,
@@ -290,7 +339,10 @@ class _CalificacionesAlumnoScreenState
   }
 
   Future<void> _mostrarDialogoNuevaCalificacion() async {
-    final _materiaController = TextEditingController();
+    final soloIngles = _soloIngles;
+    final _materiaController = TextEditingController(
+      text: soloIngles ? Constantes.materiaIngles : '',
+    );
     final _calificacionController = TextEditingController();
     String periodo = 'Bimestre 1';
 
@@ -335,6 +387,7 @@ class _CalificacionesAlumnoScreenState
               const SizedBox(height: 16),
               TextField(
                 controller: _materiaController,
+                enabled: !soloIngles,
                 decoration: InputDecoration(
                   labelText: 'Materia',
                   border: OutlineInputBorder(
@@ -363,7 +416,7 @@ class _CalificacionesAlumnoScreenState
           ),
           ElevatedButton(
             onPressed: () async {
-              if (_materiaController.text.trim().isEmpty ||
+              if ((!soloIngles && _materiaController.text.trim().isEmpty) ||
                   _calificacionController.text.trim().isEmpty) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(
@@ -390,7 +443,9 @@ class _CalificacionesAlumnoScreenState
                   'id': const Uuid().v4(),
                   'alumno_id': widget.alumnoId,
                   'periodo': periodo,
-                  'materia': _materiaController.text.trim(),
+                  'materia': soloIngles
+                      ? Constantes.materiaIngles
+                      : _materiaController.text.trim(),
                   'calificacion': calificacion,
                   'created_at': DateTime.now().toIso8601String(),
                   'updated_at': DateTime.now().toIso8601String(),
@@ -424,8 +479,12 @@ class _CalificacionesAlumnoScreenState
   }
 
   Future<void> _mostrarDialogoEditarCalificacion(Map<String, dynamic> calificacion) async {
-    final _materiaController =
-        TextEditingController(text: calificacion['materia'] as String);
+    final soloIngles = _soloIngles;
+    final _materiaController = TextEditingController(
+      text: soloIngles
+          ? Constantes.materiaIngles
+          : calificacion['materia'] as String,
+    );
     final _calificacionController =
         TextEditingController(text: calificacion['calificacion'].toString());
     String periodo = calificacion['periodo'] as String;
@@ -471,6 +530,7 @@ class _CalificacionesAlumnoScreenState
               const SizedBox(height: 16),
               TextField(
                 controller: _materiaController,
+                enabled: !soloIngles,
                 decoration: InputDecoration(
                   labelText: 'Materia',
                   border: OutlineInputBorder(
@@ -499,7 +559,7 @@ class _CalificacionesAlumnoScreenState
           ),
           ElevatedButton(
             onPressed: () async {
-              if (_materiaController.text.trim().isEmpty ||
+              if ((!soloIngles && _materiaController.text.trim().isEmpty) ||
                   _calificacionController.text.trim().isEmpty) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(
@@ -529,7 +589,9 @@ class _CalificacionesAlumnoScreenState
                     .from('calificaciones')
                     .update({
                   'periodo': periodo,
-                  'materia': _materiaController.text.trim(),
+                  'materia': soloIngles
+                      ? Constantes.materiaIngles
+                      : _materiaController.text.trim(),
                   'calificacion': calificacionValor,
                   'updated_at': DateTime.now().toIso8601String(),
                 }).eq('id', calificacion['id'] as String);

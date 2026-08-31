@@ -5,7 +5,7 @@ class Alumno {
   final DateTime fechaNacimiento;
   final String? genero; // 'niño' o 'niña'
   final String? gradoId;
-  final String padreId;
+  final String? padreId;
   final String? fotoUrl;
   final String? fotoDefaultGenero; // 'nino' o 'nina' para imagen por default
   final String? alergias;
@@ -23,10 +23,15 @@ class Alumno {
   final bool cartillaCompleta;
   final String? vacunasFaltantes;
   // Pagos y beca
-  final int planPagos; // 10 o 12 meses
+  final int planPagos; // 10, 11 o 12 meses (kínder / maternal)
+  /// Estimulación: sesion | paquete_4 | paquete_6 | paquete_8
+  final String? planEstimulacion;
   final DateTime fechaIngreso;
   final int becaPorcentaje; // 0-100 (porcentaje de descuento)
   final bool activo;
+  final bool portageVisiblePadre;
+  /// Alta rápida sin todos los datos; completar después.
+  final bool registroIncompleto;
   final DateTime createdAt;
   final DateTime updatedAt;
 
@@ -37,7 +42,7 @@ class Alumno {
     required this.fechaNacimiento,
     this.genero,
     this.gradoId,
-    required this.padreId,
+    this.padreId,
     this.fotoUrl,
     this.fotoDefaultGenero,
     this.alergias,
@@ -52,13 +57,19 @@ class Alumno {
     this.curp,
     this.cartillaCompleta = true,
     this.vacunasFaltantes,
-    this.planPagos = 12, // Por defecto 12 meses
+    this.planPagos = 12,
+    this.planEstimulacion,
     required this.fechaIngreso,
-    this.becaPorcentaje = 0, // Sin beca por defecto
+    this.becaPorcentaje = 0,
     this.activo = true,
+    this.portageVisiblePadre = false,
+    this.registroIncompleto = false,
     required this.createdAt,
     required this.updatedAt,
   });
+
+  bool get esPlanEstimulacion =>
+      planEstimulacion != null && planEstimulacion!.isNotEmpty;
 
   String get nombreCompleto => '$nombre $apellidos';
 
@@ -102,7 +113,7 @@ class Alumno {
       fechaNacimiento: DateTime.parse(json['fecha_nacimiento']),
       genero: json['genero'] as String?,
       gradoId: json['grado_id'] as String?,
-      padreId: json['padre_id'] as String,
+      padreId: json['padre_id'] as String?,
       fotoUrl: json['foto_url'] as String?,
       fotoDefaultGenero: json['foto_default_genero'] as String?,
       alergias: json['alergias'] as String?,
@@ -118,13 +129,16 @@ class Alumno {
       cartillaCompleta: json['cartilla_completa'] as bool? ?? true,
       vacunasFaltantes: json['vacunas_faltantes'] as String?,
       planPagos: json['plan_pagos'] as int? ?? 12,
+      planEstimulacion: json['plan_estimulacion'] as String?,
       fechaIngreso: json['fecha_ingreso'] != null 
           ? DateTime.parse(json['fecha_ingreso'])
           : DateTime.now(),
       becaPorcentaje: json['beca_porcentaje'] as int? ?? 0,
       activo: json['activo'] as bool? ?? true,
+      portageVisiblePadre: json['portage_visible_padre'] as bool? ?? false,
+      registroIncompleto: json['registro_incompleto'] as bool? ?? false,
       createdAt: DateTime.parse(json['created_at']),
-      updatedAt: DateTime.parse(json['updated_at']),
+      updatedAt: DateTime.parse(json['updated_at'] as String? ?? json['created_at'] as String),
     );
   }
 
@@ -136,7 +150,7 @@ class Alumno {
       'fecha_nacimiento': fechaNacimiento.toIso8601String().split('T')[0],
       'genero': genero,
       'grado_id': gradoId,
-      'padre_id': padreId,
+      if (padreId != null && padreId!.isNotEmpty) 'padre_id': padreId,
       'foto_url': fotoUrl,
       'foto_default_genero': fotoDefaultGenero,
       'alergias': alergias,
@@ -152,9 +166,12 @@ class Alumno {
       'cartilla_completa': cartillaCompleta,
       'vacunas_faltantes': vacunasFaltantes,
       'plan_pagos': planPagos,
+      if (planEstimulacion != null) 'plan_estimulacion': planEstimulacion,
       'fecha_ingreso': fechaIngreso.toIso8601String().split('T')[0],
       'beca_porcentaje': becaPorcentaje,
       'activo': activo,
+      'portage_visible_padre': portageVisiblePadre,
+      'registro_incompleto': registroIncompleto,
     };
   }
 
@@ -181,9 +198,12 @@ class Alumno {
     bool? cartillaCompleta,
     String? vacunasFaltantes,
     int? planPagos,
+    String? planEstimulacion,
     DateTime? fechaIngreso,
     int? becaPorcentaje,
     bool? activo,
+    bool? portageVisiblePadre,
+    bool? registroIncompleto,
     DateTime? createdAt,
     DateTime? updatedAt,
   }) {
@@ -210,9 +230,12 @@ class Alumno {
       cartillaCompleta: cartillaCompleta ?? this.cartillaCompleta,
       vacunasFaltantes: vacunasFaltantes ?? this.vacunasFaltantes,
       planPagos: planPagos ?? this.planPagos,
+      planEstimulacion: planEstimulacion ?? this.planEstimulacion,
       fechaIngreso: fechaIngreso ?? this.fechaIngreso,
       becaPorcentaje: becaPorcentaje ?? this.becaPorcentaje,
       activo: activo ?? this.activo,
+      portageVisiblePadre: portageVisiblePadre ?? this.portageVisiblePadre,
+      registroIncompleto: registroIncompleto ?? this.registroIncompleto,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
     );

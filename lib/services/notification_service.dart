@@ -11,6 +11,9 @@ class NotificationService {
 
   bool _initialized = false;
 
+  /// Callback al tocar notificación local (payload = ruta).
+  void Function(String? payload)? onNotificationTap;
+
   /// Inicializar el servicio de notificaciones
   Future<void> initialize() async {
     if (_initialized) return;
@@ -38,8 +41,14 @@ class NotificationService {
     _initialized = true;
   }
 
-  /// Solicitar permisos (especialmente para iOS)
+  /// Solicitar permisos (Android 13+ e iOS)
   Future<bool?> requestPermissions() async {
+    final android = _notifications.resolvePlatformSpecificImplementation<
+        AndroidFlutterLocalNotificationsPlugin>();
+    if (android != null) {
+      await android.requestNotificationsPermission();
+    }
+
     return await _notifications
         .resolvePlatformSpecificImplementation<
             IOSFlutterLocalNotificationsPlugin>()
@@ -53,7 +62,7 @@ class NotificationService {
   /// Manejar cuando el usuario toca una notificación
   void _onNotificationTapped(NotificationResponse response) {
     debugPrint('Notificación tocada: ${response.payload}');
-    // Aquí puedes navegar a pantallas específicas según el payload
+    onNotificationTap?.call(response.payload);
   }
 
   /// Mostrar notificación simple
@@ -161,6 +170,31 @@ class NotificationService {
       title: '📅 Nuevo Evento',
       body: '$titulo - $fechaStr',
       payload: 'eventos',
+    );
+  }
+
+  /// Notificación de nuevo mensaje en chat
+  Future<void> notificarNuevoMensajeChat({
+    required bool remitenteEsPadre,
+    required String preview,
+  }) async {
+    await showNotification(
+      id: DateTime.now().millisecondsSinceEpoch.remainder(100000),
+      title: remitenteEsPadre ? '💬 Mensaje de padre' : '💬 Mensaje de la escuela',
+      body: preview,
+      payload: 'chat',
+    );
+  }
+
+  /// Padre en la entrada solicita al niño
+  Future<void> notificarSolicitudRecogida({
+    required String nombreAlumno,
+  }) async {
+    await showNotification(
+      id: DateTime.now().millisecondsSinceEpoch.remainder(100000) + 1,
+      title: '🚪 Padre en la entrada',
+      body: 'Solicitan entregar a $nombreAlumno',
+      payload: 'solicitud_recogida',
     );
   }
 

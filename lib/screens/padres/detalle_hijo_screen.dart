@@ -10,6 +10,9 @@ import '../../models/alumno.dart';
 import '../../models/incidente.dart';
 import '../../config/app_colors.dart';
 import '../../widgets/app_drawer.dart';
+import '../../widgets/solicitud_recogida_padre_card.dart';
+import '../../widgets/ligas_padre_vista.dart';
+import '../directora/portage_evaluacion_screen.dart';
 
 class DetalleHijoScreen extends StatelessWidget {
   final String alumnoId;
@@ -280,6 +283,11 @@ class DetalleHijoScreen extends StatelessWidget {
               ),
               const SizedBox(height: 12),
 
+              LigasPadreVista(alumnoId: alumno.id),
+              const SizedBox(height: 12),
+              PortagePadreVista(alumno: alumno),
+              const SizedBox(height: 12),
+
               // —— Pagos (solo consulta; se paga en escuela) ——
               Card(
                 elevation: 2,
@@ -347,6 +355,14 @@ class DetalleHijoScreen extends StatelessWidget {
               const SizedBox(height: 16),
 
               // Personas Autorizadas (mismo estilo que ¡Todo bien!)
+              const SizedBox(height: 16),
+
+              SolicitudRecogidaPadreCard(
+                alumnoId: alumno.id,
+                alumnoNombre: alumno.nombreCompleto,
+              ),
+              const SizedBox(height: 16),
+
               Card(
                 elevation: 2,
                 shape: RoundedRectangleBorder(

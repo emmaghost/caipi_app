@@ -121,10 +121,7 @@ class DashboardPadre extends StatelessWidget {
                 children: hijos.map((hijo) {
                   return HijoCard(
                     alumno: hijo,
-                    onTap: () => context.push(
-                      '/padre/hijo/${hijo.id}/pagos',
-                      extra: {'alumnoNombre': hijo.nombreCompleto},
-                    ),
+                    onTap: () => context.push('/padre/hijo/${hijo.id}'),
                   );
                 }).toList(),
               );

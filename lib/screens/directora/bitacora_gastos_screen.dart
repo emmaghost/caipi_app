@@ -9,6 +9,7 @@ import '../../config/app_colors.dart';
 import '../../models/bitacora_gasto.dart';
 import '../../models/grado.dart';
 import '../../services/auth_service.dart';
+import '../../services/exportacion_gastos_excel.dart';
 import '../../widgets/app_drawer.dart';
 
 String formatoMontoBitacoraGasto(double monto) {
@@ -98,6 +99,175 @@ class _BitacoraGastosPanelState extends State<BitacoraGastosPanel> {
   Future<void> _abrirEditar(String id) async {
     final ok = await context.push<bool>('/directora/bitacora-gastos/editar/$id');
     if (ok == true && mounted) setState(() => _listaEpoch++);
+  }
+
+  Future<void> _exportarExcel() async {
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => PopScope(
+        canPop: false,
+        child: Center(
+          child: Card(
+            child: Padding(
+              padding: const EdgeInsets.all(28),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const CircularProgressIndicator(color: AppColors.morado),
+                  const SizedBox(height: 16),
+                  Text(
+                    'Generando Excel…',
+                    style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    ExcelGastosGenerado? generado;
+    try {
+      generado = await ExportacionGastosExcel.generar(
+        alcance: _alcance,
+        gradoFiltroId: _gradoFiltroId,
+        nombresGrado: {for (final gr in _grados) gr.id: gr.nombre},
+      );
+    } catch (e) {
+      if (!mounted) return;
+      Navigator.of(context, rootNavigator: true).pop();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('No se pudo generar el Excel: $e'),
+          backgroundColor: AppColors.rojo,
+        ),
+      );
+      return;
+    }
+
+    if (!mounted) return;
+    Navigator.of(context, rootNavigator: true).pop();
+
+    final gen = generado;
+    await showModalBottomSheet<void>(
+      context: context,
+      builder: (ctx) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  'Excel listo · ${gen.registros} gasto(s)',
+                  style: GoogleFonts.poppins(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 16,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Total: ${formatoMontoBitacoraGasto(gen.total)}',
+                  style: GoogleFonts.poppins(color: AppColors.gris),
+                ),
+                const SizedBox(height: 16),
+                FilledButton.icon(
+                  onPressed: () async {
+                    Navigator.pop(ctx);
+                    try {
+                      await ExportacionGastosExcel.compartir(
+                        gen.bytes,
+                        gen.fileName,
+                        gen.registros,
+                        gen.total,
+                      );
+                    } catch (e) {
+                      if (!mounted) return;
+                      if (ExportacionGastosExcel.esErrorPluginCompartir(e)) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: const Text(
+                              'No se pudo abrir el menú de compartir. Prueba guardar el archivo.',
+                            ),
+                            action: SnackBarAction(
+                              label: 'Guardar',
+                              onPressed: () async {
+                                try {
+                                  final msg =
+                                      await ExportacionGastosExcel.guardarEnDispositivo(
+                                    gen.bytes,
+                                    gen.fileName,
+                                  );
+                                  if (!mounted) return;
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(content: Text(msg)),
+                                  );
+                                } catch (e2) {
+                                  if (!mounted) return;
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text('Error: $e2'),
+                                      backgroundColor: AppColors.rojo,
+                                    ),
+                                  );
+                                }
+                              },
+                            ),
+                          ),
+                        );
+                      } else {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('Error al compartir: $e'),
+                            backgroundColor: AppColors.rojo,
+                          ),
+                        );
+                      }
+                    }
+                  },
+                  icon: const Icon(Icons.share),
+                  label: const Text('Compartir / enviar'),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: AppColors.morado,
+                    minimumSize: const Size.fromHeight(48),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                OutlinedButton.icon(
+                  onPressed: () async {
+                    Navigator.pop(ctx);
+                    try {
+                      final msg =
+                          await ExportacionGastosExcel.guardarEnDispositivo(
+                        gen.bytes,
+                        gen.fileName,
+                      );
+                      if (!mounted) return;
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text(msg)),
+                      );
+                    } catch (e) {
+                      if (!mounted) return;
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('Error al guardar: $e'),
+                          backgroundColor: AppColors.rojo,
+                        ),
+                      );
+                    }
+                  },
+                  icon: const Icon(Icons.save_alt),
+                  label: const Text('Guardar Excel en el teléfono'),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
   }
 
   double get _bottomListPadding => widget.embeddedInPagos ? 16 : 88;
@@ -194,6 +364,20 @@ class _BitacoraGastosPanelState extends State<BitacoraGastosPanel> {
                   'Texto libre: qué compraste, para qué, aproximadamente cuándo. '
                   'El monto es el total de ese registro.',
                   style: GoogleFonts.poppins(fontSize: 11, color: Colors.grey[700]),
+                ),
+                const SizedBox(height: 10),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: FilledButton.icon(
+                    onPressed: _exportarExcel,
+                    icon: const Icon(Icons.table_chart_outlined, size: 18),
+                    label: const Text('Exportar Excel'),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: AppColors.verde,
+                      foregroundColor: Colors.white,
+                      visualDensity: VisualDensity.compact,
+                    ),
+                  ),
                 ),
               ],
             ),

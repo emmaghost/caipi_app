@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import '../services/auth_service.dart';
+import '../services/acceso_padre_service.dart';
 import '../services/permisos_service.dart';
 import '../config/app_colors.dart';
 
@@ -24,6 +25,18 @@ class _AppDrawerState extends State<AppDrawer> {
 
   Future<void> _cargarPermisos() async {
     try {
+      final auth = Provider.of<AuthService>(context, listen: false);
+      // Padres no usan catálogo de permisos admin
+      if (auth.currentUser?.esPadre == true) {
+        if (mounted) {
+          setState(() {
+            _permisos = {};
+            _cargando = false;
+          });
+        }
+        return;
+      }
+
       final permisosService = PermisosService();
       
       // Lista de permisos a verificar
@@ -48,27 +61,38 @@ class _AppDrawerState extends State<AppDrawer> {
       if (mounted) {
         setState(() {
           _permisos = permisos;
+          // Solo la directora ve pagos (profesor_admin tampoco).
+          if (auth.currentUser?.esDirectora != true) {
+            _permisos['ver_pagos'] = false;
+          }
           _cargando = false;
         });
       }
     } catch (e) {
       print('❌ Error cargando permisos: $e');
       if (mounted) {
+        final auth = Provider.of<AuthService>(context, listen: false);
+        // Sin fallback generoso: solo directora asume acceso total si falla el RPC
+        final esDirectora = auth.currentUser?.esDirectora == true;
         setState(() {
-          // En caso de error, dar acceso básico si es directora
-          _permisos = {
-            'ver_alumnos': true,
-            'ver_pagos': true,
-            'ver_profesores': true,
-            'ver_padres': true,
-            'ver_eventos': true,
-            'ver_incidentes': true,
-            'ver_tipos_incidentes': true,
-            'ver_personas_autorizadas': true,
-            'ver_bitacora': true,
-            'ver_anuncios': true,
-            'ver_calificaciones': true,
-          };
+          _permisos = esDirectora
+              ? {
+                  for (final c in [
+                    'ver_alumnos',
+                    'ver_pagos',
+                    'ver_profesores',
+                    'ver_padres',
+                    'ver_eventos',
+                    'ver_incidentes',
+                    'ver_tipos_incidentes',
+                    'ver_personas_autorizadas',
+                    'ver_bitacora',
+                    'ver_anuncios',
+                    'ver_calificaciones',
+                  ])
+                    c: true,
+                }
+              : {};
           _cargando = false;
         });
       }
@@ -79,11 +103,14 @@ class _AppDrawerState extends State<AppDrawer> {
   Widget build(BuildContext context) {
     final authService = Provider.of<AuthService>(context, listen: false);
     final usuario = authService.currentUser;
+    final accesoPadre = Provider.of<AccesoPadreService>(context);
+    final padreRestringido =
+        usuario?.esPadre == true && accesoPadre.restringido;
 
     return Drawer(
       child: Column(
         children: [
-          // 🌈 Header con degradado arcoíris espectacular
+          // Header compacto: logo + nombre + rol en una sola franja
           Container(
             width: double.infinity,
             decoration: const BoxDecoration(
@@ -91,108 +118,62 @@ class _AppDrawerState extends State<AppDrawer> {
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
                 colors: [
-                  Color(0xFF8B5CF6), // Morado
-                  Color(0xFFFF69B4), // Rosa
-                  Color(0xFFFF8C42), // Naranja
-                  Color(0xFFFFD700), // Amarillo
-                  Color(0xFF90EE90), // Verde
-                  Color(0xFF87CEEB), // Azul cielo
+                  Color(0xFF8B5CF6),
+                  Color(0xFFFF69B4),
+                  Color(0xFFFF8C42),
                 ],
-                stops: [0.0, 0.2, 0.4, 0.6, 0.8, 1.0],
               ),
             ),
             child: SafeArea(
+              bottom: false,
               child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 30, horizontal: 20),
-                child: Column(
+                padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
+                child: Row(
                   children: [
-                    // Logo circular con efecto de brillo
                     Container(
-                      width: 90,
-                      height: 90,
-                      decoration: BoxDecoration(
+                      width: 44,
+                      height: 44,
+                      decoration: const BoxDecoration(
                         shape: BoxShape.circle,
                         color: Colors.white,
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.white.withOpacity(0.5),
-                            blurRadius: 20,
-                            spreadRadius: 5,
-                          ),
-                          const BoxShadow(
-                            color: Colors.black26,
-                            blurRadius: 15,
-                            offset: Offset(0, 5),
-                          ),
-                        ],
                       ),
-                      padding: const EdgeInsets.all(8),
+                      padding: const EdgeInsets.all(4),
                       child: ClipOval(
                         child: Image.asset(
-                          'assets/images/logo_caipi.png',
+                          'assets/images/icono_caipi.png',
                           fit: BoxFit.contain,
                         ),
                       ),
                     ),
-                    const SizedBox(height: 20),
-                    // Nombre del usuario con sombra
-                    Text(
-                      usuario?.nombre ?? 'Usuario',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
-                        shadows: [
-                          Shadow(
-                            color: Colors.black26,
-                            blurRadius: 4,
-                            offset: Offset(0, 2),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            usuario?.nombre ?? 'Usuario',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 15,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            _getRolLabel(usuario?.rol ?? ''),
+                            style: TextStyle(
+                              color: Colors.white.withOpacity(0.9),
+                              fontSize: 12,
+                              fontWeight: FontWeight.w500,
+                            ),
                           ),
                         ],
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: 8),
-                    // Rol con badge bonito
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 6,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(20),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withOpacity(0.2),
-                            blurRadius: 8,
-                            offset: const Offset(0, 2),
-                          ),
-                        ],
-                      ),
-                      child: Text(
-                        _getRolLabel(usuario?.rol ?? ''),
-                        style: TextStyle(
-                          color: AppColors.morado,
-                          fontSize: 13,
-                          fontWeight: FontWeight.bold,
-                          letterSpacing: 0.5,
-                        ),
                       ),
                     ),
                   ],
                 ),
-              ),
-            ),
-          ),
-
-          // Decoración divisora con ondas
-          Container(
-            height: 20,
-            decoration: const BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.vertical(
-                top: Radius.circular(20),
               ),
             ),
           ),
@@ -206,9 +187,8 @@ class _AppDrawerState extends State<AppDrawer> {
                       child: CircularProgressIndicator(color: AppColors.morado),
                     )
                   : ListView(
-                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      padding: const EdgeInsets.symmetric(vertical: 4),
                         children: [
-                          // Home/Dashboard
                           _buildMenuItem(
                             context: context,
                             icon: Icons.home,
@@ -217,9 +197,104 @@ class _AppDrawerState extends State<AppDrawer> {
                             tienePermiso: true,
                           ),
 
-                          const SizedBox(height: 8),
-                          
-                          // SECCIÓN: ALUMNOS
+                          const SizedBox(height: 4),
+
+                          // ===== MENÚ SOLO PADRE (nunca admin) =====
+                          if (usuario?.esPadre == true) ...[
+                            if (padreRestringido) ...[
+                              _buildSectionHeader('ACCESO LIMITADO'),
+                              _buildMenuItem(
+                                context: context,
+                                icon: Icons.lock_clock,
+                                title: 'Pendiente de pago',
+                                ruta: '/padre/adeudo',
+                                tienePermiso: true,
+                              ),
+                              _buildMenuItem(
+                                context: context,
+                                icon: Icons.chat_bubble_rounded,
+                                title: 'Chat con la Escuela',
+                                ruta: '/padre/chat',
+                                tienePermiso: true,
+                              ),
+                            ] else ...[
+                              _buildSectionHeader('COMUNICACIÓN'),
+                              _buildMenuItem(
+                                context: context,
+                                icon: Icons.chat_bubble_rounded,
+                                title: 'Chat con la Escuela',
+                                ruta: '/padre/chat',
+                                tienePermiso: true,
+                              ),
+                              _buildSectionHeader('CUENTA'),
+                              _buildMenuItem(
+                                context: context,
+                                icon: Icons.lock_outline,
+                                title: 'Cambiar contraseña',
+                                ruta: '/cambiar-contrasena',
+                                tienePermiso: true,
+                              ),
+                            ],
+                          ],
+
+                          // ===== MAESTRA DE INGLÉS: grupo + calificaciones de Inglés =====
+                          if (usuario?.esMaestraIngles == true) ...[
+                            _buildSectionHeader('INGLÉS'),
+                            _buildMenuItem(
+                              context: context,
+                              icon: Icons.child_care,
+                              title: 'Alumnos del grupo',
+                              ruta: '/directora/alumnos',
+                              tienePermiso: true,
+                            ),
+                            _buildMenuItem(
+                              context: context,
+                              icon: Icons.grade,
+                              title: 'Calificaciones de Inglés',
+                              ruta: '/directora/calificaciones',
+                              tienePermiso: true,
+                            ),
+                            _buildSectionHeader('CUENTA'),
+                            _buildMenuItem(
+                              context: context,
+                              icon: Icons.lock_outline,
+                              title: 'Cambiar contraseña',
+                              ruta: '/cambiar-contrasena',
+                              tienePermiso: true,
+                            ),
+                          ]
+
+                          // ===== SECRETARIA: solo altas (alumnos / papás) =====
+                          else if (usuario?.esSecretaria == true) ...[
+                            _buildSectionHeader('ALTAS'),
+                            _buildMenuItem(
+                              context: context,
+                              icon: Icons.person_add,
+                              title: 'Alta de alumno',
+                              ruta: '/directora/alumnos/crear',
+                              tienePermiso: true,
+                            ),
+                            _buildSectionHeader('CUENTA'),
+                            _buildMenuItem(
+                              context: context,
+                              icon: Icons.lock_outline,
+                              title: 'Cambiar contraseña',
+                              ruta: '/cambiar-contrasena',
+                              tienePermiso: true,
+                            ),
+                          ]
+
+                          // ===== MENÚ STAFF (directora / profesoras) =====
+                          else if (usuario?.esStaff == true) ...[
+                            _buildMenuItem(
+                              context: context,
+                              icon: Icons.chat_bubble_rounded,
+                              title: 'Chat con Padres',
+                              ruta: '/directora/chat',
+                              tienePermiso: true,
+                            ),
+
+                          const SizedBox(height: 4),
                           if (_permisos['ver_alumnos'] == true) ...[
                             _buildSectionHeader('ALUMNOS'),
                             _buildMenuItem(
@@ -231,14 +306,34 @@ class _AppDrawerState extends State<AppDrawer> {
                             ),
                             _buildMenuItem(
                               context: context,
-                              icon: Icons.article,
-                              title: 'Entrevista a Padres',
-                              ruta: '/directora/entrevista/crear',
+                              icon: Icons.grade,
+                              title: 'Calificaciones',
+                              ruta: '/directora/calificaciones',
                               tienePermiso: true,
                             ),
-                            // Personas autorizadas: oculto por solicitud (no se muestra en ningún lado)
-                            // if (_permisos['ver_personas_autorizadas'] == true)
-                            //   _buildMenuItem(...),
+                            _buildMenuItem(
+                              context: context,
+                              icon: Icons.article,
+                              title: 'Entrevista a Padres',
+                              ruta: '/directora/entrevistas',
+                              tienePermiso: true,
+                            ),
+                            _buildMenuItem(
+                              context: context,
+                              icon: Icons.psychology_outlined,
+                              title: 'Indicadores de desarrollo',
+                              ruta: '/directora/portage',
+                              tienePermiso: true,
+                            ),
+                            if (usuario?.esDirectora == true ||
+                                usuario?.esProfesorAdmin == true)
+                              _buildMenuItem(
+                                context: context,
+                                icon: Icons.add_link,
+                                title: 'Ligas Drive',
+                                ruta: '/directora/ligas',
+                                tienePermiso: true,
+                              ),
                             _buildMenuItem(
                               context: context,
                               icon: Icons.school_outlined,
@@ -246,19 +341,11 @@ class _AppDrawerState extends State<AppDrawer> {
                               ruta: '/directora/grados',
                               tienePermiso: true,
                             ),
-                            // Calificaciones: deshabilitado temporalmente (no sirve ahorita)
-                            // if (_permisos['ver_calificaciones'] == true)
-                            //   _buildMenuItem(
-                            //     context: context,
-                            //     icon: Icons.grade,
-                            //     title: 'Calificaciones',
-                            //     ruta: '/directora/calificaciones',
-                            //     tienePermiso: true,
-                            //   ),
                           ],
 
-                          // SECCIÓN: PAGOS
-                          if (_permisos['ver_pagos'] == true) ...[
+                          // SECCIÓN: PAGOS (solo directora)
+                          if (_permisos['ver_pagos'] == true &&
+                              usuario?.esDirectora == true) ...[
                             _buildSectionHeader('PAGOS'),
                             _buildMenuItem(
                               context: context,
@@ -272,13 +359,6 @@ class _AppDrawerState extends State<AppDrawer> {
                               icon: Icons.settings,
                               title: 'Configuración de Costos',
                               ruta: '/directora/configuracion-costos',
-                              tienePermiso: true,
-                            ),
-                            _buildMenuItem(
-                              context: context,
-                              icon: Icons.message,
-                              title: '🧪 Prueba WhatsApp',
-                              ruta: '/directora/test-whatsapp',
                               tienePermiso: true,
                             ),
                           ],
@@ -345,14 +425,6 @@ class _AppDrawerState extends State<AppDrawer> {
                               ruta: '/directora/anuncios',
                               tienePermiso: true,
                             ),
-                            // Galería eliminada - no se necesita
-                            // _buildMenuItem(
-                            //   context: context,
-                            //   icon: Icons.photo_library,
-                            //   title: 'Galería de Fotos',
-                            //   ruta: '/directora/galeria',
-                            //   tienePermiso: true,
-                            // ),
                             _buildMenuItem(
                               context: context,
                               icon: Icons.sports_soccer,
@@ -388,43 +460,46 @@ class _AppDrawerState extends State<AppDrawer> {
                               tienePermiso: true,
                             ),
                           ],
+
+                          if (usuario?.esDirectora == true) ...[
+                            _buildSectionHeader('REPORTES'),
+                            _buildMenuItem(
+                              context: context,
+                              icon: Icons.picture_as_pdf,
+                              title: 'Reportes PDF',
+                              ruta: '/directora/reportes-pdf',
+                              tienePermiso: true,
+                            ),
+                            _buildSectionHeader('CONFIGURACIÓN'),
+                            _buildMenuItem(
+                              context: context,
+                              icon: Icons.schedule,
+                              title: 'Horario del chat',
+                              ruta: '/directora/config-chat-horario',
+                              tienePermiso: true,
+                            ),
+                          ],
+
+                          _buildSectionHeader('CUENTA'),
+                          _buildMenuItem(
+                            context: context,
+                            icon: Icons.lock_outline,
+                            title: 'Cambiar contraseña',
+                            ruta: '/cambiar-contrasena',
+                            tienePermiso: true,
+                          ),
+                          ], // fin esStaff
                         ],
                       ),
             ),
           ),
 
-          // Footer: cambiar contraseña + cerrar sesión
+          // Footer: cerrar sesión
           Container(
             color: Colors.white,
             child: Column(
               children: [
                 Divider(color: Colors.grey[300], height: 1, thickness: 1),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
-                  child: ListTile(
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      side: BorderSide(color: AppColors.morado.withOpacity(0.3)),
-                    ),
-                    leading: Icon(Icons.password_rounded, color: AppColors.morado),
-                    title: Text(
-                      'Cambiar contraseña',
-                      style: TextStyle(
-                        fontWeight: FontWeight.w600,
-                        color: Colors.grey[800],
-                      ),
-                    ),
-                    subtitle: Text(
-                      'Si usas Caipi2026, cámbiala aquí',
-                      style: TextStyle(fontSize: 12, color: Colors.grey[600]),
-                    ),
-                    trailing: const Icon(Icons.chevron_right),
-                    onTap: () {
-                      Navigator.of(context).pop();
-                      context.push('/cambiar-contrasena');
-                    },
-                  ),
-                ),
                 Container(
                   margin: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
@@ -454,6 +529,10 @@ class _AppDrawerState extends State<AppDrawer> {
                     onTap: () async {
                       await authService.logout();
                       if (context.mounted) {
+                        try {
+                          Provider.of<AccesoPadreService>(context, listen: false)
+                              .limpiar();
+                        } catch (_) {}
                         context.go('/login');
                       }
                     },
@@ -473,29 +552,15 @@ class _AppDrawerState extends State<AppDrawer> {
   // ============================================
 
   Widget _buildSectionHeader(String titulo) {
-    return Container(
-      margin: const EdgeInsets.fromLTRB(16, 20, 16, 8),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: [AppColors.morado, AppColors.rosa],
-        ),
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [
-          BoxShadow(
-            color: AppColors.morado.withOpacity(0.3),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
       child: Text(
         titulo,
-        style: const TextStyle(
-          color: Colors.white,
+        style: TextStyle(
+          color: AppColors.morado,
           fontSize: 11,
           fontWeight: FontWeight.bold,
-          letterSpacing: 1.5,
+          letterSpacing: 1.2,
         ),
       ),
     );
@@ -560,13 +625,19 @@ class _AppDrawerState extends State<AppDrawer> {
             : Icon(Icons.chevron_right, color: Colors.grey[400], size: 20),
         onTap: () {
           Navigator.of(context).pop(); // Cerrar drawer
-          context.go(ruta);
+          if (ruta == '/cambiar-contrasena') {
+            context.push(ruta);
+          } else {
+            context.go(ruta);
+          }
         },
       ),
     );
   }
 
   String _getRolLabel(String rol) {
+    final u = Provider.of<AuthService>(context, listen: false).currentUser;
+    if (u?.esMaestraIngles == true) return 'Maestra de inglés';
     switch (rol) {
       case 'directora':
         return '👩‍💼 Directora';
@@ -574,6 +645,8 @@ class _AppDrawerState extends State<AppDrawer> {
         return '👩‍🏫 Profesora';
       case 'profesor_admin':
         return '👩‍🏫⭐ Profesora Admin';
+      case 'secretaria':
+        return '📋 Secretaria (altas)';
       case 'padre':
         return '👨‍👩‍👧 Padre/Madre';
       default:
@@ -586,9 +659,12 @@ class _AppDrawerState extends State<AppDrawer> {
       case 'directora':
       case 'profesor':
       case 'profesor_admin':
+      case 'secretaria':
         return '/directora';
       case 'padre':
-        return '/padre';
+        final restringido =
+            Provider.of<AccesoPadreService>(context, listen: false).restringido;
+        return restringido ? '/padre/adeudo' : '/padre';
       default:
         return '/';
     }

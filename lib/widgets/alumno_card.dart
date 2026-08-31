@@ -43,6 +43,18 @@ class AlumnoCard extends StatelessWidget {
           children: [
             Text('Grado: ${alumno.gradoId ?? "Sin asignar"}'),
             Text('Edad: ${alumno.edad} años'),
+            if (alumno.registroIncompleto)
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Text(
+                  'Registro incompleto — editar datos',
+                  style: TextStyle(
+                    color: AppColors.naranja,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
           ],
         ),
         trailing: showAutorizados

@@ -11,8 +11,9 @@ void main() {
         'mes': 'Enero 2026',
         'monto': 1500.0,
         'concepto': 'Colegiatura',
-        'pagado': false,
-        'fecha_limite': '2026-01-10',
+        'monto_pagado': 0,
+        'estatus': 'pendiente',
+        'fecha_vencimiento': '2026-01-10',
         'created_at': '2024-01-01T00:00:00Z',
         'updated_at': '2024-01-01T00:00:00Z',
       };
@@ -26,7 +27,7 @@ void main() {
       expect(pago.mes, 'Enero 2026');
       expect(pago.monto, 1500.0);
       expect(pago.concepto, 'Colegiatura');
-      expect(pago.pagado, false);
+      expect(pago.estaPagado, false);
     });
 
     test('Debe identificar pago pendiente correctamente', () {
@@ -37,8 +38,8 @@ void main() {
         mes: 'Diciembre 2026',
         monto: 1500.0,
         concepto: 'Colegiatura',
-        pagado: false,
-        fechaLimite: DateTime.now().add(const Duration(days: 30)),
+        estatus: 'pendiente',
+        fechaVencimiento: DateTime.now().add(const Duration(days: 30)),
         createdAt: DateTime.now(),
         updatedAt: DateTime.now(),
       );
@@ -47,22 +48,40 @@ void main() {
       expect(pagoPendiente.estado, EstadoPago.pendiente);
     });
 
-    test('Debe identificar pago vencido correctamente', () {
-      // Arrange - Pago con fecha límite pasada
+    test('Debe identificar pago vencido por fecha aunque estatus sea pendiente', () {
       final pagoVencido = Pago(
         id: 'pago-2',
         alumnoId: 'alumno-1',
         mes: 'Enero 2026',
         monto: 1500.0,
         concepto: 'Colegiatura',
-        pagado: false,
-        fechaLimite: DateTime.now().subtract(const Duration(days: 10)),
+        estatus: 'pendiente',
+        fechaVencimiento: DateTime.now().subtract(const Duration(days: 10)),
         createdAt: DateTime.now(),
         updatedAt: DateTime.now(),
       );
 
-      // Assert
+      expect(pagoVencido.estaVencido, true);
+      expect(pagoVencido.esFuturo, false);
       expect(pagoVencido.estado, EstadoPago.vencido);
+    });
+
+    test('Debe identificar pago futuro correctamente', () {
+      final pagoFuturo = Pago(
+        id: 'pago-f',
+        alumnoId: 'alumno-1',
+        mes: 'Diciembre 2026',
+        monto: 1500.0,
+        concepto: 'Colegiatura',
+        estatus: 'pendiente',
+        fechaVencimiento: DateTime.now().add(const Duration(days: 40)),
+        createdAt: DateTime.now(),
+        updatedAt: DateTime.now(),
+      );
+
+      expect(pagoFuturo.esFuturo, true);
+      expect(pagoFuturo.estaVencido, false);
+      expect(pagoFuturo.estado, EstadoPago.pendiente);
     });
 
     test('Debe identificar pago pagado correctamente', () {
@@ -73,51 +92,36 @@ void main() {
         mes: 'Enero 2026',
         monto: 1500.0,
         concepto: 'Colegiatura',
-        pagado: true,
-        fechaLimite: DateTime.now(),
+        montoPagado: 1500,
+        estatus: 'pagado',
+        fechaVencimiento: DateTime.now(),
         fechaPago: DateTime.now(),
-        metodoPago: 'Efectivo',
-        recibidoPor: 'directora',
+        formaPago: 'Efectivo',
+        recibidoPorNombre: 'BBVA Instituto Brain',
         createdAt: DateTime.now(),
         updatedAt: DateTime.now(),
       );
 
       // Assert
       expect(pagoPagado.estado, EstadoPago.pagado);
-      expect(pagoPagado.metodoPago, 'Efectivo');
-      expect(pagoPagado.recibidoPor, 'directora');
-      expect(pagoPagado.nombreQuienRecibio, 'Directora');
+      expect(pagoPagado.formaPago, 'Efectivo');
+      expect(pagoPagado.recibidoPorNombre, 'BBVA Instituto Brain');
     });
 
-    test('Debe convertir quien recibió correctamente', () {
-      // Arrange
-      final pagoDirectora = Pago(
+    test('Debe conservar la cuenta receptora', () {
+      final pago = Pago(
         id: 'pago-1',
         alumnoId: 'alumno-1',
         mes: 'Enero 2026',
         monto: 1500.0,
         concepto: 'Colegiatura',
-        fechaLimite: DateTime.now(),
-        recibidoPor: 'directora',
+        fechaVencimiento: DateTime.now(),
+        recibidoPorNombre: 'Efectivo',
         createdAt: DateTime.now(),
         updatedAt: DateTime.now(),
       );
 
-      final pagoJoss = Pago(
-        id: 'pago-2',
-        alumnoId: 'alumno-1',
-        mes: 'Febrero 2026',
-        monto: 1500.0,
-        concepto: 'Colegiatura',
-        fechaLimite: DateTime.now(),
-        recibidoPor: 'joss',
-        createdAt: DateTime.now(),
-        updatedAt: DateTime.now(),
-      );
-
-      // Assert
-      expect(pagoDirectora.nombreQuienRecibio, 'Directora');
-      expect(pagoJoss.nombreQuienRecibio, 'Joss');
+      expect(pago.recibidoPorNombre, 'Efectivo');
     });
   });
 }

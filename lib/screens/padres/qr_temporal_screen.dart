@@ -4,6 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
+import 'package:share_plus/share_plus.dart';
 
 import '../../config/app_colors.dart';
 
@@ -11,17 +12,20 @@ class QrTemporalScreen extends StatelessWidget {
   final String codigo;
   final String nombrePersona;
   final String alumnoNombre;
+  final DateTime? fechaExpiracion;
 
   const QrTemporalScreen({
     super.key,
     required this.codigo,
     required this.nombrePersona,
     required this.alumnoNombre,
+    this.fechaExpiracion,
   });
 
   @override
   Widget build(BuildContext context) {
-    final fechaExpiracion = DateTime.now().add(const Duration(hours: 24));
+    final fechaExpiracion =
+        this.fechaExpiracion ?? DateTime.now().add(const Duration(hours: 24));
     
     return Scaffold(
       appBar: AppBar(
@@ -110,7 +114,7 @@ class QrTemporalScreen extends StatelessWidget {
                         version: QrVersions.auto,
                         size: 250,
                         backgroundColor: Colors.white,
-                        embeddedImage: const AssetImage('assets/images/logo_caipi.png'),
+                        embeddedImage: const AssetImage('assets/images/icono_caipi.png'),
                         embeddedImageStyle: QrEmbeddedImageStyle(
                           size: const Size(50, 50),
                         ),
@@ -399,17 +403,15 @@ class QrTemporalScreen extends StatelessWidget {
   }
 
   void _compartirQr(BuildContext context) {
-    // Por ahora solo mostramos el mensaje
-    // En producción, aquí se implementaría Share.share()
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          '📱 Captura de pantalla lista para compartir por WhatsApp',
-          style: GoogleFonts.poppins(),
-        ),
-        backgroundColor: AppColors.verde,
-        duration: const Duration(seconds: 3),
-      ),
+    final hasta = fechaExpiracion ?? DateTime.now().add(const Duration(hours: 24));
+    Share.share(
+      'Pase temporal CAIPI\n'
+      'Persona: $nombrePersona\n'
+      'Recoge a: $alumnoNombre\n'
+      'Código: $codigo\n'
+      'Válido hasta: ${DateFormat('dd/MM/yyyy HH:mm').format(hasta)}\n'
+      'Muéstralo en la puerta. Un solo uso.',
+      subject: 'QR CAIPI — $alumnoNombre',
     );
   }
 }

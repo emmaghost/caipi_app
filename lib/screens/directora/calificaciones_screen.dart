@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../config/app_colors.dart';
 import '../../models/alumno.dart';
+import '../../services/auth_service.dart';
 import '../../widgets/app_drawer.dart';
 
 class CalificacionesScreen extends StatefulWidget {
@@ -19,6 +21,16 @@ class _CalificacionesScreenState extends State<CalificacionesScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final user = context.watch<AuthService>().currentUser;
+    final soloIngles = user?.esMaestraIngles == true;
+    final gradoFijo = (user != null &&
+            user.esProfesor &&
+            !user.esProfesorAdmin &&
+            user.gradoIdProfesor != null)
+        ? user.gradoIdProfesor
+        : null;
+    final gradoFiltro = gradoFijo ?? _gradoSeleccionado;
+
     return Scaffold(
       appBar: AppBar(
         title: Row(
@@ -26,7 +38,7 @@ class _CalificacionesScreenState extends State<CalificacionesScreen> {
             const Icon(Icons.grade, color: Colors.white),
             const SizedBox(width: 8),
             Text(
-              'Calificaciones',
+              soloIngles ? 'Inglés' : 'Calificaciones',
               style: GoogleFonts.fredoka(
                 fontSize: 22,
                 fontWeight: FontWeight.w600,
@@ -94,7 +106,7 @@ class _CalificacionesScreenState extends State<CalificacionesScreen> {
                       ),
                       const SizedBox(height: 8),
                       DropdownButtonFormField<String>(
-                        value: _gradoSeleccionado,
+                        value: gradoFijo ?? _gradoSeleccionado,
                         decoration: InputDecoration(
                           filled: true,
                           fillColor: Colors.white,
@@ -105,22 +117,29 @@ class _CalificacionesScreenState extends State<CalificacionesScreen> {
                         ),
                         hint: const Text('Todos los grados'),
                         items: [
-                          const DropdownMenuItem(
-                            value: null,
-                            child: Text('Todos los grados'),
-                          ),
-                          ...grados.map((grado) {
+                          if (gradoFijo == null)
+                            const DropdownMenuItem(
+                              value: null,
+                              child: Text('Todos los grados'),
+                            ),
+                          ...grados
+                              .where((grado) =>
+                                  gradoFijo == null ||
+                                  grado['id'] as String == gradoFijo)
+                              .map((grado) {
                             return DropdownMenuItem(
                               value: grado['id'] as String,
                               child: Text(grado['nombre'] as String),
                             );
                           }),
                         ],
-                        onChanged: (value) {
-                          setState(() {
-                            _gradoSeleccionado = value;
-                          });
-                        },
+                        onChanged: gradoFijo != null
+                            ? null
+                            : (value) {
+                                setState(() {
+                                  _gradoSeleccionado = value;
+                                });
+                              },
                       ),
                     ],
                   );
@@ -131,7 +150,7 @@ class _CalificacionesScreenState extends State<CalificacionesScreen> {
             // Lista de alumnos
             Expanded(
               child: StreamBuilder<List<Map<String, dynamic>>>(
-                stream: _gradoSeleccionado == null
+                stream: gradoFiltro == null
                     ? Supabase.instance.client
                         .from('alumnos')
                         .stream(primaryKey: ['id'])
@@ -139,7 +158,7 @@ class _CalificacionesScreenState extends State<CalificacionesScreen> {
                     : Supabase.instance.client
                         .from('alumnos')
                         .stream(primaryKey: ['id'])
-                        .eq('grado_id', _gradoSeleccionado!)
+                        .eq('grado_id', gradoFiltro)
                         .order('nombre', ascending: true),
                 builder: (context, snapshot) {
                   if (snapshot.connectionState == ConnectionState.waiting) {

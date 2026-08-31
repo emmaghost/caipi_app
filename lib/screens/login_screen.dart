@@ -69,10 +69,12 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
         ),
       );
     } else {
-      if (authService.isDirectora) {
+      if (authService.esStaff) {
         context.go('/directora');
-      } else {
+      } else if (authService.esPadre) {
         context.go('/padre');
+      } else {
+        context.go('/login');
       }
     }
   }
@@ -211,7 +213,7 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
                                   child: Text(
                                     '¿Olvidaste tu contraseña?',
                                     style: GoogleFonts.poppins(
-                                      color: AppColors.verdeClaro,
+                                      color: AppColors.rosa,
                                       fontWeight: FontWeight.w600,
                                     ),
                                   ),
@@ -285,54 +287,51 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
 
   Widget _buildLogoSection() {
     return Container(
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        shape: BoxShape.circle,
         color: Colors.white,
+        borderRadius: BorderRadius.circular(28),
         boxShadow: [
           BoxShadow(
-            color: AppColors.morado.withOpacity(0.4),
-            blurRadius: 30,
-            spreadRadius: 10,
+            color: AppColors.morado.withOpacity(0.35),
+            blurRadius: 28,
+            spreadRadius: 4,
           ),
           BoxShadow(
-            color: AppColors.verdeClaro.withOpacity(0.3),
-            blurRadius: 20,
-            spreadRadius: 5,
+            color: AppColors.verdeClaro.withOpacity(0.25),
+            blurRadius: 16,
+            spreadRadius: 2,
           ),
         ],
       ),
-      child: Container(
-        width: 140,
-        height: 140,
-        decoration: const BoxDecoration(
-          color: Colors.white,
-          shape: BoxShape.circle,
-        ),
-          child: ClipOval(
-          child: Image.asset(
-            'assets/images/logo_caipi.png',
-            width: 160,
-            height: 160,
-            fit: BoxFit.contain,
-            errorBuilder: (context, error, stackTrace) {
-              // Si no se encuentra la imagen, mostrar texto
-              return Center(
-                child: Text(
-                  'CAIPI',
-                  style: GoogleFonts.fredoka(
-                    fontSize: 32,
-                    fontWeight: FontWeight.bold,
-                    foreground: Paint()
-                      ..shader = const LinearGradient(
-                        colors: [AppColors.morado, AppColors.rosa, AppColors.verdeClaro],
-                      ).createShader(const Rect.fromLTWH(0, 0, 200, 70)),
-                  ),
+      child: Image.asset(
+        'assets/images/icono_caipi.png',
+        width: 180,
+        height: 180,
+        fit: BoxFit.contain,
+        errorBuilder: (context, error, stackTrace) {
+          return SizedBox(
+            width: 180,
+            height: 180,
+            child: Center(
+              child: Text(
+                'CAIPI',
+                style: GoogleFonts.fredoka(
+                  fontSize: 32,
+                  fontWeight: FontWeight.bold,
+                  foreground: Paint()
+                    ..shader = const LinearGradient(
+                      colors: [
+                        AppColors.morado,
+                        AppColors.rosa,
+                        AppColors.verdeClaro,
+                      ],
+                    ).createShader(const Rect.fromLTWH(0, 0, 200, 70)),
                 ),
-              );
-            },
-          ),
-        ),
+              ),
+            ),
+          );
+        },
       ),
     );
   }

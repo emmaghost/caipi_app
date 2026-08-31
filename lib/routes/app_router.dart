@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-import 'package:provider/provider.dart';
 
 import '../services/auth_service.dart';
+import '../services/acceso_padre_service.dart';
 import '../screens/login_screen.dart';
 import '../screens/cambiar_contrasena_screen.dart';
 import '../screens/directora/dashboard_directora.dart';
@@ -44,6 +44,14 @@ import '../screens/directora/crear_menu_screen.dart';
 import '../screens/directora/clases_extracurriculares_screen.dart';
 import '../screens/directora/crear_clase_extracurricular_screen.dart';
 import '../screens/directora/entrevista_padres_screen.dart';
+import '../screens/directora/entrevistas_lista_screen.dart';
+import '../screens/directora/portage_home_screen.dart';
+import '../screens/directora/portage_lista_editor_screen.dart';
+import '../screens/directora/portage_evaluacion_screen.dart';
+import '../screens/directora/portage_alumno_hub_screen.dart';
+import '../screens/directora/ligas_drive_screen.dart';
+import '../screens/directora/reportes_pdf_screen.dart';
+import '../screens/directora/config_chat_horario_screen.dart';
 import '../screens/padres/dashboard_padre.dart';
 import '../screens/padres/detalle_hijo_screen.dart';
 import '../screens/padres/bitacora_padre_screen.dart';
@@ -51,39 +59,108 @@ import '../screens/padres/pagos_padre_screen.dart';
 import '../screens/padres/eventos_screen.dart';
 import '../screens/padres/personas_autorizadas_screen.dart';
 import '../screens/padres/qr_temporal_screen.dart';
+import '../screens/padres/acceso_restringido_screen.dart';
+import '../screens/chat/chat_lista_escuela_screen.dart';
+import '../screens/chat/chat_conversacion_screen.dart';
+import '../screens/chat/chat_padre_screen.dart';
 
 // Necesitamos crear el router como función para acceder al AuthService
-GoRouter createRouter(AuthService authService) {
+GoRouter createRouter({
+  required AuthService authService,
+  required AccesoPadreService accesoPadreService,
+}) {
   return GoRouter(
-    initialLocation: '/',
-    refreshListenable: authService, // ← IMPORTANTE: Escucha cambios
-    redirect: (context, state) {
+    initialLocation: '/login',
+    refreshListenable: Listenable.merge([authService, accesoPadreService]),
+    redirect: (context, state) async {
       final isLoggedIn = authService.isLoggedIn;
-      final isDirectora = authService.isDirectora;
-      final isPadre = authService.isPadre;
-      
-      final isGoingToLogin = state.matchedLocation == '/login';
-      final isGoingToRoot = state.matchedLocation == '/';
+      final isStaff = authService.esStaff;
+      final isPadre = authService.esPadre;
 
-      // Si va a raíz, redirigir según estado
+      final loc = state.matchedLocation;
+      final isGoingToLogin = loc == '/login';
+      final isGoingToRoot = loc == '/' || loc.isEmpty;
+      final isRutaPadre = loc == '/padre' || loc.startsWith('/padre/');
+      final isRutaStaff = loc == '/directora' ||
+          loc.startsWith('/directora/') ||
+          loc.startsWith('/acreditar-pago/');
+
       if (isGoingToRoot) {
         if (!isLoggedIn) return '/login';
-        if (isDirectora) return '/directora';
-        if (isPadre) return '/padre';
+        if (isStaff) return '/directora';
+        if (isPadre) {
+          final uid = authService.currentUser?.id;
+          if (uid != null) {
+            final acc = await accesoPadreService.consultar(uid);
+            if (acc.restringido) return '/padre/adeudo';
+          }
+          return '/padre';
+        }
         return '/login';
       }
 
-      // Si no está logueado y no va al login, redirigir a login
       if (!isLoggedIn && !isGoingToLogin) {
         return '/login';
       }
 
-      // Si está logueado y va al login, redirigir a su dashboard
       if (isLoggedIn && isGoingToLogin) {
-        return isDirectora ? '/directora' : '/padre';
+        if (isStaff) return '/directora';
+        if (isPadre) {
+          final uid = authService.currentUser?.id;
+          if (uid != null) {
+            final acc = await accesoPadreService.consultar(uid);
+            if (acc.restringido) return '/padre/adeudo';
+          }
+          return '/padre';
+        }
+        return null;
       }
 
-      return null; // Sin redirección
+      if (isLoggedIn && isPadre && isRutaStaff) {
+        return '/padre';
+      }
+      if (isLoggedIn && isStaff && isRutaPadre) {
+        return '/directora';
+      }
+
+      // Bloqueo por adeudo: solo adeudo + chat
+      if (isLoggedIn && isPadre && isRutaPadre) {
+        final uid = authService.currentUser?.id;
+        if (uid != null) {
+          final acc = await accesoPadreService.consultar(uid);
+          const rutasPermitidas = ['/padre/adeudo', '/padre/chat'];
+          final permitida = rutasPermitidas.any(
+            (r) => loc == r || loc.startsWith('$r/'),
+          );
+          if (acc.restringido) {
+            if (!permitida) return '/padre/adeudo';
+          } else if (loc == '/padre/adeudo') {
+            return '/padre';
+          }
+        }
+      }
+
+      final esSecretaria = authService.currentUser?.esSecretaria == true;
+      if (isLoggedIn && esSecretaria && isRutaStaff) {
+        if (loc == '/directora/alumnos') {
+          return '/directora/alumnos/crear';
+        }
+        final permitida = loc == '/directora' ||
+            loc.startsWith('/directora/alumnos') ||
+            loc == '/cambiar-contrasena';
+        if (!permitida) return '/directora';
+      }
+
+      final esIngles = authService.currentUser?.esMaestraIngles == true;
+      if (isLoggedIn && esIngles && isRutaStaff) {
+        final permitida = loc == '/directora' ||
+            loc == '/directora/alumnos' ||
+            loc.startsWith('/directora/calificaciones') ||
+            loc == '/cambiar-contrasena';
+        if (!permitida) return '/directora';
+      }
+
+      return null;
     },
   routes: [
     GoRoute(
@@ -120,6 +197,53 @@ GoRouter createRouter(AuthService authService) {
       },
     ),
     GoRoute(
+      path: '/directora/entrevistas',
+      builder: (context, state) => const EntrevistasListaScreen(),
+    ),
+    GoRoute(
+      path: '/directora/portage',
+      builder: (context, state) => const PortageHomeScreen(),
+    ),
+    GoRoute(
+      path: '/directora/portage/alumno/:id',
+      builder: (context, state) => PortageAlumnoHubScreen(
+        alumnoId: state.pathParameters['id']!,
+      ),
+    ),
+    GoRoute(
+      path: '/directora/ligas',
+      builder: (context, state) => const LigasDriveScreen(),
+    ),
+    GoRoute(
+      path: '/directora/ligas/crear',
+      builder: (context, state) => const LigaDriveFormScreen(),
+    ),
+    GoRoute(
+      path: '/directora/ligas/editar/:id',
+      builder: (context, state) => LigaDriveFormScreen(
+        ligaId: state.pathParameters['id'],
+      ),
+    ),
+    GoRoute(
+      path: '/directora/portage/lista/:id',
+      builder: (context, state) => PortageListaEditorScreen(
+        listaId: state.pathParameters['id']!,
+      ),
+    ),
+    GoRoute(
+      path: '/directora/portage/evaluacion/:id',
+      builder: (context, state) => PortageEvaluacionScreen(
+        evaluacionId: state.pathParameters['id']!,
+      ),
+    ),
+    GoRoute(
+      path: '/directora/portage/evaluacion/:evalId/alumno/:alumnoId',
+      builder: (context, state) => PortageCalificarAlumnoScreen(
+        evaluacionId: state.pathParameters['evalId']!,
+        alumnoId: state.pathParameters['alumnoId']!,
+      ),
+    ),
+    GoRoute(
       path: '/directora/entrevista/crear',
       builder: (context, state) {
         final alumnoId = state.uri.queryParameters['alumnoId'];
@@ -136,6 +260,14 @@ GoRouter createRouter(AuthService authService) {
           alumnoId: alumnoId,
         );
       },
+    ),
+    GoRoute(
+      path: '/directora/reportes-pdf',
+      builder: (context, state) => const ReportesPdfScreen(),
+    ),
+    GoRoute(
+      path: '/directora/config-chat-horario',
+      builder: (context, state) => const ConfigChatHorarioScreen(),
     ),
     GoRoute(
       path: '/directora/pagos',
@@ -316,6 +448,9 @@ GoRouter createRouter(AuthService authService) {
           fechaInicial: fecha,
           alumnoIdPreseleccionado: alumnoId,
           bloquearSelectorAlumno: alumnoId != null,
+          quienRecogioInicial: extra?['quienRecogio'] as String?,
+          personaAutorizadaIdInicial: extra?['personaAutorizadaId'] as String?,
+          prellenarHoraSalida: extra?['prellenarSalida'] == true,
         );
       },
     ),
@@ -380,8 +515,29 @@ GoRouter createRouter(AuthService authService) {
         return CrearClaseExtracurricularScreen(claseId: claseId);
       },
     ),
+    GoRoute(
+      path: '/directora/chat',
+      builder: (context, state) => const ChatListaEscuelaScreen(),
+    ),
+    GoRoute(
+      path: '/directora/chat/:id',
+      builder: (context, state) {
+        final conversacionId = state.pathParameters['id']!;
+        final extra = state.extra as Map<String, dynamic>?;
+        final titulo = extra?['titulo'] as String? ?? 'Padre';
+        return ChatConversacionScreen(
+          conversacionId: conversacionId,
+          titulo: titulo,
+          rutaInicio: '/directora/chat',
+        );
+      },
+    ),
     
     // ==================== RUTAS PADRES ====================
+    GoRoute(
+      path: '/padre/adeudo',
+      builder: (context, state) => const AccesoRestringidoScreen(),
+    ),
     GoRoute(
       path: '/padre',
       builder: (context, state) => const DashboardPadre(),
@@ -412,6 +568,10 @@ GoRouter createRouter(AuthService authService) {
       },
     ),
     GoRoute(
+      path: '/padre/chat',
+      builder: (context, state) => const ChatPadreScreen(),
+    ),
+    GoRoute(
       path: '/padre/eventos',
       builder: (context, state) => const EventosPadreScreen(),
     ),
@@ -435,6 +595,7 @@ GoRouter createRouter(AuthService authService) {
           codigo: extra['codigo'] as String,
           nombrePersona: extra['nombrePersona'] as String,
           alumnoNombre: extra['alumnoNombre'] as String,
+          fechaExpiracion: extra['fechaExpiracion'] as DateTime?,
         );
       },
     ),
@@ -442,5 +603,16 @@ GoRouter createRouter(AuthService authService) {
   );
 }
 
-// Variable global para el router (se inicializa en main.dart)
-late final GoRouter appRouter;
+// Variable global para el router (se inicializa en main.dart).
+// No usar `late final`: al reintentar el bootstrap se reasigna.
+GoRouter? _appRouter;
+
+GoRouter get appRouter {
+  final router = _appRouter;
+  if (router == null) {
+    throw StateError('appRouter aún no está inicializado');
+  }
+  return router;
+}
+
+set appRouter(GoRouter value) => _appRouter = value;

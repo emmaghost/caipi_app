@@ -7,9 +7,10 @@ import 'package:provider/provider.dart';
 import '../../config/app_colors.dart';
 import '../../models/pago.dart';
 import '../../services/supabase_service.dart';
+import '../../utils/pago_helpers.dart';
 
-/// Colegiatura / Seguros / Inscripción (+ otros si "Todas")
-enum _CatPadre { todas, colegiatura, seguros, inscripcion }
+/// Solo colegiatura / otros (sin inscripción ni seguro en el cuadro).
+enum _CatPadre { todas, colegiatura }
 
 /// Solo consulta. Filtros: pendiente | pagado. Sin pagar desde la app.
 class PagosPadreScreen extends StatefulWidget {
@@ -34,12 +35,6 @@ class _PagosPadreScreenState extends State<PagosPadreScreen> {
   static _CatPadre? _categoriaDe(Pago p) {
     final t = (p.tipoPago ?? '').toLowerCase();
     final c = (p.concepto ?? '').toLowerCase();
-    if (t == 'inscripcion' || c.contains('inscripc')) {
-      return _CatPadre.inscripcion;
-    }
-    if (t == 'seguro' || c.contains('seguro') || c.contains('credencial')) {
-      return _CatPadre.seguros;
-    }
     if (t == 'mensualidad' ||
         c.contains('colegiatura') ||
         c.contains('mensual')) {
@@ -52,10 +47,6 @@ class _PagosPadreScreenState extends State<PagosPadreScreen> {
     switch (c) {
       case _CatPadre.colegiatura:
         return 'Colegiatura';
-      case _CatPadre.seguros:
-        return 'Seguros';
-      case _CatPadre.inscripcion:
-        return 'Inscripción';
       case _CatPadre.todas:
         return 'Todas';
     }
@@ -63,6 +54,9 @@ class _PagosPadreScreenState extends State<PagosPadreScreen> {
 
   List<Pago> _filtrar(List<Pago> todos) {
     return todos.where((p) {
+      if (!PagoHelpers.esTipoCuadroPagos(p.tipoPago, concepto: p.concepto)) {
+        return false;
+      }
       final pend = !p.estaPagado;
       if (_soloPendientes && !pend) return false;
       if (!_soloPendientes && pend) return false;
@@ -249,20 +243,12 @@ class _PagosPadreScreenState extends State<PagosPadreScreen> {
                 final coleg = filtrados
                     .where((p) => _categoriaDe(p) == _CatPadre.colegiatura)
                     .toList();
-                final seg = filtrados
-                    .where((p) => _categoriaDe(p) == _CatPadre.seguros)
-                    .toList();
-                final ins = filtrados
-                    .where((p) => _categoriaDe(p) == _CatPadre.inscripcion)
-                    .toList();
                 final ot = filtrados.where((p) => _categoriaDe(p) == null).toList();
 
                 return ListView(
                   padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
                   children: [
                     seccion('Colegiatura', coleg),
-                    seccion('Seguros', seg),
-                    seccion('Inscripción', ins),
                     seccion('Otros', ot),
                   ],
                 );
@@ -324,7 +310,7 @@ class _PagosPadreScreenState extends State<PagosPadreScreen> {
                 pago.recibidoPorNombre != null &&
                 pago.recibidoPorNombre!.trim().isNotEmpty)
               Text(
-                'Recibió en escuela: ${pago.recibidoPorNombre}',
+                'Cuenta: ${pago.recibidoPorNombre}',
                 style: GoogleFonts.poppins(
                   fontSize: 12,
                   fontWeight: FontWeight.w600,

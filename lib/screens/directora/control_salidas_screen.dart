@@ -1,4 +1,7 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
@@ -12,6 +15,7 @@ import '../../models/control_salida.dart';
 import '../../models/grado.dart';
 import '../../services/auth_service.dart';
 import '../../widgets/app_drawer.dart';
+import '../../widgets/panel_solicitudes_recogida_escuela.dart';
 
 /// Vista diaria por **grupo (grado)**: todos los alumnos del curso y su entrada/salida del día.
 /// El QR de salida lo genera el padre (Personas autorizadas); aquí se registra quién recogió y la hora.
@@ -56,12 +60,15 @@ class _ControlSalidasScreenState extends State<ControlSalidasScreen> {
       } else {
         final uid = client.auth.currentUser?.id;
         if (uid != null) {
-          final pr = await client
+          final prList = await client
               .from('profesores')
               .select('grado_id')
               .eq('usuario_id', uid)
               .eq('activo', true)
-              .maybeSingle();
+              .limit(1);
+          final pr = (prList as List).isEmpty
+              ? null
+              : Map<String, dynamic>.from(prList.first as Map);
           final gid = pr?['grado_id'] as String?;
           if (gid != null && gid.isNotEmpty) {
             _gradoSeleccionadoId = gid;
@@ -151,6 +158,153 @@ class _ControlSalidasScreenState extends State<ControlSalidasScreen> {
       );
     }
     if (ok == true && mounted) setState(() => _listaEpoch++);
+  }
+
+  Future<void> _validarCodigoQr() async {
+    final codigoController = TextEditingController();
+    final codigo = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Validar QR de recogida', style: GoogleFonts.fredoka()),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Escribe el código de 8 caracteres que muestra el papá o la persona autorizada.',
+              style: GoogleFonts.poppins(fontSize: 13),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: codigoController,
+              autofocus: true,
+              textCapitalization: TextCapitalization.characters,
+              inputFormatters: [
+                FilteringTextInputFormatter.allow(RegExp(r'[A-Za-z0-9]')),
+                LengthLimitingTextInputFormatter(12),
+              ],
+              decoration: const InputDecoration(
+                labelText: 'Código',
+                hintText: 'Ej. A1B2C3D4',
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            onPressed: () =>
+                Navigator.pop(ctx, codigoController.text.trim().toUpperCase()),
+            child: const Text('Validar'),
+          ),
+        ],
+      ),
+    );
+    if (codigo == null || codigo.isEmpty || !mounted) return;
+
+    final uid = context.read<AuthService>().currentUser?.id;
+    if (uid == null) return;
+
+    try {
+      final raw = await Supabase.instance.client.rpc(
+        'validar_qr_temporal',
+        params: {'p_codigo': codigo, 'p_usuario_id': uid},
+      );
+      Map<String, dynamic> data;
+      if (raw is Map) {
+        data = Map<String, dynamic>.from(raw);
+      } else if (raw is String) {
+        data = Map<String, dynamic>.from(jsonDecode(raw) as Map);
+      } else {
+        throw Exception('Respuesta inesperada del servidor');
+      }
+
+      final valido = data['valido'] == true;
+      if (!valido) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(data['mensaje'] as String? ?? 'QR inválido o ya usado'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        return;
+      }
+
+      final alumnoId = data['alumno_id'] as String?;
+      final personaId = data['persona_autorizada_id'] as String?;
+      if (alumnoId == null) {
+        throw Exception('El QR no trae alumno');
+      }
+
+      final client = Supabase.instance.client;
+      final alumno = await client
+          .from('alumnos')
+          .select('nombre, apellidos')
+          .eq('id', alumnoId)
+          .maybeSingle();
+      final persona = personaId == null
+          ? null
+          : await client
+              .from('personas_autorizadas')
+              .select('nombre')
+              .eq('id', personaId)
+              .maybeSingle();
+      final nombreAlumno = alumno == null
+          ? 'Alumno'
+          : '${alumno['nombre'] ?? ''} ${alumno['apellidos'] ?? ''}'.trim();
+      final nombrePersona = persona?['nombre'] as String? ?? 'Persona autorizada';
+
+      if (!mounted) return;
+      final continuar = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: Text('QR válido', style: GoogleFonts.fredoka()),
+          content: Text(
+            '$nombrePersona puede recoger a $nombreAlumno.\n\n'
+            'El código ya quedó usado. Continúa para registrar la salida.',
+            style: GoogleFonts.poppins(fontSize: 14),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cerrar'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Registrar salida'),
+            ),
+          ],
+        ),
+      );
+      if (continuar != true || !mounted) return;
+
+      final ok = await GoRouter.of(context).push<bool>(
+        '/directora/control-salidas/crear',
+        extra: {
+          'fecha': _fechaSeleccionada,
+          'alumnoId': alumnoId,
+          'quienRecogio': nombrePersona,
+          'personaAutorizadaId': personaId,
+          'prellenarSalida': true,
+        },
+      );
+      if (ok == true && mounted) setState(() => _listaEpoch++);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'No se pudo validar. ¿Corriste FIX_SISTEMA_QR_TEMPORAL.sql?\n$e',
+          ),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
   }
 
   Future<void> _abrirRegistroLibre() async {
@@ -275,6 +429,11 @@ class _ControlSalidasScreenState extends State<ControlSalidasScreen> {
         ),
         actions: [
           IconButton(
+            icon: const Icon(Icons.qr_code_scanner, color: Colors.white),
+            tooltip: 'Validar código QR',
+            onPressed: _validarCodigoQr,
+          ),
+          IconButton(
             icon: const Icon(Icons.calendar_today, color: Colors.white),
             onPressed: _seleccionarFecha,
           ),
@@ -325,6 +484,10 @@ class _ControlSalidasScreenState extends State<ControlSalidasScreen> {
                       _TarjetaFecha(
                         fecha: _fechaSeleccionada,
                         onCambiarFecha: _seleccionarFecha,
+                      ),
+                      PanelSolicitudesRecogidaEscuela(
+                        // Directora ve todas; profesor solo ve su grado
+                        gradoIdFiltro: auth.isDirectora ? null : _gradoSeleccionadoId,
                       ),
                       if (auth.isDirectora && _grados.isEmpty)
                         Padding(

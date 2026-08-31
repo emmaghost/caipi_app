@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -13,6 +14,7 @@ import '../../services/storage_service.dart';
 import '../../models/alumno.dart';
 import '../../models/grado.dart';
 import '../../config/app_colors.dart';
+import '../../utils/constantes.dart';
 
 class CrearAlumnoScreen extends StatefulWidget {
   final String? alumnoId;
@@ -28,6 +30,7 @@ class _CrearAlumnoScreenState extends State<CrearAlumnoScreen> {
   final _nombreController = TextEditingController();
   final _apellidosController = TextEditingController();
   final _padreEmailController = TextEditingController();
+  final _padre2EmailController = TextEditingController();
   final _alergiasController = TextEditingController();
   final _contactoEmergenciaController = TextEditingController();
   final _telefonoEmergenciaController = TextEditingController();
@@ -41,7 +44,8 @@ class _CrearAlumnoScreenState extends State<CrearAlumnoScreen> {
   
   DateTime? _fechaNacimiento;
   DateTime _fechaIngreso = DateTime.now(); // Fecha de ingreso (hoy por defecto)
-  int _planPagos = 12; // Plan de pagos: 10 o 12 meses (12 por defecto)
+  int _planPagos = 12; // Plan kínder/maternal: 10, 11 o 12
+  String? _planEstimulacion; // sesion | paquete_4 | paquete_6 | paquete_8
   int _becaPorcentaje = 0; // Porcentaje de beca (0-100)
   bool _cartillaCompleta = true; // Cartilla de vacunas completa por defecto
   String? _gradoSeleccionado;
@@ -49,6 +53,21 @@ class _CrearAlumnoScreenState extends State<CrearAlumnoScreen> {
   File? _fotoSeleccionada;
   bool _isLoading = false;
   List<Grado> _grados = [];
+
+  Grado? get _gradoSeleccionadoObj {
+    if (_gradoSeleccionado == null) return null;
+    for (final g in _grados) {
+      if (g.id == _gradoSeleccionado) return g;
+    }
+    return null;
+  }
+
+  bool get _esKinderSeleccionado => _gradoSeleccionadoObj?.esKinder ?? false;
+
+  /// Sin grado o no-kínder (maternal / estimulación): cobro por clase.
+  bool get _esCobroPorClase =>
+      _gradoSeleccionado == null ||
+      (_gradoSeleccionadoObj?.cobroPorClase ?? true);
 
   @override
   void initState() {
@@ -75,9 +94,7 @@ class _CrearAlumnoScreenState extends State<CrearAlumnoScreen> {
       
       setState(() {
         _grados = response.map((json) => Grado.fromJson(json)).toList();
-        if (_grados.isNotEmpty && widget.alumnoId == null) {
-          _gradoSeleccionado = _grados[0].id;
-        }
+        // Grado en blanco al alta: la maestra lo asigna despues.
       });
     } catch (e) {
       if (mounted) {
@@ -94,8 +111,23 @@ class _CrearAlumnoScreenState extends State<CrearAlumnoScreen> {
           .from('alumnos')
           .select()
           .eq('id', alumnoId)
-          .single();
-      
+          .maybeSingle();
+
+      // El alumno ya fue eliminado (p. ej. tarjeta vieja en la lista):
+      // avisar y volver para que la lista se refresque.
+      if (response == null) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Este alumno ya fue eliminado. Actualizando lista…'),
+              backgroundColor: Colors.orange,
+            ),
+          );
+          context.pop();
+        }
+        return;
+      }
+
       final alumno = Alumno.fromJson(response);
       
       setState(() {
@@ -104,6 +136,7 @@ class _CrearAlumnoScreenState extends State<CrearAlumnoScreen> {
         _fechaNacimiento = alumno.fechaNacimiento;
         _fechaIngreso = alumno.fechaIngreso;
         _planPagos = alumno.planPagos;
+        _planEstimulacion = alumno.planEstimulacion;
         _becaPorcentaje = alumno.becaPorcentaje;
         _gradoSeleccionado = alumno.gradoId;
         _generoSeleccionado = alumno.genero;
@@ -119,16 +152,18 @@ class _CrearAlumnoScreenState extends State<CrearAlumnoScreen> {
         _vacunasFaltantesController.text = alumno.vacunasFaltantes ?? '';
       });
 
-      // Cargar email del padre
-      if (alumno.padreId != null) {
-        final padreResponse = await Supabase.instance.client
-            .from('usuarios')
-            .select('email')
-            .eq('id', alumno.padreId!)
-            .single();
-        
+      if (!mounted) return;
+      // Cargar emails de papá/mamá (hasta 2)
+      final emailsPadres =
+          await context.read<SupabaseService>().emailsPadresDeAlumno(alumnoId);
+      if (mounted) {
         setState(() {
-          _padreEmailController.text = padreResponse['email'] ?? '';
+          if (emailsPadres.isNotEmpty) {
+            _padreEmailController.text = emailsPadres[0];
+          }
+          if (emailsPadres.length > 1) {
+            _padre2EmailController.text = emailsPadres[1];
+          }
         });
       }
     } catch (e) {
@@ -149,6 +184,7 @@ class _CrearAlumnoScreenState extends State<CrearAlumnoScreen> {
     _nombreController.dispose();
     _apellidosController.dispose();
     _padreEmailController.dispose();
+    _padre2EmailController.dispose();
     _alergiasController.dispose();
     _contactoEmergenciaController.dispose();
     _telefonoEmergenciaController.dispose();
@@ -178,9 +214,16 @@ class _CrearAlumnoScreenState extends State<CrearAlumnoScreen> {
 
   Future<void> _guardarAlumno() async {
     if (!_formKey.currentState!.validate()) return;
-    if (_fechaNacimiento == null) {
+
+    final auth = context.read<AuthService>();
+    if (!(auth.currentUser?.puedeEditarAlumnos ?? false)) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Selecciona la fecha de nacimiento')),
+        const SnackBar(
+          content: Text(
+            'Solo directora o profesora supervisora pueden crear/editar alumnos.',
+          ),
+          backgroundColor: AppColors.rojo,
+        ),
       );
       return;
     }
@@ -191,73 +234,86 @@ class _CrearAlumnoScreenState extends State<CrearAlumnoScreen> {
       final supabaseService = context.read<SupabaseService>();
       final storageService = context.read<StorageService>();
 
-      // 1. Buscar padre por email
-      String? padreId;
-      final padreResponse = await Supabase.instance.client
-          .from('usuarios')
-          .select('id')
-          .eq('email', _padreEmailController.text.trim())
-          .eq('rol', 'padre')
-          .maybeSingle();
-      
-      if (padreResponse != null) {
-        padreId = padreResponse['id'] as String;
-      } else {
-        // Padre no existe, preguntar si crear uno nuevo
-        if (mounted) {
-          padreId = await _mostrarDialogoCrearPadre();
-          if (padreId == null) {
-            setState(() => _isLoading = false);
-            return;
-          }
+      // Papás opcionales (hasta 2, cada uno con su cuenta)
+      final padreIds = <String>[];
+      for (final email in [
+        _padreEmailController.text.trim(),
+        _padre2EmailController.text.trim(),
+      ]) {
+        if (email.isEmpty) continue;
+        if (!mounted) {
+          setState(() => _isLoading = false);
+          return;
         }
+        final id = await _resolverPadreId(email);
+        if (email.isNotEmpty && id == null) {
+          setState(() => _isLoading = false);
+          return;
+        }
+        if (id != null && !padreIds.contains(id)) padreIds.add(id);
       }
+      final padreId = padreIds.isEmpty ? null : padreIds.first;
 
-      // 2. Determinar si es creación o edición
       final esEdicion = widget.alumnoId != null;
       final alumnoId = esEdicion ? widget.alumnoId! : const Uuid().v4();
 
-      // 3. Subir foto si existe
       String? fotoUrl;
       if (_fotoSeleccionada != null) {
         fotoUrl = await storageService.subirFotoAlumno(_fotoSeleccionada!, alumnoId);
       }
 
-      // 4. Crear o actualizar alumno
+      final fechaNac = _fechaNacimiento ?? DateTime(2018, 1, 1);
+      final incompleto = _fechaNacimiento == null ||
+          _generoSeleccionado == null ||
+          padreId == null ||
+          _gradoSeleccionado == null ||
+          _contactoEmergenciaController.text.trim().isEmpty;
+
       if (esEdicion) {
-        // ACTUALIZAR alumno existente
-        final alumnoData = {
+        final alumnoData = <String, dynamic>{
           'nombre': _nombreController.text.trim(),
           'apellidos': _apellidosController.text.trim(),
-          'fecha_nacimiento': _fechaNacimiento!.toIso8601String(),
+          'fecha_nacimiento': fechaNac.toIso8601String().split('T')[0],
           'genero': _generoSeleccionado,
           'grado_id': _gradoSeleccionado,
-          'padre_id': padreId ?? 'sin-padre',
-          'alergias': _alergiasController.text.trim().isEmpty 
-              ? null 
+          'padre_id': padreId,
+          'alergias': _alergiasController.text.trim().isEmpty
+              ? null
               : _alergiasController.text.trim(),
-          'contacto_emergencia_nombre': _contactoEmergenciaController.text.trim().isEmpty
+          'contacto_emergencia_nombre':
+              _contactoEmergenciaController.text.trim().isEmpty
+                  ? null
+                  : _contactoEmergenciaController.text.trim(),
+          'contacto_emergencia_telefono':
+              _telefonoEmergenciaController.text.trim().isEmpty
+                  ? null
+                  : _telefonoEmergenciaController.text.trim(),
+          'calle': _calleController.text.trim().isEmpty
               ? null
-              : _contactoEmergenciaController.text.trim(),
-          'contacto_emergencia_telefono': _telefonoEmergenciaController.text.trim().isEmpty
+              : _calleController.text.trim(),
+          'colonia': _coloniaController.text.trim().isEmpty
               ? null
-              : _telefonoEmergenciaController.text.trim(),
-          // Dirección
-          'calle': _calleController.text.trim().isEmpty ? null : _calleController.text.trim(),
-          'colonia': _coloniaController.text.trim().isEmpty ? null : _coloniaController.text.trim(),
-          'codigo_postal': _codigoPostalController.text.trim().isEmpty ? null : _codigoPostalController.text.trim(),
-          // CURP y vacunas
-          'curp': _curpController.text.trim().isEmpty ? null : _curpController.text.trim().toUpperCase(),
+              : _coloniaController.text.trim(),
+          'codigo_postal': _codigoPostalController.text.trim().isEmpty
+              ? null
+              : _codigoPostalController.text.trim(),
+          'curp': _curpController.text.trim().isEmpty
+              ? null
+              : _curpController.text.trim().toUpperCase(),
           'cartilla_completa': _cartillaCompleta,
-          'vacunas_faltantes': _vacunasFaltantesController.text.trim().isEmpty 
-              ? null 
+          'vacunas_faltantes': _vacunasFaltantesController.text.trim().isEmpty
+              ? null
               : _vacunasFaltantesController.text.trim(),
-          // Planes y becas
           'plan_pagos': _planPagos,
+          'plan_estimulacion': null,
           'fecha_ingreso': _fechaIngreso.toIso8601String().split('T')[0],
-          'beca_porcentaje': _becaPorcentaje,
+          'registro_incompleto': incompleto,
           'updated_at': DateTime.now().toIso8601String(),
         };
+
+        if (auth.currentUser?.esDirectora ?? false) {
+          alumnoData['beca_porcentaje'] = _becaPorcentaje;
+        }
 
         if (fotoUrl != null) {
           alumnoData['foto_url'] = fotoUrl;
@@ -267,73 +323,132 @@ class _CrearAlumnoScreenState extends State<CrearAlumnoScreen> {
             .from('alumnos')
             .update(alumnoData)
             .eq('id', alumnoId);
+        await supabaseService.guardarPadresAlumno(alumnoId, padreIds);
+        supabaseService.avisarAlumnosCambiaron();
+
+        final alumnoEditado = Alumno(
+          id: alumnoId,
+          nombre: _nombreController.text.trim(),
+          apellidos: _apellidosController.text.trim(),
+          fechaNacimiento: fechaNac,
+          genero: _generoSeleccionado,
+          gradoId: _gradoSeleccionado,
+          padreId: padreId,
+          planPagos: _planPagos,
+          planEstimulacion: null,
+          fechaIngreso: _fechaIngreso,
+          becaPorcentaje: _becaPorcentaje,
+          registroIncompleto: incompleto,
+          createdAt: DateTime.now(),
+          updatedAt: DateTime.now(),
+        );
+        final avisoPagos =
+            await supabaseService.sincronizarPagosTrasEditarAlumno(alumnoEditado);
 
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('✅ Alumno actualizado exitosamente!'),
+            SnackBar(
+              content: Text(
+                [
+                  incompleto
+                      ? '✅ Alumno actualizado (aún faltan datos por completar)'
+                      : '✅ Alumno actualizado exitosamente!',
+                  if (avisoPagos != null) avisoPagos,
+                ].join('\n'),
+              ),
               backgroundColor: AppColors.verde,
+              duration: Duration(seconds: avisoPagos != null ? 6 : 3),
             ),
           );
-          context.pop();
+          context.pop(true);
         }
       } else {
-        // CREAR alumno nuevo
         final alumno = Alumno(
           id: alumnoId,
           nombre: _nombreController.text.trim(),
           apellidos: _apellidosController.text.trim(),
-          fechaNacimiento: _fechaNacimiento!,
+          fechaNacimiento: fechaNac,
           genero: _generoSeleccionado,
           gradoId: _gradoSeleccionado,
-          padreId: padreId ?? 'sin-padre',
+          padreId: padreId,
           fotoUrl: fotoUrl,
           fotoDefaultGenero: _generoSeleccionado == 'niña' ? 'nina' : 'nino',
-          alergias: _alergiasController.text.trim().isEmpty 
-              ? null 
+          alergias: _alergiasController.text.trim().isEmpty
+              ? null
               : _alergiasController.text.trim(),
-          contactoEmergenciaNombre: _contactoEmergenciaController.text.trim().isEmpty
+          contactoEmergenciaNombre:
+              _contactoEmergenciaController.text.trim().isEmpty
+                  ? null
+                  : _contactoEmergenciaController.text.trim(),
+          contactoEmergenciaTelefono:
+              _telefonoEmergenciaController.text.trim().isEmpty
+                  ? null
+                  : _telefonoEmergenciaController.text.trim(),
+          calle: _calleController.text.trim().isEmpty
               ? null
-              : _contactoEmergenciaController.text.trim(),
-          contactoEmergenciaTelefono: _telefonoEmergenciaController.text.trim().isEmpty
+              : _calleController.text.trim(),
+          colonia: _coloniaController.text.trim().isEmpty
               ? null
-              : _telefonoEmergenciaController.text.trim(),
-          // Dirección
-          calle: _calleController.text.trim().isEmpty ? null : _calleController.text.trim(),
-          colonia: _coloniaController.text.trim().isEmpty ? null : _coloniaController.text.trim(),
-          codigoPostal: _codigoPostalController.text.trim().isEmpty ? null : _codigoPostalController.text.trim(),
-          // CURP y vacunas
-          curp: _curpController.text.trim().isEmpty ? null : _curpController.text.trim().toUpperCase(),
+              : _coloniaController.text.trim(),
+          codigoPostal: _codigoPostalController.text.trim().isEmpty
+              ? null
+              : _codigoPostalController.text.trim(),
+          curp: _curpController.text.trim().isEmpty
+              ? null
+              : _curpController.text.trim().toUpperCase(),
           cartillaCompleta: _cartillaCompleta,
-          vacunasFaltantes: _vacunasFaltantesController.text.trim().isEmpty 
-              ? null 
+          vacunasFaltantes: _vacunasFaltantesController.text.trim().isEmpty
+              ? null
               : _vacunasFaltantesController.text.trim(),
-          // Planes y becas
           planPagos: _planPagos,
+          planEstimulacion: null,
           fechaIngreso: _fechaIngreso,
           becaPorcentaje: _becaPorcentaje,
+          registroIncompleto: incompleto,
           createdAt: DateTime.now(),
           updatedAt: DateTime.now(),
         );
 
-        await supabaseService.crearAlumno(alumno);
+        await supabaseService.crearAlumno(
+          alumno,
+          verificarDuplicado: _fechaNacimiento != null,
+        );
+        await supabaseService.guardarPadresAlumno(alumnoId, padreIds);
 
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('✅ Alumno creado exitosamente!'),
+            SnackBar(
+              content: Text(
+                incompleto
+                    ? '✅ Alumno creado (registro rápido). Completa datos después.'
+                    : '✅ Alumno creado exitosamente!',
+              ),
               backgroundColor: AppColors.verde,
             ),
           );
-          context.pop();
+          // Ir a la lista ya refrescada (no solo pop: si vinieron del dashboard no se actualizaba).
+          context.go('/directora/alumnos');
         }
       }
     } catch (e) {
       if (mounted) {
+        final msg = e.toString();
+        String amigable = msg;
+        if (msg.contains('registro_incompleto')) {
+          amigable =
+              'Falta ejecutar el SQL de alta rápida (columna registro_incompleto).';
+        } else if (msg.contains('plan_pagos') || msg.contains('check')) {
+          amigable =
+              'El plan de pagos no es válido en la BD. Ejecuta ADD_PLAN_11_Y_CUADRO_COLEGIATURAS.sql';
+        } else if (msg.contains('JWT') || msg.contains('sesión')) {
+          amigable =
+              'Se perdió la sesión al crear el padre. Vuelve a iniciar sesión e intenta de nuevo.';
+        }
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error al guardar: $e'),
+            content: Text('Error al guardar: $amigable'),
             backgroundColor: AppColors.rojo,
+            duration: const Duration(seconds: 6),
           ),
         );
       }
@@ -344,15 +459,90 @@ class _CrearAlumnoScreenState extends State<CrearAlumnoScreen> {
     }
   }
 
-  Future<String?> _mostrarDialogoCrearPadre() async {
+  Future<void> _confirmarEliminarAlumno() async {
+    final alumnoId = widget.alumnoId;
+    if (alumnoId == null || _isLoading) return;
+
+    final confirmar = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('¿Eliminar alumno?'),
+        content: Text(
+          'Se eliminará permanentemente a '
+          '${_nombreController.text.trim()} ${_apellidosController.text.trim()} '
+          'junto con sus pagos, abonos y registros relacionados.\n\n'
+          'Esta acción no se puede deshacer.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton.icon(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            style: FilledButton.styleFrom(backgroundColor: AppColors.rojo),
+            icon: const Icon(Icons.delete_forever),
+            label: const Text('Eliminar definitivamente'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmar != true || !mounted) return;
+    setState(() => _isLoading = true);
+    try {
+      await context
+          .read<SupabaseService>()
+          .eliminarAlumnoDefinitivamente(alumnoId);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Alumno y datos relacionados eliminados'),
+          backgroundColor: AppColors.verde,
+        ),
+      );
+      context.pop();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('No se pudo eliminar el alumno: $e'),
+          backgroundColor: AppColors.rojo,
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  Future<String?> _resolverPadreId(String emailRaw) async {
+    final email = emailRaw.trim().toLowerCase();
+    if (email.isEmpty || !email.contains('@')) return null;
+
+    final padreResponse = await Supabase.instance.client
+        .from('usuarios')
+        .select('id')
+        .eq('email', email)
+        .eq('rol', 'padre')
+        .maybeSingle();
+    if (padreResponse != null) {
+      return padreResponse['id'] as String;
+    }
+    if (!mounted) return null;
+    return _mostrarDialogoCrearPadre(email);
+  }
+
+  Future<String?> _mostrarDialogoCrearPadre(String email) async {
     final authService = Provider.of<AuthService>(context, listen: false);
     return showDialog<String>(
       context: context,
+      barrierDismissible: false,
       builder: (dialogContext) => AlertDialog(
         title: const Text('Padre no encontrado'),
         content: Text(
-          'El correo ${_padreEmailController.text} no está registrado.\n\n'
-          '¿Deseas crear un usuario padre con este correo?'
+          'El correo $email no está registrado.\n\n'
+          '¿Deseas crear un usuario padre con este correo?\n'
+          'Contraseña inicial: Caipi2026',
         ),
         actions: [
           TextButton(
@@ -362,50 +552,36 @@ class _CrearAlumnoScreenState extends State<CrearAlumnoScreen> {
           ElevatedButton(
             onPressed: () async {
               try {
-                final client = Supabase.instance.client;
-                final prevId = client.auth.currentUser?.id;
-                final prevRefresh = client.auth.currentSession?.refreshToken;
-                if (prevId == null ||
-                    prevRefresh == null ||
-                    prevRefresh.isEmpty) {
-                  throw Exception('Sesión inválida');
-                }
-                final response = await client.auth.signUp(
-                  email: _padreEmailController.text.trim(),
+                final id = await authService.crearUsuarioAuthComoStaff(
+                  email: email,
                   password: 'Caipi2026',
+                  rol: 'padre',
+                  nombre: 'Padre de ${_nombreController.text.trim()}',
                 );
-                if (response.user == null) {
-                  throw Exception('No se pudo crear el usuario');
-                }
-                await authService.restaurarSesionTrasSignUpDesdeDirectora(
-                  userIdAntes: prevId,
-                  refreshAntes: prevRefresh,
-                );
-                await client
-                    .from('usuarios')
-                    .insert({
-                      'id': response.user!.id,
-                      'email': _padreEmailController.text.trim(),
-                      'rol': 'padre',
-                      'nombre': 'Padre de ${_nombreController.text}',
-                    })
-                    .setHeader('Prefer', 'return=minimal');
                 if (dialogContext.mounted) {
-                  Navigator.pop(dialogContext, response.user!.id);
+                  Navigator.pop(dialogContext, id);
+                }
+                if (mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(
                       content: Text(
                         'Padre creado. Contraseña: Caipi2026. Puede cambiarla en el menú.',
                       ),
                       duration: Duration(seconds: 5),
+                      backgroundColor: AppColors.verde,
                     ),
                   );
                 }
               } catch (e) {
                 if (dialogContext.mounted) {
                   Navigator.pop(dialogContext, null);
+                }
+                if (mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Error: $e')),
+                    SnackBar(
+                      content: Text('Error al crear padre: $e'),
+                      backgroundColor: AppColors.rojo,
+                    ),
                   );
                 }
               }
@@ -445,6 +621,23 @@ class _CrearAlumnoScreenState extends State<CrearAlumnoScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      margin: const EdgeInsets.only(bottom: 16),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFFF7ED),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: AppColors.naranja.withOpacity(0.4),
+                        ),
+                      ),
+                      child: Text(
+                        'Alta rápida: solo nombre y apellidos son obligatorios. '
+                        'Grado puede quedar sin asignar. '
+                        'Kínder = colegiaturas 10/11/12. Maternal = cobro por clase (sin colegiaturas auto).',
+                        style: GoogleFonts.poppins(fontSize: 12),
+                      ),
+                    ),
                     // Foto del alumno
                     Center(
                       child: GestureDetector(
@@ -514,7 +707,6 @@ class _CrearAlumnoScreenState extends State<CrearAlumnoScreen> {
                       onChanged: (value) {
                         setState(() => _generoSeleccionado = value);
                       },
-                      validator: (v) => v == null ? 'Selecciona el género' : null,
                     ),
                     const SizedBox(height: 16),
 
@@ -523,11 +715,12 @@ class _CrearAlumnoScreenState extends State<CrearAlumnoScreen> {
                       onTap: _seleccionarFecha,
                       child: InputDecorator(
                         decoration: InputDecoration(
-                          labelText: 'Fecha de nacimiento',
+                          labelText: 'Fecha de nacimiento (opcional)',
                           prefixIcon: const Icon(Icons.cake, color: AppColors.naranja),
                           border: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(16),
                           ),
+                          helperText: 'Puedes completarla después',
                         ),
                         child: Text(
                           _fechaNacimiento != null
@@ -538,132 +731,203 @@ class _CrearAlumnoScreenState extends State<CrearAlumnoScreen> {
                     ),
                     const SizedBox(height: 16),
 
-                    // Grado
-                    DropdownButtonFormField<String>(
+                    // Grado (opcional al alta)
+                    DropdownButtonFormField<String?>(
                       value: _gradoSeleccionado,
                       decoration: InputDecoration(
-                        labelText: 'Grado',
+                        labelText: 'Grado (opcional)',
                         prefixIcon: const Icon(Icons.school, color: AppColors.azul),
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(16),
                         ),
+                        helperText: 'Puede quedar en blanco; la maestra lo asigna después',
                       ),
-                      items: _grados.map((grado) {
-                        return DropdownMenuItem(
-                          value: grado.id,
-                          child: Text(grado.nombre),
-                        );
-                      }).toList(),
+                      items: [
+                        const DropdownMenuItem<String?>(
+                          value: null,
+                          child: Text('Sin asignar'),
+                        ),
+                        ..._grados
+                            .where((grado) =>
+                                !grado.esEstimulacion ||
+                                grado.id == _gradoSeleccionado)
+                            .map((grado) {
+                          return DropdownMenuItem<String?>(
+                            value: grado.id,
+                            child: Text(grado.nombre),
+                          );
+                        }),
+                      ],
                       onChanged: (value) {
-                        setState(() => _gradoSeleccionado = value);
+                        setState(() {
+                          _gradoSeleccionado = value;
+                          _planEstimulacion = null;
+                        });
                       },
-                      validator: (v) => v == null ? 'Selecciona el grado' : null,
                     ),
                     const SizedBox(height: 16),
 
-                    // Fecha de ingreso
-                    InkWell(
-                      onTap: () async {
-                        final fecha = await showDatePicker(
-                          context: context,
-                          initialDate: _fechaIngreso,
-                          firstDate: DateTime(2020),
-                          lastDate: DateTime(2030),
-                          locale: const Locale('es', 'MX'),
-                        );
-                        if (fecha != null) {
-                          setState(() => _fechaIngreso = fecha);
-                        }
-                      },
-                      child: InputDecorator(
+                    // Plan de pagos según tipo de grado
+                    if (_esKinderSeleccionado)
+                      DropdownButtonFormField<int>(
+                        value: _planPagos,
                         decoration: InputDecoration(
-                          labelText: 'Fecha de ingreso',
-                          prefixIcon: const Icon(Icons.calendar_today, color: AppColors.morado),
+                          labelText: 'Plan de Pagos (kínder)',
+                          prefixIcon: const Icon(Icons.payments, color: AppColors.naranja),
                           border: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(16),
                           ),
+                          helperText: '10, 11 o 12 mensualidades (sí genera colegiaturas)',
                         ),
-                        child: Text(
-                          DateFormat('dd/MM/yyyy').format(_fechaIngreso),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-
-                    // Plan de pagos
-                    DropdownButtonFormField<int>(
-                      value: _planPagos,
-                      decoration: InputDecoration(
-                        labelText: 'Plan de Pagos',
-                        prefixIcon: const Icon(Icons.payments, color: AppColors.naranja),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(16),
-                        ),
-                        helperText: 'Selecciona entre 10 o 12 mensualidades',
-                      ),
-                      items: const [
-                        DropdownMenuItem(
-                          value: 12,
-                          child: Text('12 meses (Agosto - Julio)'),
-                        ),
-                        DropdownMenuItem(
-                          value: 10,
-                          child: Text('10 meses (Agosto - Mayo)'),
-                        ),
-                      ],
-                      onChanged: (value) {
-                        if (value != null) {
-                          setState(() => _planPagos = value);
-                        }
-                      },
-                      validator: (v) => v == null ? 'Selecciona el plan' : null,
-                    ),
-                    const SizedBox(height: 16),
-
-                    // Beca (porcentaje de descuento)
-                    DropdownButtonFormField<int>(
-                      value: _becaPorcentaje,
-                      decoration: InputDecoration(
-                        labelText: 'Beca / Descuento',
-                        prefixIcon: Icon(Icons.school, color: _becaPorcentaje > 0 ? AppColors.verde : AppColors.gris),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(16),
-                        ),
-                        helperText: _becaPorcentaje > 0 
-                            ? '✅ Alumno con beca del $_becaPorcentaje%'
-                            : 'Selecciona si el alumno tiene beca',
-                      ),
-                      items: [
-                        const DropdownMenuItem(value: 0, child: Text('Sin beca (0%)')),
-                        for (int i = 10; i <= 100; i += 10)
+                        items: const [
                           DropdownMenuItem(
-                            value: i,
-                            child: Text('$i% de descuento'),
+                            value: 12,
+                            child: Text('12 meses (Agosto - Julio)'),
                           ),
-                      ],
-                      onChanged: (value) {
-                        if (value != null) {
-                          setState(() => _becaPorcentaje = value);
-                        }
-                      },
-                    ),
+                          DropdownMenuItem(
+                            value: 11,
+                            child: Text('11 meses (Agosto - Junio)'),
+                          ),
+                          DropdownMenuItem(
+                            value: 10,
+                            child: Text('10 meses (Agosto - Mayo)'),
+                          ),
+                        ],
+                        onChanged: (value) {
+                          if (value != null) {
+                            setState(() => _planPagos = value);
+                          }
+                        },
+                        validator: (v) => v == null ? 'Selecciona el plan' : null,
+                      )
+                    else
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(14),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFFF7ED),
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(
+                            color: AppColors.naranja.withValues(alpha: 0.45),
+                          ),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                const Icon(Icons.info_outline, color: AppColors.naranja),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    _gradoSeleccionado == null
+                                        ? 'Sin grado: cobro por clase'
+                                        : 'Maternal / por clase',
+                                    style: GoogleFonts.poppins(
+                                      fontWeight: FontWeight.w700,
+                                      fontSize: 14,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 6),
+                            Text(
+                              _gradoSeleccionado == null
+                                  ? 'Asigna el grado para definir el plan. Mientras tanto no se generan colegiaturas automáticas.'
+                                  : 'Este grado se cobra por clase. No se generan costos automáticos; los cargos se agregan manualmente en Pagos.',
+                              style: GoogleFonts.poppins(fontSize: 12, height: 1.35),
+                            ),
+                          ],
+                        ),
+                      ),
                     const SizedBox(height: 16),
 
-                    // Email del padre
+                    if (Constantes.mostrarCampoBeca &&
+                        (context.read<AuthService>().currentUser?.esDirectora ??
+                            false)) ...[
+                      DropdownButtonFormField<int>(
+                        value: _becaPorcentaje,
+                        decoration: InputDecoration(
+                          labelText: 'Beca / Descuento',
+                          prefixIcon: Icon(
+                            Icons.school,
+                            color: _becaPorcentaje > 0
+                                ? AppColors.verde
+                                : AppColors.gris,
+                          ),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                          helperText: _becaPorcentaje > 0
+                              ? 'Alumno con beca del $_becaPorcentaje%'
+                              : 'Solo lo asigna la directora',
+                        ),
+                        items: [
+                          const DropdownMenuItem(
+                            value: 0,
+                            child: Text('Sin beca (0%)'),
+                          ),
+                          for (int i = 10; i <= 100; i += 10)
+                            DropdownMenuItem(
+                              value: i,
+                              child: Text('$i% de descuento'),
+                            ),
+                        ],
+                        onChanged: (value) {
+                          if (value != null) {
+                            setState(() => _becaPorcentaje = value);
+                          }
+                        },
+                      ),
+                      const SizedBox(height: 16),
+                    ],
+
+                    // Emails de papá/mamá (hasta 2 cuentas)
                     TextFormField(
                       controller: _padreEmailController,
                       keyboardType: TextInputType.emailAddress,
                       decoration: InputDecoration(
-                        labelText: 'Email del padre/madre',
+                        labelText: 'Email papá/mamá 1 (opcional)',
                         prefixIcon: const Icon(Icons.email, color: AppColors.verde),
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(16),
                         ),
-                        helperText: 'Se buscará o creará un usuario padre',
+                        helperText: 'Cualquier Gmail/Hotmail. Contraseña inicial: Caipi2026',
                       ),
                       validator: (v) {
-                        if (v?.isEmpty ?? true) return 'Requerido';
-                        if (!v!.contains('@')) return 'Email inválido';
+                        if (v == null || v.trim().isEmpty) return null;
+                        final t = v.trim();
+                        if (t.contains(' ')) {
+                          return 'Quita espacios del correo (ej. sin espacio antes de @)';
+                        }
+                        if (!t.contains('@')) return 'Email inválido';
+                        return null;
+                      },
+                    ),
+                    const SizedBox(height: 16),
+                    TextFormField(
+                      controller: _padre2EmailController,
+                      keyboardType: TextInputType.emailAddress,
+                      decoration: InputDecoration(
+                        labelText: 'Email papá/mamá 2 (opcional)',
+                        prefixIcon: const Icon(Icons.email_outlined, color: AppColors.azul),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        helperText: 'Otro tutor del mismo niño, con su propio acceso',
+                      ),
+                      validator: (v) {
+                        if (v == null || v.trim().isEmpty) return null;
+                        final t = v.trim();
+                        if (t.contains(' ')) {
+                          return 'Quita espacios del correo (ej. sin espacio antes de @)';
+                        }
+                        if (!t.contains('@')) return 'Email inválido';
+                        final uno = _padreEmailController.text.trim().toLowerCase();
+                        if (uno.isNotEmpty && t.toLowerCase() == uno) {
+                          return 'Usa un correo distinto al del papá/mamá 1';
+                        }
                         return null;
                       },
                     ),
@@ -775,19 +1039,30 @@ class _CrearAlumnoScreenState extends State<CrearAlumnoScreen> {
                     ),
                     const SizedBox(height: 12),
 
-                    // CURP
+                    // CURP (18 caracteres). Sin textCapitalization.characters:
+                    // en Android el teclado a menudo corta el texto a la mitad.
                     TextFormField(
                       controller: _curpController,
                       maxLength: 18,
-                      textCapitalization: TextCapitalization.characters,
+                      keyboardType: TextInputType.visiblePassword,
+                      autocorrect: false,
+                      enableSuggestions: false,
+                      inputFormatters: [
+                        FilteringTextInputFormatter.allow(RegExp(r'[A-Za-z0-9]')),
+                        TextInputFormatter.withFunction((oldValue, newValue) {
+                          return newValue.copyWith(
+                            text: newValue.text.toUpperCase(),
+                          );
+                        }),
+                      ],
                       decoration: InputDecoration(
                         labelText: 'CURP (opcional)',
                         prefixIcon: const Icon(Icons.badge, color: AppColors.purpura),
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(16),
                         ),
-                        hintText: 'Ej: XXXX000000XXXXXX00',
-                        counterText: '',
+                        hintText: '18 caracteres, ej: GAGA850101HDFRRN09',
+                        helperText: 'Deben caber los 18. Se guarda en mayúsculas.',
                       ),
                     ),
                     const SizedBox(height: 16),
@@ -877,6 +1152,22 @@ class _CrearAlumnoScreenState extends State<CrearAlumnoScreen> {
                               ),
                       ),
                     ),
+                    if (widget.alumnoId != null &&
+                        (context.read<AuthService>().currentUser?.esDirectora ??
+                            false)) ...[
+                      const SizedBox(height: 16),
+                      OutlinedButton.icon(
+                        onPressed:
+                            _isLoading ? null : _confirmarEliminarAlumno,
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: AppColors.rojo,
+                          side: const BorderSide(color: AppColors.rojo),
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                        ),
+                        icon: const Icon(Icons.delete_forever),
+                        label: const Text('Eliminar alumno'),
+                      ),
+                    ],
                   ],
                 ),
               ),

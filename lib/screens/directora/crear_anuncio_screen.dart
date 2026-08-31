@@ -5,8 +5,12 @@ import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
 
+import 'package:provider/provider.dart';
+
 import '../../config/app_colors.dart';
 import '../../models/grado.dart';
+import '../../services/auth_service.dart';
+import '../../services/chat_service.dart';
 import '../../widgets/app_drawer.dart';
 
 class CrearAnuncioScreen extends StatefulWidget {
@@ -25,6 +29,8 @@ class _CrearAnuncioScreenState extends State<CrearAnuncioScreen> {
 
   DateTime _fecha = DateTime.now();
   bool _paraTodos = true;
+  bool _urgente = false;
+  bool _enviarComoChat = true;
   List<String> _gradosSeleccionados = [];
 
   bool _cargando = false;
@@ -51,13 +57,22 @@ class _CrearAnuncioScreenState extends State<CrearAnuncioScreen> {
 
       if (!mounted) return;
 
+      final fechaRaw =
+          response['fecha_publicacion'] ?? response['fecha'];
+      final gradosRaw =
+          response['para_grados'] ?? response['grados'];
+
       setState(() {
-        _tituloController.text = response['titulo'] as String;
-        _mensajeController.text = response['mensaje'] as String;
-        _fecha = DateTime.parse(response['fecha']);
+        _tituloController.text = response['titulo'] as String? ?? '';
+        _mensajeController.text = response['mensaje'] as String? ?? '';
+        _fecha = fechaRaw != null
+            ? (DateTime.tryParse(fechaRaw.toString()) ?? DateTime.now())
+            : DateTime.now();
         _paraTodos = response['para_todos'] as bool? ?? true;
-        _gradosSeleccionados =
-            (response['grados'] as List<dynamic>?)?.cast<String>() ?? [];
+        _urgente = response['prioridad']?.toString() == 'alta';
+        _gradosSeleccionados = gradosRaw is List
+            ? gradosRaw.map((e) => e.toString()).toList()
+            : <String>[];
         _cargando = false;
       });
     } catch (e) {
@@ -223,6 +238,22 @@ class _CrearAnuncioScreenState extends State<CrearAnuncioScreen> {
                                 ),
                               ),
                             ),
+                            const SizedBox(height: 8),
+                            SwitchListTile(
+                              contentPadding: EdgeInsets.zero,
+                              value: _urgente,
+                              onChanged: (v) => setState(() => _urgente = v),
+                              title: Text(
+                                'Marcar como urgente',
+                                style: GoogleFonts.poppins(
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              secondary: Icon(
+                                Icons.priority_high,
+                                color: _urgente ? Colors.red : Colors.grey,
+                              ),
+                            ),
                           ],
                         ),
                       ),
@@ -256,9 +287,11 @@ class _CrearAnuncioScreenState extends State<CrearAnuncioScreen> {
                                 style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
                               ),
                               subtitle: Text(
-                                'El anuncio será visible para todos',
-                                style: GoogleFonts.poppins(fontSize: 12),
-                              ),
+                            _paraTodos
+                                ? 'El anuncio será visible para todos. El chat llegará a todos los papás activos.'
+                                : 'Solo padres de los grados seleccionados recibirán el chat',
+                            style: GoogleFonts.poppins(fontSize: 12),
+                          ),
                               secondary: Icon(
                                 Icons.public,
                                 color: _paraTodos ? Colors.green : Colors.grey,
@@ -325,6 +358,36 @@ class _CrearAnuncioScreenState extends State<CrearAnuncioScreen> {
                         ),
                       ),
                     ),
+                    if (!_esEdicion) ...[
+                      const SizedBox(height: 16),
+                      Card(
+                        elevation: 2,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: SwitchListTile(
+                          value: _enviarComoChat,
+                          onChanged: (v) =>
+                              setState(() => _enviarComoChat = v),
+                          title: Text(
+                            'Enviar también como mensaje de chat',
+                            style: GoogleFonts.poppins(
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          subtitle: Text(
+                            'Cada papá lo verá en Chat con la escuela (mismo texto para todos los destinatarios)',
+                            style: GoogleFonts.poppins(fontSize: 12),
+                          ),
+                          secondary: Icon(
+                            Icons.chat_bubble_outline,
+                            color: _enviarComoChat
+                                ? AppColors.azulOscuro
+                                : Colors.grey,
+                          ),
+                        ),
+                      ),
+                    ],
                     const SizedBox(height: 32),
 
                     // Botón guardar
@@ -442,37 +505,75 @@ class _CrearAnuncioScreenState extends State<CrearAnuncioScreen> {
     setState(() => _cargando = true);
 
     try {
+      final usuario = context.read<AuthService>().currentUser;
+      final titulo = _tituloController.text.trim();
+      final mensaje = _mensajeController.text.trim();
+      final fechaIso = DateTime(
+        _fecha.year,
+        _fecha.month,
+        _fecha.day,
+        DateTime.now().hour,
+        DateTime.now().minute,
+      ).toIso8601String();
+
+      // Columnas canónicas (SQL_MAESTRO). No usar fecha/grados legacy.
       final Map<String, dynamic> anuncioData = {
-        'titulo': _tituloController.text.trim(),
-        'mensaje': _mensajeController.text.trim(),
-        'fecha': DateFormat('yyyy-MM-dd HH:mm:ss').format(_fecha),
+        'titulo': titulo,
+        'mensaje': mensaje,
+        'fecha_publicacion': fechaIso,
         'para_todos': _paraTodos,
-        'grados': _paraTodos ? [] : _gradosSeleccionados,
+        'para_grados':
+            _paraTodos ? <String>[] : List<String>.from(_gradosSeleccionados),
+        'prioridad': _urgente ? 'alta' : 'normal',
         'updated_at': DateTime.now().toIso8601String(),
       };
 
       if (_esEdicion) {
-        // Actualizar anuncio existente
         await Supabase.instance.client
             .from('anuncios')
             .update(anuncioData)
             .eq('id', widget.anuncioId!);
       } else {
-        // Crear nuevo anuncio
         anuncioData['id'] = const Uuid().v4();
         anuncioData['created_at'] = DateTime.now().toIso8601String();
+        anuncioData['leido_por'] = <String>[];
+        if (usuario != null) {
+          anuncioData['creado_por'] = usuario.id;
+        }
 
         await Supabase.instance.client.from('anuncios').insert(anuncioData);
+
+        var chatEnviados = 0;
+        if (_enviarComoChat && usuario != null) {
+          final prefijo = _urgente ? '📢 Anuncio urgente' : '📢 Anuncio';
+          chatEnviados = await ChatService().enviarMensajeMasivoAPadres(
+            remitenteId: usuario.id,
+            contenido: '$prefijo: $titulo\n\n$mensaje',
+            paraTodos: _paraTodos,
+            gradoIds: _gradosSeleccionados,
+            omitirHorario: true,
+          );
+        }
+
+        if (mounted) {
+          final extraChat = _enviarComoChat
+              ? ' · Chat: $chatEnviados papá(s)'
+              : '';
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('✓ Anuncio publicado$extraChat'),
+              backgroundColor: Colors.green,
+            ),
+          );
+          GoRouter.of(context).go('/directora/anuncios');
+        }
+        return;
       }
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              _esEdicion
-                  ? '✓ Anuncio actualizado correctamente'
-                  : '✓ Anuncio publicado correctamente',
-            ),
+          const SnackBar(
+            content: Text('✓ Anuncio actualizado correctamente'),
             backgroundColor: Colors.green,
           ),
         );

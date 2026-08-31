@@ -8,6 +8,7 @@ import 'package:uuid/uuid.dart';
 import '../../services/auth_service.dart';
 import '../../models/grado.dart';
 import '../../config/app_colors.dart';
+import '../../utils/constantes.dart';
 
 class CrearProfesorScreen extends StatefulWidget {
   final String? profesorId;
@@ -31,6 +32,11 @@ class _CrearProfesorScreenState extends State<CrearProfesorScreen> {
   final _telefonoController = TextEditingController();
   
   String? _grupoSeleccionado;
+  /// 'profesor' | 'profesor_admin' | 'secretaria'
+  String _rol = 'profesor';
+  /// 'titular' | 'ingles' — solo aplica si _rol es profesor.
+  String _especialidad = Constantes.especialidadTitular;
+  bool _accesoActivo = true;
   bool _isLoading = false;
   List<Grado> _grados = [];
 
@@ -83,7 +89,21 @@ class _CrearProfesorScreenState extends State<CrearProfesorScreen> {
         _nombreController.text = usuarioData['nombre'] ?? '';
         _emailController.text = usuarioData['email'] ?? '';
         _telefonoController.text = usuarioData['telefono'] ?? '';
-        _grupoSeleccionado = response['grado_id'];  // Corregido: era 'grupo_asignado'
+        _grupoSeleccionado = response['grado_id'];
+        final rol = usuarioData['rol'] as String? ?? 'profesor';
+        if (rol == 'secretaria') {
+          _rol = 'secretaria';
+        } else if (rol == 'profesor_admin') {
+          _rol = 'profesor_admin';
+        } else {
+          _rol = 'profesor';
+        }
+        final esp = (response['especialidad'] as String? ?? '').toLowerCase();
+        _especialidad = (esp.contains('ingles') || esp.contains('inglés'))
+            ? Constantes.especialidadIngles
+            : Constantes.especialidadTitular;
+        _accesoActivo = (usuarioData['activo'] as bool?) ??
+            (response['activo'] as bool? ?? true);
       });
     } catch (e) {
       print('Error cargando profesor: $e');
@@ -126,7 +146,7 @@ class _CrearProfesorScreenState extends State<CrearProfesorScreen> {
         
         final usuarioId = profesorResponse['usuario_id'] as String;
 
-        // 2. Actualizar usuario
+        // 2. Actualizar usuario (rol + acceso)
         await Supabase.instance.client
             .from('usuarios')
             .update({
@@ -134,6 +154,8 @@ class _CrearProfesorScreenState extends State<CrearProfesorScreen> {
               'telefono': _telefonoController.text.trim().isEmpty 
                   ? null 
                   : _telefonoController.text.trim(),
+              'rol': _rol,
+              'activo': _accesoActivo,
             })
             .eq('id', usuarioId);
 
@@ -141,7 +163,11 @@ class _CrearProfesorScreenState extends State<CrearProfesorScreen> {
         await Supabase.instance.client
             .from('profesores')
             .update({
-              'grado_id': _grupoSeleccionado,  // Corregido: era 'grupo_asignado'
+              'grado_id': _grupoSeleccionado,
+              'especialidad': _rol == 'profesor'
+                  ? _especialidad
+                  : Constantes.especialidadTitular,
+              'activo': _accesoActivo,
               'updated_at': DateTime.now().toIso8601String(),
             })
             .eq('id', widget.profesorId!);
@@ -156,58 +182,54 @@ class _CrearProfesorScreenState extends State<CrearProfesorScreen> {
           context.pop(true);
         }
       } else {
-        // CREAR profesor nuevo
+        // CREAR profesor nuevo (sin perder sesión del staff)
         final auth = Provider.of<AuthService>(context, listen: false);
         final client = Supabase.instance.client;
-        final prevId = client.auth.currentUser?.id;
-        final prevRefresh = client.auth.currentSession?.refreshToken;
-        if (prevId == null ||
-            prevRefresh == null ||
-            prevRefresh.isEmpty) {
-          throw Exception(
-            'Sesión inválida. Cierra sesión y vuelve a entrar como directora.',
-          );
-        }
 
-        // 1. Auth: signUp puede dejar la sesión en la profesora nueva → fallan los INSERT
-        final response = await client.auth.signUp(
+        final newUserId = await auth.crearUsuarioAuthComoStaff(
           email: _emailController.text.trim(),
-          password: 'Caipi2026', // Password temporal
+          password: 'Caipi2026',
+          rol: _rol,
+          nombre: _nombreController.text.trim(),
+          telefono: _telefonoController.text.trim().isEmpty
+              ? null
+              : _telefonoController.text.trim(),
         );
 
-        if (response.user == null) {
-          throw Exception('No se pudo crear el usuario');
-        }
-
-        await auth.restaurarSesionTrasSignUpDesdeDirectora(
-          userIdAntes: prevId,
-          refreshAntes: prevRefresh,
-        );
-
-        final newUserId = response.user!.id;
-
-        // return=minimal evita que PostgREST devuelva la fila (a veces falla RLS al "leer" el RETURNING aunque el INSERT sí guardó).
         await client
             .from('usuarios')
-            .insert({
-              'id': newUserId,
-              'email': _emailController.text.trim(),
-              'rol': 'profesor',
-              'nombre': _nombreController.text.trim(),
-              'telefono': _telefonoController.text.trim().isEmpty
-                  ? null
-                  : _telefonoController.text.trim(),
-            })
-            .setHeader('Prefer', 'return=minimal');
+            .update({'activo': _accesoActivo})
+            .eq('id', newUserId);
 
-        try {
+        if (_rol == 'secretaria') {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(
+                  '✅ Secretaria creada. Contraseña inicial: Caipi2026\n'
+                  'En el iPad entra con este correo. Solo altas, sin beca.',
+                  style: GoogleFonts.poppins(fontSize: 13),
+                ),
+                backgroundColor: AppColors.verde,
+                duration: const Duration(seconds: 7),
+              ),
+            );
+            context.pop(true);
+          }
+          return;
+        }
+
+                try {
           await client
               .from('profesores')
               .insert({
                 'id': const Uuid().v4(),
                 'usuario_id': newUserId,
                 'grado_id': _grupoSeleccionado,
-                'activo': true,
+                'especialidad': _rol == 'profesor'
+                    ? _especialidad
+                    : Constantes.especialidadTitular,
+                'activo': _accesoActivo,
                 'created_at': DateTime.now().toIso8601String(),
                 'updated_at': DateTime.now().toIso8601String(),
               })
@@ -245,6 +267,7 @@ class _CrearProfesorScreenState extends State<CrearProfesorScreen> {
             SnackBar(
               content: Text(
                 '✅ Profesora creada. Contraseña inicial: Caipi2026\n'
+                '${_especialidad == Constantes.especialidadIngles ? 'Entra y verá su grupo, solo calificaciones de Inglés.\n' : ''}'
                 'Puede cambiarla en el menú → Cambiar contraseña.',
                 style: GoogleFonts.poppins(fontSize: 13),
               ),
@@ -379,6 +402,7 @@ class _CrearProfesorScreenState extends State<CrearProfesorScreen> {
               // Email
               TextFormField(
                 controller: _emailController,
+                enabled: widget.profesorId == null,
                 keyboardType: TextInputType.emailAddress,
                 decoration: InputDecoration(
                   labelText: 'Email',
@@ -388,8 +412,9 @@ class _CrearProfesorScreenState extends State<CrearProfesorScreen> {
                   ),
                   filled: true,
                   fillColor: Colors.white,
-                  helperText:
-                      'Contraseña inicial: Caipi2026 (puede cambiarla después en el menú)',
+                  helperText: widget.profesorId == null
+                      ? 'Contraseña inicial: Caipi2026 (puede cambiarla después en el menú)'
+                      : 'El correo no se puede cambiar aquí',
                 ),
                 validator: (v) {
                   if (v?.isEmpty ?? true) return 'Requerido';
@@ -398,6 +423,90 @@ class _CrearProfesorScreenState extends State<CrearProfesorScreen> {
                 },
               ),
               const SizedBox(height: 16),
+
+              Text(
+                'Tipo de acceso',
+                style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
+              ),
+              const SizedBox(height: 4),
+              RadioListTile<String>(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Profesora'),
+                subtitle: const Text(
+                  'Titular del grupo o maestra de inglés (elige abajo)',
+                ),
+                value: 'profesor',
+                groupValue: _rol,
+                onChanged: (v) => setState(() {
+                  _rol = v!;
+                }),
+              ),
+              if (_rol == 'profesor')
+                Padding(
+                  padding: const EdgeInsets.only(left: 16, bottom: 8),
+                  child: Column(
+                    children: [
+                      RadioListTile<String>(
+                        contentPadding: EdgeInsets.zero,
+                        dense: true,
+                        title: const Text('Grupo (titular)'),
+                        subtitle: const Text(
+                          'Puede haber otra maestra de inglés en el mismo grupo',
+                        ),
+                        value: Constantes.especialidadTitular,
+                        groupValue: _especialidad,
+                        onChanged: (v) =>
+                            setState(() => _especialidad = v!),
+                      ),
+                      RadioListTile<String>(
+                        contentPadding: EdgeInsets.zero,
+                        dense: true,
+                        title: const Text('Maestra de inglés'),
+                        subtitle: const Text(
+                          'Otro usuario, mismo grupo. Solo ve calificaciones de Inglés',
+                        ),
+                        value: Constantes.especialidadIngles,
+                        groupValue: _especialidad,
+                        onChanged: (v) =>
+                            setState(() => _especialidad = v!),
+                      ),
+                    ],
+                  ),
+                ),
+              RadioListTile<String>(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Profesora admin'),
+                subtitle: const Text(
+                  'Como directora en casi todo, excepto pagos',
+                ),
+                value: 'profesor_admin',
+                groupValue: _rol,
+                onChanged: (v) => setState(() => _rol = v!),
+              ),
+              RadioListTile<String>(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Secretaria (altas en junta)'),
+                subtitle: const Text(
+                  'Solo registrar alumnos y papás. Sin beca, sin pagos.',
+                ),
+                value: 'secretaria',
+                groupValue: _rol,
+                onChanged: (v) => setState(() => _rol = v!),
+              ),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Acceso activo'),
+                subtitle: Text(
+                  _accesoActivo
+                      ? 'Puede iniciar sesión en la app'
+                      : 'Sin acceso (no podrá entrar)',
+                  style: GoogleFonts.poppins(fontSize: 12),
+                ),
+                value: _accesoActivo,
+                activeColor: AppColors.verde,
+                onChanged: (v) => setState(() => _accesoActivo = v),
+              ),
+              const SizedBox(height: 8),
 
               // Teléfono
               TextFormField(
@@ -415,6 +524,7 @@ class _CrearProfesorScreenState extends State<CrearProfesorScreen> {
               ),
               const SizedBox(height: 16),
 
+              if (_rol != 'secretaria') ...[
               // Grupo asignado
               DropdownButtonFormField<String>(
                 value: _grupoSeleccionado,
@@ -426,7 +536,11 @@ class _CrearProfesorScreenState extends State<CrearProfesorScreen> {
                   ),
                   filled: true,
                   fillColor: Colors.white,
-                  helperText: 'Puedes dejarlo sin grupo y asignarlo después',
+                  helperText: _rol == 'profesor_admin'
+                      ? 'Opcional: admin puede ver todos los grupos'
+                      : _especialidad == Constantes.especialidadIngles
+                          ? 'Mismo grupo que la titular. Si da inglés a varios grupos, déjalo sin grupo.'
+                          : 'Puedes dejarlo sin grupo y asignarlo después',
                 ),
                 items: [
                   const DropdownMenuItem(
@@ -445,6 +559,7 @@ class _CrearProfesorScreenState extends State<CrearProfesorScreen> {
                 },
               ),
               const SizedBox(height: 32),
+              ],
 
               // Botón guardar
               Container(

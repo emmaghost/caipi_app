@@ -9,6 +9,8 @@
 .history
 .svn/
 migrate_working_dir/
+android/key.properties
+android/app/upload-keystore.jks
 
 # IntelliJ related
 *.iml
@@ -67,10 +69,17 @@ migrate_working_dir/
 **/ios/ServiceDefinitions.json
 **/ios/Runner/GeneratedPluginRegistrant.*
 
-# Firebase
+# Firebase / secrets (NUNCA subir a git)
 **/google-services.json
 **/GoogleService-Info.plist
 firebase_options.dart
+secrets/
+**/firebase-adminsdk*.json
+**/*-firebase-adminsdk-*.json
+
+# Supabase CLI local state
+supabase/.temp/
+
 
 # Exceptions to above rules.
 !**/ios/**/default.mode1v3
@@ -79,7 +88,3 @@ firebase_options.dart
 !**/ios/**/default.perspectivev3
 !/packages/flutter_tools/test/data/dart_dependencies_test/**/.packages
 !/dev/ci/**/Gemfile.lock
-
-secrets/
-
-

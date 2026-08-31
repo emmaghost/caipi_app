@@ -17,6 +17,9 @@ class RegistrarSalidaScreen extends StatefulWidget {
   /// Viene desde la lista por grupo; el formulario fija ese alumno.
   final String? alumnoIdPreseleccionado;
   final bool bloquearSelectorAlumno;
+  final String? quienRecogioInicial;
+  final String? personaAutorizadaIdInicial;
+  final bool prellenarHoraSalida;
 
   const RegistrarSalidaScreen({
     super.key,
@@ -24,6 +27,9 @@ class RegistrarSalidaScreen extends StatefulWidget {
     this.fechaInicial,
     this.alumnoIdPreseleccionado,
     this.bloquearSelectorAlumno = false,
+    this.quienRecogioInicial,
+    this.personaAutorizadaIdInicial,
+    this.prellenarHoraSalida = false,
   });
 
   @override
@@ -57,6 +63,16 @@ class _RegistrarSalidaScreenState extends State<RegistrarSalidaScreen> {
     }
     if (widget.alumnoIdPreseleccionado != null) {
       _alumnoSeleccionadoId = widget.alumnoIdPreseleccionado;
+    }
+    if (widget.quienRecogioInicial != null &&
+        widget.quienRecogioInicial!.isNotEmpty) {
+      _quienRecogioController.text = widget.quienRecogioInicial!;
+    }
+    if (widget.personaAutorizadaIdInicial != null) {
+      _personaAutorizadaId = widget.personaAutorizadaIdInicial;
+    }
+    if (widget.prellenarHoraSalida) {
+      _horaSalida = TimeOfDay.now();
     }
 
     if (widget.controlId != null) {

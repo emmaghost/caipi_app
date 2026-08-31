@@ -11,6 +11,10 @@ class Constantes {
     '6to A', '6to B',
   ];
 
+  static const String especialidadTitular = 'titular';
+  static const String especialidadIngles = 'ingles';
+  static const String materiaIngles = 'Inglés';
+
   // Materias
   static const List<String> materias = [
     'Español',
@@ -21,7 +25,7 @@ class Constantes {
     'Formación Cívica y Ética',
     'Educación Física',
     'Artes',
-    'Inglés',
+    materiaIngles,
   ];
 
   // Periodos escolares
@@ -35,6 +39,16 @@ class Constantes {
 
   // Monto de colegiatura por defecto
   static const double montoColegiatura = 500.0;
+
+  /// Si es false, nadie ve beca. Si es true, solo la directora.
+  static const bool mostrarCampoBeca = true;
+
+  /// Cuentas destino al acreditar un pago (campo recibido_por_nombre en BD).
+  static const List<String> opcionesPagadoA = [
+    'BBVA Santiago Gómez',
+    'BBVA Instituto Brain',
+    'Efectivo',
+  ];
 
   // Conceptos de pago
   static const List<String> conceptosPago = [

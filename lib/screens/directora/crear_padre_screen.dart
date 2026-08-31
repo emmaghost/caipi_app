@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../config/app_colors.dart';
 import '../../services/auth_service.dart';
@@ -41,44 +40,19 @@ class _CrearPadreScreenState extends State<CrearPadreScreen> {
 
     try {
       final auth = Provider.of<AuthService>(context, listen: false);
-      final client = Supabase.instance.client;
-      final prevId = client.auth.currentUser?.id;
-      final prevRefresh = client.auth.currentSession?.refreshToken;
-      if (prevId == null ||
-          prevRefresh == null ||
-          prevRefresh.isEmpty) {
-        throw Exception(
-          'Sesión inválida. Vuelve a iniciar sesión como directora.',
-        );
-      }
-
-      final response = await client.auth.signUp(
+      await auth.crearUsuarioAuthComoStaff(
         email: _emailController.text.trim(),
         password: 'Caipi2026',
-      );
-
-      if (response.user == null) {
-        throw Exception('No se pudo crear el usuario');
-      }
-
-      await auth.restaurarSesionTrasSignUpDesdeDirectora(
-        userIdAntes: prevId,
-        refreshAntes: prevRefresh,
-      );
-
-      await client.from('usuarios').insert({
-        'id': response.user!.id,
-        'email': _emailController.text.trim(),
-        'rol': 'padre',
-        'nombre': '${_nombreController.text.trim()} ${_apellidosController.text.trim()}',
-        'telefono': _telefonoController.text.trim().isEmpty 
-            ? null 
+        rol: 'padre',
+        nombre: _nombreController.text.trim(),
+        apellidos: _apellidosController.text.trim(),
+        telefono: _telefonoController.text.trim().isEmpty
+            ? null
             : _telefonoController.text.trim(),
-        'whatsapp': _whatsappController.text.trim().isEmpty
+        whatsapp: _whatsappController.text.trim().isEmpty
             ? null
             : _whatsappController.text.trim(),
-        'apellidos': _apellidosController.text.trim(),
-      });
+      );
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -91,7 +65,7 @@ class _CrearPadreScreenState extends State<CrearPadreScreen> {
             duration: Duration(seconds: 5),
           ),
         );
-        context.pop();
+        context.pop(true);
       }
     } catch (e) {
       if (mounted) {

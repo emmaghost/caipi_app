@@ -11,6 +11,11 @@ class Usuario {
   final DateTime createdAt;
   final DateTime updatedAt;
 
+  /// De `profesores.especialidad` (no está en la tabla usuarios).
+  /// Valores: `titular` | `ingles`.
+  final String? especialidadProfesor;
+  final String? gradoIdProfesor;
+
   Usuario({
     required this.id,
     required this.email,
@@ -23,12 +28,50 @@ class Usuario {
     this.activo = true,
     required this.createdAt,
     required this.updatedAt,
+    this.especialidadProfesor,
+    this.gradoIdProfesor,
   });
 
   String get nombreCompleto => apellidos != null ? '$nombre $apellidos' : nombre;
   bool get esDirectora => rol == 'directora';
-  bool get esProfesor => rol == 'profesor';
+  /// Profesora de aula (rol base).
+  bool get esProfesor => rol == 'profesor' || rol == 'profesor_admin';
+  bool get esProfesorAdmin => rol == 'profesor_admin';
+  bool get esSecretaria => rol == 'secretaria';
   bool get esPadre => rol == 'padre';
+  /// Directora, profesoras o secretaria: usan pantallas /directora.
+  bool get esStaff => esDirectora || esProfesor || esSecretaria;
+
+  /// Maestra de inglés: mismo grupo que la titular, solo calificaciones de Inglés.
+  bool get esMaestraIngles {
+    final e = (especialidadProfesor ?? '')
+        .toLowerCase()
+        .replaceAll('é', 'e')
+        .replaceAll('í', 'i');
+    return e == 'ingles' || e.contains('ingles');
+  }
+
+  Usuario conPerfilProfesor({String? especialidad, String? gradoId}) {
+    return Usuario(
+      id: id,
+      email: email,
+      rol: rol,
+      nombre: nombre,
+      apellidos: apellidos,
+      telefono: telefono,
+      whatsapp: whatsapp,
+      fotoUrl: fotoUrl,
+      activo: activo,
+      createdAt: createdAt,
+      updatedAt: updatedAt,
+      especialidadProfesor: especialidad,
+      gradoIdProfesor: gradoId,
+    );
+  }
+
+  /// Puede completar/editar fichas de alumnos (alta rápida).
+  bool get puedeEditarAlumnos =>
+      esDirectora || esProfesorAdmin || esSecretaria;
 
   factory Usuario.fromJson(Map<String, dynamic> json) {
     return Usuario(
