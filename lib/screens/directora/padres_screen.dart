@@ -4,6 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../config/app_colors.dart';
+import '../../models/grado.dart';
 import '../../services/chat_service.dart';
 import '../../widgets/app_drawer.dart';
 
@@ -15,21 +16,21 @@ class PadresScreen extends StatefulWidget {
 }
 
 class _PadresScreenState extends State<PadresScreen> {
-  late Future<List<Map<String, dynamic>>> _padresFuture;
+  late Future<_PadresData> _padresFuture;
+  String _filtroGrado = 'Todos';
+  String _busqueda = '';
 
   @override
   void initState() {
     super.initState();
-    _padresFuture = _cargarPadres();
+    _padresFuture = _cargarDatos();
   }
 
-  Future<List<Map<String, dynamic>>> _cargarPadres() async {
-    final data = await Supabase.instance.client
-        .from('usuarios')
-        .select()
-        .eq('rol', 'padre')
-        .order('nombre');
-    final padres = List<Map<String, dynamic>>.from(data as List);
+  Future<_PadresData> _cargarDatos() async {
+    final client = Supabase.instance.client;
+
+    final padresRaw = await client.from('usuarios').select().eq('rol', 'padre');
+    final padres = List<Map<String, dynamic>>.from(padresRaw as List);
     padres.sort((a, b) {
       final aActivo = a['activo'] == true ? 0 : 1;
       final bActivo = b['activo'] == true ? 0 : 1;
@@ -37,45 +38,107 @@ class _PadresScreenState extends State<PadresScreen> {
       return ((a['nombre'] as String?) ?? '')
           .compareTo((b['nombre'] as String?) ?? '');
     });
-    return padres;
-  }
 
-  Future<List<Map<String, dynamic>>> _hijosDePadre(String padreId) async {
-    final client = Supabase.instance.client;
-    try {
-      final vinculos = await client
-          .from('alumnos_padres')
-          .select('alumno_id')
-          .eq('padre_id', padreId);
-      final ids = (vinculos as List)
-          .map((e) => e['alumno_id'] as String)
-          .toSet();
-      if (ids.isNotEmpty) {
-        final data = await client
-            .from('alumnos')
-            .select('id')
-            .inFilter('id', ids.toList())
-            .eq('activo', true);
-        return List<Map<String, dynamic>>.from(data as List);
-      }
-    } catch (_) {}
-    final data = await client
+    final gradosRaw =
+        await client.from('grados').select().eq('activo', true).order('nombre');
+    final grados = (gradosRaw as List)
+        .map((e) => Grado.fromJson(Map<String, dynamic>.from(e as Map)))
+        .where((g) => !g.esEstimulacion)
+        .toList();
+
+    final alumnosRaw = await client
         .from('alumnos')
-        .select('id')
-        .eq('padre_id', padreId)
+        .select('id, padre_id, grado_id')
         .eq('activo', true);
-    return List<Map<String, dynamic>>.from(data as List);
+    final alumnos = List<Map<String, dynamic>>.from(alumnosRaw as List);
+
+    final padreAGrados = <String, Set<String>>{};
+    final padreAHijos = <String, int>{};
+    final alumnoIds = <String>[];
+
+    for (final a in alumnos) {
+      final alumnoId = a['id'] as String?;
+      final padreId = a['padre_id'] as String?;
+      final gradoId = a['grado_id'] as String?;
+      if (alumnoId != null) alumnoIds.add(alumnoId);
+      if (padreId == null) continue;
+      padreAHijos[padreId] = (padreAHijos[padreId] ?? 0) + 1;
+      if (gradoId != null) {
+        padreAGrados.putIfAbsent(padreId, () => <String>{}).add(gradoId);
+      }
+    }
+
+    if (alumnoIds.isNotEmpty) {
+      try {
+        final vinculos = await client
+            .from('alumnos_padres')
+            .select('padre_id, alumno_id')
+            .inFilter('alumno_id', alumnoIds);
+        final alumnoPorId = {
+          for (final a in alumnos) a['id'] as String: a,
+        };
+        for (final v in vinculos as List) {
+          final padreId = v['padre_id'] as String?;
+          final alumnoId = v['alumno_id'] as String?;
+          if (padreId == null || alumnoId == null) continue;
+          final alumno = alumnoPorId[alumnoId];
+          if (alumno == null) continue;
+          // Contar hijo por vínculo solo si no era ya el padre_id principal.
+          if (alumno['padre_id'] != padreId) {
+            padreAHijos[padreId] = (padreAHijos[padreId] ?? 0) + 1;
+          }
+          final gradoId = alumno['grado_id'] as String?;
+          if (gradoId != null) {
+            padreAGrados.putIfAbsent(padreId, () => <String>{}).add(gradoId);
+          }
+        }
+      } catch (_) {}
+    }
+
+    return _PadresData(
+      padres: padres,
+      grados: grados,
+      padreAGrados: padreAGrados,
+      padreAHijos: padreAHijos,
+    );
   }
 
   Future<void> _refrescar() async {
-    final future = _cargarPadres();
+    final future = _cargarDatos();
     setState(() => _padresFuture = future);
-    await future.catchError((_) => <Map<String, dynamic>>[]);
+    await future.catchError((_) => _PadresData.empty);
   }
 
   Future<void> _abrirCrearPadre() async {
     await context.push('/directora/padres/crear');
     if (mounted) await _refrescar();
+  }
+
+  List<Map<String, dynamic>> _filtrar(
+    _PadresData data,
+  ) {
+    var lista = List<Map<String, dynamic>>.from(data.padres);
+
+    if (_filtroGrado != 'Todos') {
+      lista = lista.where((p) {
+        final grados = data.padreAGrados[p['id'] as String] ?? {};
+        return grados.contains(_filtroGrado);
+      }).toList();
+    }
+
+    final q = _busqueda.trim().toLowerCase();
+    if (q.isNotEmpty) {
+      lista = lista.where((p) {
+        final nombre = (p['nombre'] as String? ?? '').toLowerCase();
+        final apellidos = (p['apellidos'] as String? ?? '').toLowerCase();
+        final email = (p['email'] as String? ?? '').toLowerCase();
+        return nombre.contains(q) ||
+            apellidos.contains(q) ||
+            email.contains(q);
+      }).toList();
+    }
+
+    return lista;
   }
 
   @override
@@ -103,7 +166,7 @@ class _PadresScreenState extends State<PadresScreen> {
           ),
         ],
       ),
-      body: FutureBuilder<List<Map<String, dynamic>>>(
+      body: FutureBuilder<_PadresData>(
         future: _padresFuture,
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
@@ -127,50 +190,95 @@ class _PadresScreenState extends State<PadresScreen> {
             );
           }
 
-          final padres = snapshot.data ?? [];
+          final data = snapshot.data ?? _PadresData.empty;
+          final padres = _filtrar(data);
 
-          if (padres.isEmpty) {
-            return Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(
-                    Icons.family_restroom,
-                    size: 80,
-                    color: AppColors.gris.withOpacity(0.5),
-                  ),
-                  const SizedBox(height: 16),
-                  Text(
-                    'No hay padres registrados',
-                    style: GoogleFonts.poppins(
-                      fontSize: 18,
-                      color: AppColors.gris,
+          return Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                child: TextField(
+                  decoration: InputDecoration(
+                    hintText: 'Buscar padre por nombre o email...',
+                    prefixIcon: const Icon(Icons.search),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
                     ),
+                    filled: true,
+                    fillColor: Colors.white,
                   ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Presiona + para agregar uno',
-                    style: GoogleFonts.poppins(
-                      fontSize: 14,
-                      color: AppColors.gris,
-                    ),
-                  ),
-                ],
+                  onChanged: (v) => setState(() => _busqueda = v),
+                ),
               ),
-            );
-          }
-
-          return RefreshIndicator(
-            onRefresh: _refrescar,
-            child: ListView.builder(
-              physics: const AlwaysScrollableScrollPhysics(),
-              padding: const EdgeInsets.all(20),
-              itemCount: padres.length,
-              itemBuilder: (context, index) {
-                final padre = padres[index];
-                return _buildPadreCard(context, padre);
-              },
-            ),
+              const SizedBox(height: 8),
+              SizedBox(
+                height: 48,
+                child: ListView(
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  children: [
+                    _FiltroChip(
+                      label: 'Todos',
+                      isSelected: _filtroGrado == 'Todos',
+                      onTap: () => setState(() => _filtroGrado = 'Todos'),
+                    ),
+                    ...data.grados.map(
+                      (g) => _FiltroChip(
+                        label: g.nombre,
+                        isSelected: _filtroGrado == g.id,
+                        onTap: () => setState(() => _filtroGrado = g.id),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 4, 20, 0),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    '${padres.length} padre${padres.length == 1 ? '' : 's'}'
+                    '${_filtroGrado == 'Todos' ? '' : ' en este grupo'}',
+                    style: GoogleFonts.poppins(
+                      fontSize: 13,
+                      color: AppColors.gris,
+                    ),
+                  ),
+                ),
+              ),
+              Expanded(
+                child: padres.isEmpty
+                    ? Center(
+                        child: Text(
+                          data.padres.isEmpty
+                              ? 'No hay padres registrados'
+                              : 'No hay padres en este grado/grupo',
+                          style: GoogleFonts.poppins(
+                            fontSize: 16,
+                            color: AppColors.gris,
+                          ),
+                        ),
+                      )
+                    : RefreshIndicator(
+                        onRefresh: _refrescar,
+                        child: ListView.builder(
+                          physics: const AlwaysScrollableScrollPhysics(),
+                          padding: const EdgeInsets.all(20),
+                          itemCount: padres.length,
+                          itemBuilder: (context, index) {
+                            final padre = padres[index];
+                            final id = padre['id'] as String;
+                            return _buildPadreCard(
+                              context,
+                              padre,
+                              hijos: data.padreAHijos[id] ?? 0,
+                              grados: data.nombresGradosDe(id),
+                            );
+                          },
+                        ),
+                      ),
+              ),
+            ],
           );
         },
       ),
@@ -184,7 +292,17 @@ class _PadresScreenState extends State<PadresScreen> {
     );
   }
 
-  Widget _buildPadreCard(BuildContext context, Map<String, dynamic> padre) {
+  Widget _buildPadreCard(
+    BuildContext context,
+    Map<String, dynamic> padre, {
+    required int hijos,
+    required String grados,
+  }) {
+    final nombre = [
+      padre['nombre'] as String? ?? '',
+      padre['apellidos'] as String? ?? '',
+    ].where((s) => s.trim().isNotEmpty).join(' ');
+
     return Card(
       margin: const EdgeInsets.only(bottom: 16),
       shape: RoundedRectangleBorder(
@@ -198,124 +316,168 @@ class _PadresScreenState extends State<PadresScreen> {
         borderRadius: BorderRadius.circular(16),
         child: Padding(
           padding: const EdgeInsets.all(16),
-          child: FutureBuilder<List<Map<String, dynamic>>>(
-            future: _hijosDePadre(padre['id'] as String),
-            builder: (context, alumnosSnapshot) {
-              final hijos = alumnosSnapshot.data ?? [];
-
-              return Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      gradient: const LinearGradient(
-                        colors: [AppColors.rosa, AppColors.naranja],
-                      ),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: const Icon(
-                      Icons.family_restroom,
-                      color: Colors.white,
-                      size: 32,
-                    ),
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [AppColors.rosa, AppColors.naranja],
                   ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Icon(
+                  Icons.family_restroom,
+                  color: Colors.white,
+                  size: 32,
+                ),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
                       children: [
-                        Row(
-                          children: [
-                            Expanded(
-                              child: Text(
-                                padre['nombre'] ?? 'Sin nombre',
-                                style: GoogleFonts.poppins(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
+                        Expanded(
+                          child: Text(
+                            nombre.isEmpty ? 'Sin nombre' : nombre,
+                            style: GoogleFonts.poppins(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
                             ),
-                            if (padre['activo'] != true)
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 8,
-                                  vertical: 2,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: AppColors.rojo.withOpacity(0.12),
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                child: Text(
-                                  'Sin acceso',
-                                  style: GoogleFonts.poppins(
-                                    fontSize: 10,
-                                    fontWeight: FontWeight.w600,
-                                    color: AppColors.rojo,
-                                  ),
-                                ),
-                              ),
-                          ],
+                          ),
                         ),
-                        const SizedBox(height: 4),
-                        Row(
-                          children: [
-                            const Icon(Icons.email, size: 14, color: AppColors.gris),
-                            const SizedBox(width: 4),
-                            Expanded(
-                              child: Text(
-                                padre['email'] ?? '',
-                                style: GoogleFonts.poppins(
-                                  fontSize: 12,
-                                  color: AppColors.gris,
-                                ),
-                                overflow: TextOverflow.ellipsis,
-                              ),
+                        if (padre['activo'] != true)
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 2,
                             ),
-                          ],
-                        ),
-                        const SizedBox(height: 4),
-                        Row(
-                          children: [
-                            const Icon(Icons.child_care, size: 14, color: AppColors.azul),
-                            const SizedBox(width: 4),
-                            Text(
-                              '${hijos.length} hijo${hijos.length != 1 ? 's' : ''}',
+                            decoration: BoxDecoration(
+                              color: AppColors.rojo.withOpacity(0.12),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Text(
+                              'Sin acceso',
                               style: GoogleFonts.poppins(
-                                fontSize: 12,
-                                color: AppColors.azul,
+                                fontSize: 10,
                                 fontWeight: FontWeight.w600,
+                                color: AppColors.rojo,
                               ),
                             ),
-                          ],
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Row(
+                      children: [
+                        const Icon(Icons.email, size: 14, color: AppColors.gris),
+                        const SizedBox(width: 4),
+                        Expanded(
+                          child: Text(
+                            padre['email'] ?? '',
+                            style: GoogleFonts.poppins(
+                              fontSize: 12,
+                              color: AppColors.gris,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
                         ),
                       ],
                     ),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.chat_bubble_rounded, color: AppColors.morado),
-                    tooltip: 'Chat',
-                    onPressed: () async {
-                      final chatService = ChatService();
-                      final conversacion =
-                          await chatService.obtenerOCrearConversacion(padre['id'] as String);
-                      if (!context.mounted) return;
-                      final nombre = padre['nombre'] as String? ?? 'Padre';
-                      context.push(
-                        '/directora/chat/${conversacion.id}',
-                        extra: {'titulo': nombre},
-                      );
-                    },
-                  ),
-                  const Icon(
-                    Icons.arrow_forward_ios,
-                    size: 16,
-                    color: AppColors.gris,
-                  ),
-                ],
-              );
-            },
+                    const SizedBox(height: 4),
+                    Text(
+                      '$hijos hijo${hijos == 1 ? '' : 's'}'
+                      '${grados.isEmpty ? '' : ' · $grados'}',
+                      style: GoogleFonts.poppins(
+                        fontSize: 12,
+                        color: AppColors.azul,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.chat_bubble_rounded,
+                    color: AppColors.morado),
+                tooltip: 'Chat',
+                onPressed: () async {
+                  final chatService = ChatService();
+                  final conversacion = await chatService
+                      .obtenerOCrearConversacion(padre['id'] as String);
+                  if (!context.mounted) return;
+                  context.push(
+                    '/directora/chat/${conversacion.id}',
+                    extra: {'titulo': nombre.isEmpty ? 'Padre' : nombre},
+                  );
+                },
+              ),
+              const Icon(
+                Icons.arrow_forward_ios,
+                size: 16,
+                color: AppColors.gris,
+              ),
+            ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _PadresData {
+  final List<Map<String, dynamic>> padres;
+  final List<Grado> grados;
+  final Map<String, Set<String>> padreAGrados;
+  final Map<String, int> padreAHijos;
+
+  const _PadresData({
+    required this.padres,
+    required this.grados,
+    required this.padreAGrados,
+    required this.padreAHijos,
+  });
+
+  static final empty = _PadresData(
+    padres: const [],
+    grados: const [],
+    padreAGrados: const {},
+    padreAHijos: const {},
+  );
+
+  String nombresGradosDe(String padreId) {
+    final ids = padreAGrados[padreId];
+    if (ids == null || ids.isEmpty) return '';
+    final nombres = grados
+        .where((g) => ids.contains(g.id))
+        .map((g) => g.nombre)
+        .toList();
+    return nombres.join(', ');
+  }
+}
+
+class _FiltroChip extends StatelessWidget {
+  final String label;
+  final bool isSelected;
+  final VoidCallback onTap;
+
+  const _FiltroChip({
+    required this.label,
+    required this.isSelected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(right: 8),
+      child: FilterChip(
+        label: Text(label),
+        selected: isSelected,
+        onSelected: (_) => onTap(),
+        selectedColor: Theme.of(context).colorScheme.primaryContainer,
       ),
     );
   }

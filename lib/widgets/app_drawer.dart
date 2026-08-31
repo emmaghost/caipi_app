@@ -23,11 +23,33 @@ class _AppDrawerState extends State<AppDrawer> {
     _cargarPermisos();
   }
 
+  static const _codigosPermisos = [
+    'ver_alumnos',
+    'ver_pagos',
+    'ver_profesores',
+    'ver_padres',
+    'ver_eventos',
+    'ver_incidentes',
+    'ver_tipos_incidentes',
+    'ver_personas_autorizadas',
+    'ver_bitacora',
+    'ver_anuncios',
+    'ver_calificaciones',
+  ];
+
+  Map<String, bool> _permisosCompletosDirectora() => {
+        for (final c in _codigosPermisos) c: true,
+      };
+
   Future<void> _cargarPermisos() async {
     try {
       final auth = Provider.of<AuthService>(context, listen: false);
-      // Padres no usan catálogo de permisos admin
-      if (auth.currentUser?.esPadre == true) {
+      final user = auth.currentUser;
+
+      // Padres / secretaria / inglés: menú fijo, sin RPC.
+      if (user?.esPadre == true ||
+          user?.esSecretaria == true ||
+          user?.esMaestraIngles == true) {
         if (mounted) {
           setState(() {
             _permisos = {};
@@ -37,31 +59,24 @@ class _AppDrawerState extends State<AppDrawer> {
         return;
       }
 
-      final permisosService = PermisosService();
-      
-      // Lista de permisos a verificar
-      final codigosPermisos = [
-        'ver_alumnos',
-        'ver_pagos',
-        'ver_profesores',
-        'ver_padres',
-        'ver_eventos',
-        'ver_incidentes',
-        'ver_tipos_incidentes',
-        'ver_personas_autorizadas',
-        'ver_bitacora',
-        'ver_anuncios',
-        'ver_calificaciones',
-      ];
+      // Directora: acceso total sin 11 round-trips (en iOS el drawer
+      // se quedaba en spinner y parecía que no existía "Chat con Padres").
+      if (user?.esDirectora == true) {
+        if (mounted) {
+          setState(() {
+            _permisos = _permisosCompletosDirectora();
+            _cargando = false;
+          });
+        }
+        return;
+      }
 
-      final permisos = await permisosService.tienePermisos(codigosPermisos);
-      
-      print('🔑 Permisos cargados: $permisos');
-      
+      final permisosService = PermisosService();
+      final permisos = await permisosService.tienePermisos(_codigosPermisos);
+
       if (mounted) {
         setState(() {
           _permisos = permisos;
-          // Solo la directora ve pagos (profesor_admin tampoco).
           if (auth.currentUser?.esDirectora != true) {
             _permisos['ver_pagos'] = false;
           }
@@ -69,30 +84,11 @@ class _AppDrawerState extends State<AppDrawer> {
         });
       }
     } catch (e) {
-      print('❌ Error cargando permisos: $e');
       if (mounted) {
         final auth = Provider.of<AuthService>(context, listen: false);
-        // Sin fallback generoso: solo directora asume acceso total si falla el RPC
         final esDirectora = auth.currentUser?.esDirectora == true;
         setState(() {
-          _permisos = esDirectora
-              ? {
-                  for (final c in [
-                    'ver_alumnos',
-                    'ver_pagos',
-                    'ver_profesores',
-                    'ver_padres',
-                    'ver_eventos',
-                    'ver_incidentes',
-                    'ver_tipos_incidentes',
-                    'ver_personas_autorizadas',
-                    'ver_bitacora',
-                    'ver_anuncios',
-                    'ver_calificaciones',
-                  ])
-                    c: true,
-                }
-              : {};
+          _permisos = esDirectora ? _permisosCompletosDirectora() : {};
           _cargando = false;
         });
       }
@@ -182,11 +178,7 @@ class _AppDrawerState extends State<AppDrawer> {
           Expanded(
             child: Container(
               color: Colors.white,
-              child: _cargando
-                  ? const Center(
-                      child: CircularProgressIndicator(color: AppColors.morado),
-                    )
-                  : ListView(
+              child: ListView(
                       padding: const EdgeInsets.symmetric(vertical: 4),
                         children: [
                           _buildMenuItem(
@@ -197,6 +189,40 @@ class _AppDrawerState extends State<AppDrawer> {
                             tienePermiso: true,
                           ),
 
+                          // Chat siempre visible para staff (no depende de RPC de permisos).
+                          if (usuario?.esStaff == true &&
+                              usuario?.esSecretaria != true &&
+                              usuario?.esMaestraIngles != true &&
+                              usuario?.esPadre != true) ...[
+                            _buildMenuItem(
+                              context: context,
+                              icon: Icons.chat_bubble_rounded,
+                              title: 'Chat con Padres',
+                              ruta: '/directora/chat',
+                              tienePermiso: true,
+                            ),
+                          ],
+
+                          if (_cargando &&
+                              usuario?.esStaff == true &&
+                              usuario?.esPadre != true &&
+                              usuario?.esSecretaria != true &&
+                              usuario?.esMaestraIngles != true)
+                            const Padding(
+                              padding: EdgeInsets.symmetric(vertical: 24),
+                              child: Center(
+                                child: SizedBox(
+                                  width: 28,
+                                  height: 28,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: AppColors.morado,
+                                  ),
+                                ),
+                              ),
+                            ),
+
+                          if (!_cargando) ...[
                           const SizedBox(height: 4),
 
                           // ===== MENÚ SOLO PADRE (nunca admin) =====
@@ -286,14 +312,6 @@ class _AppDrawerState extends State<AppDrawer> {
 
                           // ===== MENÚ STAFF (directora / profesoras) =====
                           else if (usuario?.esStaff == true) ...[
-                            _buildMenuItem(
-                              context: context,
-                              icon: Icons.chat_bubble_rounded,
-                              title: 'Chat con Padres',
-                              ruta: '/directora/chat',
-                              tienePermiso: true,
-                            ),
-
                           const SizedBox(height: 4),
                           if (_permisos['ver_alumnos'] == true) ...[
                             _buildSectionHeader('ALUMNOS'),
@@ -489,6 +507,7 @@ class _AppDrawerState extends State<AppDrawer> {
                             tienePermiso: true,
                           ),
                           ], // fin esStaff
+                          ], // fin !_cargando
                         ],
                       ),
             ),
