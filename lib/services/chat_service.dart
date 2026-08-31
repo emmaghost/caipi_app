@@ -167,11 +167,27 @@ class ChatService {
     final texto = contenido.trim();
     if (texto.isEmpty) return 0;
 
-    final padreIds = soloPadreIds ??
+    var padreIds = soloPadreIds ??
         await idsPadresDestino(paraTodos: paraTodos, gradoIds: gradoIds);
+
+    // Si vienen IDs sueltos, dejar solo papás activos.
+    if (soloPadreIds != null && soloPadreIds.isNotEmpty) {
+      final activos = await _supabase
+          .from('usuarios')
+          .select('id')
+          .eq('rol', 'padre')
+          .eq('activo', true)
+          .inFilter('id', soloPadreIds);
+      padreIds = (activos as List)
+          .map((r) => r['id'] as String)
+          .where((id) => id.isNotEmpty)
+          .toList();
+    }
+
     if (padreIds.isEmpty) return 0;
 
     var enviados = 0;
+    Object? ultimoError;
     for (final padreId in padreIds) {
       try {
         final conv = await obtenerOCrearConversacion(padreId);
@@ -182,9 +198,15 @@ class ChatService {
           omitirHorario: omitirHorario,
         );
         enviados++;
-      } catch (_) {
-        // Continuar con el resto si uno falla (RLS, padre inactivo, etc.)
+      } catch (e) {
+        ultimoError = e;
       }
+    }
+
+    if (enviados == 0 && ultimoError != null) {
+      throw StateError(
+        'No se pudo enviar el mensaje masivo. $ultimoError',
+      );
     }
     return enviados;
   }

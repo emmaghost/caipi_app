@@ -590,17 +590,84 @@ class _ChatListaEscuelaScreenState extends State<ChatListaEscuelaScreen> {
     final usuario = context.read<AuthService>().currentUser;
     if (usuario == null) return;
 
+    final chatService = ChatService();
+
+    // Destino: grupo de la maestra, grado filtrado, o todos.
+    final bool paraTodos;
+    final List<String> gradoIds;
+    final List<String>? soloPadreIds;
+
+    if (_padreIdsPermitidos != null) {
+      paraTodos = false;
+      gradoIds = const [];
+      soloPadreIds = _padreIdsPermitidos!.toList();
+    } else if (_puedeElegirGrado && _filtroGrado != 'Todos') {
+      paraTodos = false;
+      gradoIds = [_filtroGrado];
+      soloPadreIds = null;
+    } else {
+      paraTodos = true;
+      gradoIds = const [];
+      soloPadreIds = null;
+    }
+
+    late final List<String> destinatarios;
+    try {
+      if (soloPadreIds != null) {
+        if (soloPadreIds.isEmpty) {
+          destinatarios = const [];
+        } else {
+          final activos = await Supabase.instance.client
+              .from('usuarios')
+              .select('id')
+              .eq('rol', 'padre')
+              .eq('activo', true)
+              .inFilter('id', soloPadreIds);
+          destinatarios = (activos as List)
+              .map((r) => r['id'] as String)
+              .toList();
+        }
+      } else {
+        destinatarios = await chatService.idsPadresDestino(
+          paraTodos: paraTodos,
+          gradoIds: gradoIds,
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('No se pudo preparar el envío: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    if (!mounted) return;
+
+    if (destinatarios.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'No hay papás activos para este filtro. '
+            'Elige “Todos los grupos” o otro grado.',
+          ),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
     final tituloCtrl = TextEditingController();
     final mensajeCtrl = TextEditingController();
     var enviando = false;
 
-    Set<String>? destinoIds = _padreIdsPermitidos;
-    if (_puedeElegirGrado && _filtroGrado != 'Todos') {
-      destinoIds = _padreAGrados.entries
-          .where((e) => e.value.contains(_filtroGrado))
-          .map((e) => e.key)
-          .toSet();
-    }
+    final alcanceTexto = _padreIdsPermitidos != null
+        ? 'Se enviará a los ${destinatarios.length} papás activos de tu grupo.'
+        : (_filtroGrado != 'Todos'
+            ? 'Se enviará a ${destinatarios.length} papá(s) del grado/grupo seleccionado.'
+            : 'Se enviará a ${destinatarios.length} papá(s) activos.');
 
     await showDialog<void>(
       context: context,
@@ -618,13 +685,30 @@ class _ChatListaEscuelaScreenState extends State<ChatListaEscuelaScreen> {
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: AppColors.azulClaro,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        alcanceTexto,
+                        style: GoogleFonts.poppins(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.azulOscuro,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
                     Text(
-                      destinoIds == null
-                          ? 'Se enviará a todos los papás activos.'
-                          : (_filtroGrado != 'Todos'
-                              ? 'Se enviará a los papás del grado/grupo seleccionado.'
-                              : 'Se enviará a los papás de tu grupo.'),
-                      style: GoogleFonts.poppins(fontSize: 13),
+                      'Nota: los filtros “Con mensajes / No leídos / buscar” '
+                      'no limitan este envío; solo el grado/grupo.',
+                      style: GoogleFonts.poppins(
+                        fontSize: 11,
+                        color: AppColors.gris,
+                      ),
                     ),
                     const SizedBox(height: 12),
                     TextField(
@@ -654,6 +738,10 @@ class _ChatListaEscuelaScreenState extends State<ChatListaEscuelaScreen> {
                   child: const Text('Cancelar'),
                 ),
                 ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.exitoPago,
+                    foregroundColor: Colors.white,
+                  ),
                   onPressed: enviando
                       ? null
                       : () async {
@@ -673,23 +761,27 @@ class _ChatListaEscuelaScreenState extends State<ChatListaEscuelaScreen> {
                               ? texto
                               : '📢 $asunto\n\n$texto';
                           try {
-                            final n = await ChatService()
-                                .enviarMensajeMasivoAPadres(
+                            final n =
+                                await chatService.enviarMensajeMasivoAPadres(
                               remitenteId: usuario.id,
                               contenido: cuerpo,
-                              paraTodos: destinoIds == null,
-                              soloPadreIds: destinoIds?.toList(),
+                              paraTodos: false,
+                              soloPadreIds: destinatarios,
                               omitirHorario: true,
                             );
                             if (!ctx.mounted) return;
                             Navigator.of(ctx).pop();
                             if (!mounted) return;
+                            final parcial = n < destinatarios.length;
                             ScaffoldMessenger.of(context).showSnackBar(
                               SnackBar(
                                 content: Text(
-                                  '✓ Mensaje enviado a $n papá(s)',
+                                  parcial
+                                      ? 'Enviado a $n de ${destinatarios.length} papá(s). Revisa permisos o conexión.'
+                                      : '✓ Mensaje enviado a $n papá(s)',
                                 ),
-                                backgroundColor: Colors.green,
+                                backgroundColor:
+                                    parcial ? Colors.orange : Colors.green,
                               ),
                             );
                           } catch (e) {
@@ -707,9 +799,12 @@ class _ChatListaEscuelaScreenState extends State<ChatListaEscuelaScreen> {
                       ? const SizedBox(
                           width: 20,
                           height: 20,
-                          child: CircularProgressIndicator(strokeWidth: 2),
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
                         )
-                      : const Text('Enviar'),
+                      : Text('Enviar a ${destinatarios.length}'),
                 ),
               ],
             );
