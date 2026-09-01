@@ -5,9 +5,11 @@
 > No reescribas el sistema. No migres a Firebase. No inventes módulos. La galería está **cancelada**.
 
 **Repo:** `https://github.com/emmaghost/caipi_app.git` · rama `main`  
-**Package:** `escuela_caipi` · versión `1.0.8+4009`  
+**Package:** `escuela_caipi` · versión `1.0.8+4009` (este es el build de App Store / TestFlight)  
 **Cliente:** Viridiana (directora) en **iPad / iPhone** y a veces Android.  
 **Producto:** gestión de un preescolar (CAIPI): alumnos, cobranza, bitácoras, chat, Portage, recogida.
+
+**Congelado (1 sep 2026):** este archivo describe **solo lo que ya está en el código**. No inventes pantallas, columnas ni módulos. No “completes” WhatsApp, el escáner QR ni la galería. Cotización = solo en Configuración de costos.
 
 ---
 
@@ -113,6 +115,10 @@ Profesoras: `ver_pagos` se fuerza a `false` en el drawer.
 Router: staff (`esStaff`) → árbol `/directora`; padre → `/padre`.  
 `/acreditar-pago/:pagoId` está en el árbol staff.
 
+**Router extra (ya en código, no lo “arregles”):**
+- Secretaria: solo `/directora`, `/directora/alumnos*` y cambiar contraseña. `/alumnos` redirige a **crear**.
+- Maestra inglés: solo dashboard, lista alumnos y `/calificaciones*`.
+
 ---
 
 ## 4. Rutas (inventario)
@@ -178,8 +184,8 @@ Leyenda: ✅ estable · ⚠️ frágil / incompleto · ❌ no tocar / cancelado
 | Módulo | Estado | Dónde | Qué saber |
 |--------|--------|-------|-----------|
 | Grados | ✅ | `grados_screen`, `models/grado.dart` | `esKinder` / `esMaternal` / `esEstimulacion` por **nombre**. Colegiatura auto **solo kínder**. Maternal+estimulación = mismo grupo |
-| Alumnos | ✅ | `alumnos_screen`, `crear_alumno_screen` | Alta → genera pagos. Si pagos fallan → **rollback alumno**. `plan_pagos` 10/11/12, beca, `fecha_ingreso` |
-| Padres | ✅ | `padres_screen`, crear/ver | Un padre → varios hijos |
+| Alumnos | ✅ | `alumnos_screen`, `crear_alumno_screen` | Alta → genera pagos. Si pagos fallan → **rollback alumno**. `plan_pagos` 10/11/12, beca, `fecha_ingreso`. Foto opcional → Storage (abajo) |
+| Padres | ✅ | `padres_screen`, crear/ver | Un padre → varios hijos. Un alumno → **máx. 2 tutores** (`alumnos_padres` + `alumnos.padre_id` = el primero). `guardarPadresAlumno` |
 | Profesoras | ✅ | `profesores_screen` | `especialidad` titular/ingles, `grado_id` |
 | Permisos profesora | ✅ | `permisos_profesor_screen` | Extra sobre el rol. RLS manda |
 
@@ -188,10 +194,11 @@ Leyenda: ✅ estable · ⚠️ frágil / incompleto · ❌ no tocar / cancelado
 | Módulo | Estado | Dónde |
 |--------|--------|-------|
 | Pagos staff | ✅ | `pagos_screen` — 3 tabs: Alumnos / Extra / Bitácora gastos |
-| Acreditar | ✅ | `acreditar_pago_screen` + `abonos` + recibo PDF |
+| Acreditar | ✅ | **Único flujo en uso:** `/acreditar-pago/:pagoId` → `acreditar_pago_screen` → `acreditarPagoParcial` + recibo PDF |
+| Abono (huérfano) | ⚠️ | `registrar_abono_screen.dart` **existe pero no está en el router ni se navega**. No lo uses; no lo borres “porque sí”. El camino de Viri es Acreditar |
 | Config costos | ✅ | `configuracion_costos_screen` — cotización y chips de suma **solo aquí** |
 | Pagos padre | ✅ | `pagos_padre_screen` |
-| Excel | ✅ | `exportacion_pagos_excel.dart` (respeta filtros de la pestaña) |
+| Excel pagos | ✅ | `exportacion_pagos_excel.dart` — botón en AppBar de Pagos; respeta filtros de **esa** pestaña. Compartir o guardar en el teléfono |
 
 **Semáforo** (`pago.dart`, fecha a medianoche):
 
@@ -233,8 +240,9 @@ Alta alumno: solo colegiaturas del plan. No metas insc/seguro otra vez al cuadro
 | Anuncios | ✅ | `anuncios_screen` | Alcance todos o por grado |
 | Eventos | ✅ | `eventos_screen` | Staff CRUD; padres ven filtrados |
 | Incidentes | ✅ | `incidentes_screen`, tipos | Severidad 1–5. Padres los ven en detalle hijo |
-| Push | ⚠️ | `push_notification_service`, edge `notify-chat` | FCM + webhooks chat / recogida / abono |
-| WhatsApp | ⚠️ | `whatsapp_service` | Twilio opcional. Test fuera del menú |
+| Push FCM | ⚠️ | `push_notification_service` | Token al login. Edge `notify-chat`. Firebase **solo** para esto |
+| Notif. locales | ✅ | `notification_service` + `app_realtime_notifications` | Realtime de chat y recogida → banner local (también en foreground). Distinto de FCM |
+| WhatsApp | ⚠️ | `whatsapp_service`, `twilio_config.dart` | **Placeholders** (`TU_ACCOUNT_SID_AQUI`, sandbox). No está en menú (`/test-whatsapp`). No “actives” Twilio en este freeze |
 
 Mensaje masivo: cuenta destinatarios, solo activos, errores claros (commit reciente).
 
@@ -243,7 +251,7 @@ Mensaje masivo: cuenta destinatarios, solo activos, errores claros (commit recie
 | Módulo | Estado | Dónde | Qué saber |
 |--------|--------|-------|-----------|
 | Bitácora diaria | ✅ | `bitacoras_screen`, `bitacora_padre_screen` | Comió, baño, siesta, ánimo. Padres la ven |
-| Bitácora gastos | ✅ | `bitacora_gastos_screen` | También tab 3 de Pagos. Alcance multi-grupo |
+| Bitácora gastos | ✅ | `bitacora_gastos_screen` + panel embebido en tab 3 de Pagos | Alcance: todos / general escuela / por grado. **Excel** `exportacion_gastos_excel.dart` (mismo compartir/guardar que pagos) |
 | Entrada/salida | ✅ | `control_salidas_screen` | Quién trajo/recogió |
 | Autorizados | ✅ | `personas_autorizadas_screen` (staff y padre) | |
 | Recogida | ✅ | `solicitud_recogida_*`, panel dashboard | Padre pide; escuela atiende sheet |
@@ -267,6 +275,16 @@ Mensaje masivo: cuenta destinatarios, solo activos, errores claros (commit recie
 |--------|--|
 | Galería | ❌ Rutas comentadas, modelo `foto_galeria.dart` legacy. No revivir |
 
+### 5.8 Servicios de apoyo (ya existen)
+
+| Pieza | Dónde | Qué hace / qué no |
+|-------|--------|-------------------|
+| Capa de datos | `supabase_service.dart` | Mega-servicio: alumnos, pagos, abonos, califs, anuncios, incidentes, **2 papás**. Casi todo el CRUD pasa por aquí. No lo partas |
+| Fotos Storage | `storage_service.dart` · bucket **`fotos`** | **En uso:** foto de alumno al crear/editar (`alumnos.foto_url`, cards). Cámara o galería (`image_picker`, 800px, quality 70). iOS ya tiene `NSCameraUsageDescription` + `NSPhotoLibraryUsageDescription` |
+| Comprobante pago | mismo `StorageService.subirComprobantePago` | **Método escrito, nadie lo llama.** No lo cables en este freeze |
+| Recibo PDF | `recibo_pago_pdf.dart` + `pdf_branding.dart` | Sale al acreditar |
+| Permisos RPC | `permisos_service.dart` | Lo usa el drawer (profes). Directora **no** llama RPC |
+
 ---
 
 ## 6. Datos (Supabase) — modelo mental
@@ -278,11 +296,16 @@ auth.users
         └── (padre) → alumnos.padre_id
 
 grados
-alumnos (grado_id, plan_pagos, beca, fecha_ingreso)
+alumnos (grado_id, plan_pagos, beca, fecha_ingreso, foto_url, padre_id)
+  ├── alumnos_padres (hasta 2 tutores; el 1º también en padre_id)
   ├── pagos → abonos
   ├── calificaciones, bitacora_diaria, control_salidas
   ├── incidentes, entrevistas_padres, personas_autorizadas
   └── qr_temporales, solicitudes_recogida
+
+Storage bucket `fotos`:
+  alumnos/{id}/foto.ext          ← en uso
+  pagos/{id}/comprobante_*.ext   ← método listo, no se usa
 
 configuracion_costos (vigente)
 anuncios, eventos, menu_maternal
@@ -331,6 +354,8 @@ RLS: padres solo hijos; staff según rol. Deletes a veces `.select()` para detec
 - Default de filtros pagos → `todos`  
 - Sumar insc+seguro en cotización **sin** chip  
 - Reactivar galería  
+- Cablear `subirComprobantePago` o `RegistrarAbonoScreen`  
+- Poner credenciales reales en `twilio_config.dart`  
 - Commitear `GeneratedPluginRegistrant.java`, `google-services.json`, `GoogleService-Info.plist`, secrets  
 - `commit --amend` / force push a `main`
 
@@ -344,7 +369,9 @@ RLS: padres solo hijos; staff según rol. Deletes a veces `.select()` para detec
 | Drawer | iPad: menú no se queda en spinner. Chat visible para directora |
 | Alumnos | Crear kínder genera N mensualidades. Maternal no inventa plan 12 |
 | Pagos / filtros | Vencidos = 43-ish. Todos = todos. **Sin** recuadro de planes. Config: chips default off + anticipado/recargo |
-| Acreditar | Abono + lista refresca + PDF |
+| Acreditar | Desde Pagos → `/acreditar-pago/:id`. Abono + lista refresca + PDF. **No** abras `RegistrarAbonoScreen` |
+| Excel pagos / gastos | Pagos AppBar y Bitácora gastos: generar → compartir o guardar |
+| Foto alumno | Crear/editar alumno: cámara o galería; sale en cards. Bucket `fotos` |
 | Chat | Enviar ambos lados. Fuera de horario bloquea padre. Lista no leídos |
 | Bitácora | Staff escribe; padre ve el mismo día |
 | Recogida | Padre solicita; dashboard sheet; no rompas el tile |
@@ -378,11 +405,13 @@ Ticket (literal):
 
 | Archivo | Uso |
 |---------|-----|
-| **Este `OPENCODE.md`** | Toda la app, cambios chicos, iOS/Android |
+| **Este `OPENCODE.md`** | Toda la app **tal como está** en `1.0.8+4009` |
 | `DOCUMENTACION_HANDOFF_SISTEMA.md` | Historia / SQL de clon (julio 2026; versión y “iOS 10%” desactualizados) |
-| `ADD_PLANES_ANTICIPADO_RECARGO.sql` | Columnas cotización |
+| `ADD_PLANES_ANTICIPADO_RECARGO.sql` | Columnas cotización (opcionales; la app funciona sin ellas) |
 | `ADD_PLAN_11_Y_CUADRO_COLEGIATURAS.sql` | Plan 11 + cuadro solo colegiaturas |
+| `ADD_DOS_PADRES_POR_ALUMNO.sql` | Tabla `alumnos_padres` |
 | `INSTRUCCIONES_PUSH_SERVIDOR.md` | Edge Function notify-chat |
+| `GUIA_PAGOS_PARCIALES.md` | Habla de `RegistrarAbonoScreen` — **desactualizado**. El flujo real es Acreditar |
 | `*.md` Firebase / `MODULOS_PENDIENTES.md` / `EJECUTAR_AHORA_*` | Ruido. No |
 
 Fin. Conoce toda la escuela; cambia solo el salón que te pidieron.
