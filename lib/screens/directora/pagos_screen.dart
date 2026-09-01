@@ -11,14 +11,12 @@ import '../../services/recibo_pago_pdf.dart';
 import '../../models/pago.dart';
 import '../../models/abono.dart';
 import '../../models/alumno.dart';
-import '../../models/configuracion_costos.dart';
 import '../../models/grado.dart';
 import '../../config/app_colors.dart';
 import '../../widgets/app_drawer.dart';
 import '../../services/chat_service.dart';
 import '../../services/auth_service.dart';
 import '../../utils/pago_helpers.dart';
-import '../../widgets/planes_pago_referencia.dart';
 import 'bitacora_gastos_screen.dart';
 
 /// Formato de miles con coma (ej: 51,460.00)
@@ -566,11 +564,7 @@ class _PagosScreenState extends State<PagosScreen> with SingleTickerProviderStat
   /// Pestaña "Pagos de Alumnos" con filtros por grado, alumno (con buscador) y tipo
   Widget _buildPagosAlumnosTab(SupabaseService service) {
     return FutureBuilder<List<dynamic>>(
-      future: Future.wait([
-        service.obtenerAlumnos(),
-        service.obtenerGrados(),
-        service.obtenerConfiguracionCostosVigente(),
-      ]),
+      future: Future.wait([service.obtenerAlumnos(), service.obtenerGrados()]),
       builder: (context, snapshot) {
         final alumnos = snapshot.hasData && snapshot.data!.isNotEmpty
             ? (snapshot.data![0] as List<Alumno>)
@@ -578,14 +572,10 @@ class _PagosScreenState extends State<PagosScreen> with SingleTickerProviderStat
         final grados = snapshot.hasData && snapshot.data!.length > 1
             ? (snapshot.data![1] as List<Grado>)
             : <Grado>[];
-        final costos = snapshot.hasData && snapshot.data!.length > 2
-            ? snapshot.data![2] as ConfiguracionCostos?
-            : null;
         final mapaNombres = {for (var a in alumnos) a.id: a.nombreCompleto};
 
         return Column(
           children: [
-            if (costos != null) PlanesPagoReferencia(config: costos),
             _buildBarraColapsarFiltrosAlumnos(grados, mapaNombres),
             AnimatedSize(
               duration: const Duration(milliseconds: 240),
