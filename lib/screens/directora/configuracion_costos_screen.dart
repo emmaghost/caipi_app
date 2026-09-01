@@ -6,6 +6,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../config/app_colors.dart';
 import '../../models/configuracion_costos.dart';
+import '../../utils/pago_helpers.dart';
 import '../../widgets/app_drawer.dart';
 
 class ConfiguracionCostosScreen extends StatefulWidget {
@@ -25,10 +26,18 @@ class _ConfiguracionCostosScreenState extends State<ConfiguracionCostosScreen> {
   final _mensualidad12Controller = TextEditingController();
   final _mensualidad11Controller = TextEditingController();
   final _mensualidad10Controller = TextEditingController();
+  final _anticipado12Controller = TextEditingController();
+  final _anticipado11Controller = TextEditingController();
+  final _anticipado10Controller = TextEditingController();
+  final _recargo12Controller = TextEditingController();
+  final _recargo11Controller = TextEditingController();
+  final _recargo10Controller = TextEditingController();
   final _notasController = TextEditingController();
 
   ConfiguracionCostos? _configActual;
   bool _cargando = true;
+  bool _sumarInscripcion = false;
+  bool _sumarSeguro = false;
 
   void _refrescarVista() => setState(() {});
 
@@ -42,6 +51,12 @@ class _ConfiguracionCostosScreenState extends State<ConfiguracionCostosScreen> {
       _mensualidad12Controller,
       _mensualidad11Controller,
       _mensualidad10Controller,
+      _anticipado12Controller,
+      _anticipado11Controller,
+      _anticipado10Controller,
+      _recargo12Controller,
+      _recargo11Controller,
+      _recargo10Controller,
     ]) {
       c.addListener(_refrescarVista);
     }
@@ -55,6 +70,12 @@ class _ConfiguracionCostosScreenState extends State<ConfiguracionCostosScreen> {
       _mensualidad12Controller,
       _mensualidad11Controller,
       _mensualidad10Controller,
+      _anticipado12Controller,
+      _anticipado11Controller,
+      _anticipado10Controller,
+      _recargo12Controller,
+      _recargo11Controller,
+      _recargo10Controller,
     ]) {
       c.removeListener(_refrescarVista);
     }
@@ -63,6 +84,12 @@ class _ConfiguracionCostosScreenState extends State<ConfiguracionCostosScreen> {
     _mensualidad12Controller.dispose();
     _mensualidad11Controller.dispose();
     _mensualidad10Controller.dispose();
+    _anticipado12Controller.dispose();
+    _anticipado11Controller.dispose();
+    _anticipado10Controller.dispose();
+    _recargo12Controller.dispose();
+    _recargo11Controller.dispose();
+    _recargo10Controller.dispose();
     _notasController.dispose();
     super.dispose();
   }
@@ -84,6 +111,12 @@ class _ConfiguracionCostosScreenState extends State<ConfiguracionCostosScreen> {
         _mensualidad12Controller.text = _configActual!.costoMensualidad12.toString();
         _mensualidad11Controller.text = _configActual!.costoMensualidad11.toString();
         _mensualidad10Controller.text = _configActual!.costoMensualidad10.toString();
+        _anticipado12Controller.text = _fmtOpcional(_configActual!.costoAnticipado12);
+        _anticipado11Controller.text = _fmtOpcional(_configActual!.costoAnticipado11);
+        _anticipado10Controller.text = _fmtOpcional(_configActual!.costoAnticipado10);
+        _recargo12Controller.text = _fmtOpcional(_configActual!.costoRecargo12);
+        _recargo11Controller.text = _fmtOpcional(_configActual!.costoRecargo11);
+        _recargo10Controller.text = _fmtOpcional(_configActual!.costoRecargo10);
         _notasController.text = _configActual!.notas ?? '';
       }
     } catch (e) {
@@ -107,18 +140,25 @@ class _ConfiguracionCostosScreenState extends State<ConfiguracionCostosScreen> {
         'costo_mensualidad_12': double.parse(_mensualidad12Controller.text),
         'costo_mensualidad_11': double.parse(_mensualidad11Controller.text),
         'costo_mensualidad_10': double.parse(_mensualidad10Controller.text),
+        'costo_anticipado_12': _montoOpcional(_anticipado12Controller.text),
+        'costo_anticipado_11': _montoOpcional(_anticipado11Controller.text),
+        'costo_anticipado_10': _montoOpcional(_anticipado10Controller.text),
+        'costo_recargo_12': _montoOpcional(_recargo12Controller.text),
+        'costo_recargo_11': _montoOpcional(_recargo11Controller.text),
+        'costo_recargo_10': _montoOpcional(_recargo10Controller.text),
         'notas': _notasController.text.trim().isEmpty ? null : _notasController.text.trim(),
         'vigente': true,
         'vigencia_desde': DateTime.now().toIso8601String().split('T')[0],
       };
 
-      if (_configActual != null) {
-        await _supabase
-            .from('configuracion_costos')
-            .update(data)
-            .eq('id', _configActual!.id);
-      } else {
-        await _supabase.from('configuracion_costos').insert(data);
+      try {
+        await _persistirConfig(data);
+      } catch (_) {
+        // Columnas nuevas aún no existen en Supabase: guarda el resto.
+        final sinPlanesExtra = Map<String, dynamic>.from(data)
+          ..removeWhere((k, _) =>
+              k.startsWith('costo_anticipado_') || k.startsWith('costo_recargo_'));
+        await _persistirConfig(sinPlanesExtra);
       }
 
       if (mounted) {
@@ -144,7 +184,31 @@ class _ConfiguracionCostosScreenState extends State<ConfiguracionCostosScreen> {
     }
   }
 
+  Future<void> _persistirConfig(Map<String, dynamic> data) async {
+    if (_configActual != null) {
+      await _supabase
+          .from('configuracion_costos')
+          .update(data)
+          .eq('id', _configActual!.id);
+    } else {
+      await _supabase.from('configuracion_costos').insert(data);
+    }
+  }
+
   static String _fmt(double v) => '\$${v.toStringAsFixed(2)}';
+
+  static String _fmtOpcional(double? v) {
+    if (v == null || v <= 0) return '';
+    return v.toString();
+  }
+
+  static double? _montoOpcional(String raw) {
+    final t = raw.trim();
+    if (t.isEmpty) return null;
+    final n = double.tryParse(t);
+    if (n == null || n <= 0) return null;
+    return n;
+  }
 
   InputDecoration _fieldDecoration({
     required String label,
@@ -272,7 +336,7 @@ class _ConfiguracionCostosScreenState extends State<ConfiguracionCostosScreen> {
                       inputFormatters: [
                         FilteringTextInputFormatter.allow(RegExp(r'^\d+\.?\d{0,2}')),
                       ],
-                      validator: _validarMonto,
+                      validator: _validarMontoCero,
                     ),
                     const SizedBox(height: 14),
                     TextFormField(
@@ -287,11 +351,11 @@ class _ConfiguracionCostosScreenState extends State<ConfiguracionCostosScreen> {
                       inputFormatters: [
                         FilteringTextInputFormatter.allow(RegExp(r'^\d+\.?\d{0,2}')),
                       ],
-                      validator: _validarMonto,
+                      validator: _validarMontoCero,
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      'Inscripción y seguro se calculan en costos, pero no aparecen en el cuadro de pagos (solo colegiaturas).',
+                      'Inscripción y seguro se guardan como referencia. Por default no se suman en los cuadritos de abajo; tú eliges si incluirlos cuando un papá pida el total completo.',
                       style: GoogleFonts.poppins(fontSize: 12, color: AppColors.gris),
                     ),
                     const SizedBox(height: 14),
@@ -338,6 +402,76 @@ class _ConfiguracionCostosScreenState extends State<ConfiguracionCostosScreen> {
                         FilteringTextInputFormatter.allow(RegExp(r'^\d+\.?\d{0,2}')),
                       ],
                       validator: _validarMonto,
+                    ),
+                    const SizedBox(height: 22),
+                    Text(
+                      'Pago anticipado (pago único)',
+                      style: GoogleFonts.fredoka(
+                        fontSize: 17,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.azulOscuro,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Si lo dejas vacío se usa mensualidad × meses. Se muestra en Pagos para cotizar a los papás.',
+                      style: GoogleFonts.poppins(fontSize: 13, color: AppColors.gris),
+                    ),
+                    const SizedBox(height: 14),
+                    _campoMontoOpcional(
+                      controller: _anticipado12Controller,
+                      label: 'Pago anticipado a 12 meses',
+                      icon: Icons.payments_outlined,
+                      hintCalculado: _hintCalculado(_mensualidad12Controller, 12),
+                    ),
+                    const SizedBox(height: 14),
+                    _campoMontoOpcional(
+                      controller: _anticipado11Controller,
+                      label: 'Pago anticipado a 11 meses',
+                      icon: Icons.payments_outlined,
+                      hintCalculado: _hintCalculado(_mensualidad11Controller, 11),
+                    ),
+                    const SizedBox(height: 14),
+                    _campoMontoOpcional(
+                      controller: _anticipado10Controller,
+                      label: 'Pago anticipado a 10 meses',
+                      icon: Icons.payments_outlined,
+                      hintCalculado: _hintCalculado(_mensualidad10Controller, 10),
+                    ),
+                    const SizedBox(height: 22),
+                    Text(
+                      'Pago con recargo (mes a mes)',
+                      style: GoogleFonts.fredoka(
+                        fontSize: 17,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.azulOscuro,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Total del ciclo si pagan mensualidad por mensualidad. Vacío = mensualidad × meses.',
+                      style: GoogleFonts.poppins(fontSize: 13, color: AppColors.gris),
+                    ),
+                    const SizedBox(height: 14),
+                    _campoMontoOpcional(
+                      controller: _recargo12Controller,
+                      label: 'Pago con recargo a 12 meses',
+                      icon: Icons.event_repeat_outlined,
+                      hintCalculado: _hintCalculado(_mensualidad12Controller, 12),
+                    ),
+                    const SizedBox(height: 14),
+                    _campoMontoOpcional(
+                      controller: _recargo11Controller,
+                      label: 'Pago con recargo a 11 meses',
+                      icon: Icons.event_repeat_outlined,
+                      hintCalculado: _hintCalculado(_mensualidad11Controller, 11),
+                    ),
+                    const SizedBox(height: 14),
+                    _campoMontoOpcional(
+                      controller: _recargo10Controller,
+                      label: 'Pago con recargo a 10 meses',
+                      icon: Icons.event_repeat_outlined,
+                      hintCalculado: _hintCalculado(_mensualidad10Controller, 10),
                     ),
                     const SizedBox(height: 14),
                     TextFormField(
@@ -387,6 +521,39 @@ class _ConfiguracionCostosScreenState extends State<ConfiguracionCostosScreen> {
     final monto = double.tryParse(value);
     if (monto == null || monto <= 0) return 'Monto inválido';
     return null;
+  }
+
+  String? _validarMontoCero(String? value) {
+    if (value == null || value.isEmpty) return 'Obligatorio';
+    final monto = double.tryParse(value);
+    if (monto == null || monto < 0) return 'Monto inválido';
+    return null;
+  }
+
+  String _hintCalculado(TextEditingController mensualidad, int meses) {
+    final m = double.tryParse(mensualidad.text) ?? 0;
+    return _fmt(PagoHelpers.totalColegiaturas(m, meses));
+  }
+
+  Widget _campoMontoOpcional({
+    required TextEditingController controller,
+    required String label,
+    required IconData icon,
+    required String hintCalculado,
+  }) {
+    return TextFormField(
+      controller: controller,
+      decoration: _fieldDecoration(
+        label: label,
+        icon: icon,
+        hintText: hintCalculado,
+      ),
+      style: GoogleFonts.poppins(fontSize: 16, fontWeight: FontWeight.w500),
+      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+      inputFormatters: [
+        FilteringTextInputFormatter.allow(RegExp(r'^\d+\.?\d{0,2}')),
+      ],
+    );
   }
 
   Widget _buildInfoCard() {
@@ -495,14 +662,36 @@ class _ConfiguracionCostosScreenState extends State<ConfiguracionCostosScreen> {
     final mensualidad12 = double.tryParse(_mensualidad12Controller.text) ?? 0;
     final mensualidad11 = double.tryParse(_mensualidad11Controller.text) ?? 0;
     final mensualidad10 = double.tryParse(_mensualidad10Controller.text) ?? 0;
+    final inscripcion = double.tryParse(_inscripcionController.text) ?? 0;
+    final seguro = double.tryParse(_seguroController.text) ?? 0;
 
-    final subMeses12 = mensualidad12 * 12;
-    final subMeses11 = mensualidad11 * 11;
-    final subMeses10 = mensualidad10 * 10;
-    // Totales solo de colegiaturas (sin inscripción ni seguro).
-    final totalPlan12 = subMeses12;
-    final totalPlan11 = subMeses11;
-    final totalPlan10 = subMeses10;
+    final subMeses12 = PagoHelpers.totalColegiaturas(mensualidad12, 12);
+    final subMeses11 = PagoHelpers.totalColegiaturas(mensualidad11, 11);
+    final subMeses10 = PagoHelpers.totalColegiaturas(mensualidad10, 10);
+    final totalPlan12 = PagoHelpers.totalPlanMostrado(
+      mensualidad: mensualidad12,
+      meses: 12,
+      inscripcion: inscripcion,
+      seguro: seguro,
+      sumarInscripcion: _sumarInscripcion,
+      sumarSeguro: _sumarSeguro,
+    );
+    final totalPlan11 = PagoHelpers.totalPlanMostrado(
+      mensualidad: mensualidad11,
+      meses: 11,
+      inscripcion: inscripcion,
+      seguro: seguro,
+      sumarInscripcion: _sumarInscripcion,
+      sumarSeguro: _sumarSeguro,
+    );
+    final totalPlan10 = PagoHelpers.totalPlanMostrado(
+      mensualidad: mensualidad10,
+      meses: 10,
+      inscripcion: inscripcion,
+      seguro: seguro,
+      sumarInscripcion: _sumarInscripcion,
+      sumarSeguro: _sumarSeguro,
+    );
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -534,39 +723,76 @@ class _ConfiguracionCostosScreenState extends State<ConfiguracionCostosScreen> {
         ),
         const SizedBox(height: 6),
         Text(
-          'Total = solo colegiaturas (sin inscripción ni seguro).',
+          'Por default el total es solo colegiaturas. Enciende inscripción o seguro si un papá quiere ver el costo completo.',
           style: GoogleFonts.poppins(fontSize: 13, color: AppColors.gris),
+        ),
+        const SizedBox(height: 12),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            FilterChip(
+              label: const Text('Sumar inscripción'),
+              selected: _sumarInscripcion,
+              onSelected: (v) => setState(() => _sumarInscripcion = v),
+              selectedColor: AppColors.morado.withValues(alpha: 0.22),
+              checkmarkColor: AppColors.azulOscuro,
+              labelStyle: GoogleFonts.poppins(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: AppColors.azulOscuro,
+              ),
+            ),
+            FilterChip(
+              label: const Text('Sumar seguro'),
+              selected: _sumarSeguro,
+              onSelected: (v) => setState(() => _sumarSeguro = v),
+              selectedColor: AppColors.morado.withValues(alpha: 0.22),
+              checkmarkColor: AppColors.azulOscuro,
+              labelStyle: GoogleFonts.poppins(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: AppColors.azulOscuro,
+              ),
+            ),
+          ],
         ),
         const SizedBox(height: 16),
         LayoutBuilder(
           builder: (context, constraints) {
             final narrow = constraints.maxWidth < 720;
             final card12 = _buildPlanCard(
-              titulo: '12 mensualidades',
+              titulo: 'Pago anual · 12 meses',
               subtitulo: 'Agosto - Julio',
               mensualidad: mensualidad12,
               meses: 12,
               subtotalMensualidades: subMeses12,
+              inscripcion: inscripcion,
+              seguro: seguro,
               total: totalPlan12,
               accent: AppColors.exitoPago,
               lightAccent: const Color(0xFFE8F8F0),
             );
             final card11 = _buildPlanCard(
-              titulo: '11 mensualidades',
+              titulo: 'Dividido a 11 meses',
               subtitulo: 'Agosto - Junio',
               mensualidad: mensualidad11,
               meses: 11,
               subtotalMensualidades: subMeses11,
+              inscripcion: inscripcion,
+              seguro: seguro,
               total: totalPlan11,
               accent: AppColors.azul,
               lightAccent: const Color(0xFFE8F4FC),
             );
             final card10 = _buildPlanCard(
-              titulo: '10 mensualidades',
+              titulo: 'Dividido a 10 meses',
               subtitulo: 'Agosto - Mayo',
               mensualidad: mensualidad10,
               meses: 10,
               subtotalMensualidades: subMeses10,
+              inscripcion: inscripcion,
+              seguro: seguro,
               total: totalPlan10,
               accent: AppColors.purpura,
               lightAccent: const Color(0xFFF3EEFF),
@@ -607,6 +833,8 @@ class _ConfiguracionCostosScreenState extends State<ConfiguracionCostosScreen> {
     required double mensualidad,
     required int meses,
     required double subtotalMensualidades,
+    required double inscripcion,
+    required double seguro,
     required double total,
     required Color accent,
     required Color lightAccent,
@@ -689,6 +917,9 @@ class _ConfiguracionCostosScreenState extends State<ConfiguracionCostosScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   _miniRow('$meses × mensualidad', _fmt(subtotalMensualidades)),
+                  if (_sumarInscripcion)
+                    _miniRow('Inscripción', _fmt(inscripcion)),
+                  if (_sumarSeguro) _miniRow('Seguro + credencial', _fmt(seguro)),
                   const SizedBox(height: 8),
                   Container(
                     padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 10),
@@ -701,7 +932,9 @@ class _ConfiguracionCostosScreenState extends State<ConfiguracionCostosScreen> {
                       children: [
                         Flexible(
                           child: Text(
-                            'Total colegiaturas',
+                            (_sumarInscripcion || _sumarSeguro)
+                                ? 'Total'
+                                : 'Total colegiaturas',
                             style: GoogleFonts.poppins(
                               fontWeight: FontWeight.w700,
                               fontSize: 12,

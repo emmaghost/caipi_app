@@ -103,6 +103,61 @@ void main() {
       expect(fechas.last, DateTime(2026, 6, 5));
     });
 
+    test('totalPlanMostrado no suma inscripción ni seguro por default', () {
+      expect(
+        PagoHelpers.totalPlanMostrado(
+          mensualidad: 2000,
+          meses: 12,
+          inscripcion: 1500,
+          seguro: 300,
+        ),
+        24000,
+      );
+    });
+
+    test('totalPlanMostrado suma solo lo que la directora enciende', () {
+      expect(
+        PagoHelpers.totalPlanMostrado(
+          mensualidad: 2000,
+          meses: 12,
+          inscripcion: 1500,
+          seguro: 300,
+          sumarInscripcion: true,
+        ),
+        25500,
+      );
+      expect(
+        PagoHelpers.totalPlanMostrado(
+          mensualidad: 2000,
+          meses: 10,
+          inscripcion: 1500,
+          seguro: 300,
+          sumarInscripcion: true,
+          sumarSeguro: true,
+        ),
+        21800,
+      );
+    });
+
+    test('montoPlanOCalculado usa el configurado o mensualidad × meses', () {
+      expect(
+        PagoHelpers.montoPlanOCalculado(
+          configurado: 18000,
+          mensualidad: 2000,
+          meses: 12,
+        ),
+        18000,
+      );
+      expect(
+        PagoHelpers.montoPlanOCalculado(
+          configurado: null,
+          mensualidad: 2400,
+          meses: 10,
+        ),
+        24000,
+      );
+    });
+
     test('esTipoCuadroPagos excluye inscripción y seguro', () {
       expect(PagoHelpers.esTipoCuadroPagos('mensualidad'), isTrue);
       expect(PagoHelpers.esTipoCuadroPagos('otro'), isTrue);

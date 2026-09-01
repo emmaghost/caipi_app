@@ -117,6 +117,38 @@ class PagoHelpers {
     }
   }
 
+  /// Total de colegiaturas del plan (mensualidad × meses).
+  static double totalColegiaturas(double mensualidad, int meses) {
+    return mensualidad * meses;
+  }
+
+  /// Total a mostrar en comparativa / tableta.
+  /// Por default NO suma inscripción ni seguro; la directora lo enciende
+  /// cuando un papá pide ver el costo completo.
+  static double totalPlanMostrado({
+    required double mensualidad,
+    required int meses,
+    double inscripcion = 0,
+    double seguro = 0,
+    bool sumarInscripcion = false,
+    bool sumarSeguro = false,
+  }) {
+    var total = totalColegiaturas(mensualidad, meses);
+    if (sumarInscripcion) total += inscripcion;
+    if (sumarSeguro) total += seguro;
+    return total;
+  }
+
+  /// Usa el monto configurado si es válido; si no, mensualidad × meses.
+  static double montoPlanOCalculado({
+    double? configurado,
+    required double mensualidad,
+    required int meses,
+  }) {
+    if (configurado != null && configurado > 0) return configurado;
+    return totalColegiaturas(mensualidad, meses);
+  }
+
   /// Inscripción/seguro de kínder no van en el cuadro; inscripción de estimulación sí.
   static bool esTipoCuadroPagos(String? tipoPago, {String? concepto}) {
     final t = (tipoPago ?? '').toLowerCase();

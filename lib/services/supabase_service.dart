@@ -9,6 +9,7 @@ import '../models/anuncio.dart';
 import '../models/grado.dart';
 import '../models/usuario.dart';
 import '../models/abono.dart';
+import '../models/configuracion_costos.dart';
 import '../utils/pago_helpers.dart';
 
 class SupabaseService {
@@ -488,6 +489,22 @@ class SupabaseService {
     }
 
     await _supabase.from('pagos').insert(pagos);
+  }
+
+  Future<ConfiguracionCostos?> obtenerConfiguracionCostosVigente() async {
+    try {
+      final response = await _supabase
+          .from('configuracion_costos')
+          .select()
+          .eq('vigente', true)
+          .order('vigencia_desde', ascending: false)
+          .limit(1)
+          .maybeSingle();
+      if (response == null) return null;
+      return ConfiguracionCostos.fromJson(response);
+    } catch (_) {
+      return null;
+    }
   }
 
   /// Monto de una sesión de estimulación (para cargos manuales).
