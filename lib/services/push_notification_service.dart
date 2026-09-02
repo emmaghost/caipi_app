@@ -76,9 +76,8 @@ class PushNotificationService {
       });
 
       try {
-        final initial = await _fcm
-            .getInitialMessage()
-            .timeout(const Duration(seconds: 3));
+        final initial =
+            await _fcm.getInitialMessage().timeout(const Duration(seconds: 3));
         if (initial != null) {
           final ruta = initial.data['ruta']?.toString();
           if (ruta != null && ruta.isNotEmpty) {
@@ -104,70 +103,73 @@ class PushNotificationService {
     }
   }
 
- /// Registra el token FCM del usuario autenticado.
-///
-/// En iOS espera primero a que APNs entregue su token, ya que Firebase
-/// necesita asociar el token APNs con el token FCM antes de poder obtenerlo.
-///
-/// @return Future<void>
-Future<void> registrarTokenUsuarioActual() async {
-  if (!_ready) {
-    debugPrint('FCM: servicio aún no está listo');
-    return;
-  }
-
-  final uid = Supabase.instance.client.auth.currentUser?.id;
-
-  if (uid == null) {
-    debugPrint('FCM: no hay usuario autenticado');
-    return;
-  }
-
-  try {
-    if (Platform.isIOS || Platform.isMacOS) {
-      String? apnsToken;
-
-      // APNs puede tardar un poco después de conceder permisos.
-      for (var intento = 1; intento <= 10; intento++) {
-        apnsToken = await _fcm.getAPNSToken();
-
-        if (apnsToken != null && apnsToken.isNotEmpty) {
-          debugPrint('✅ APNs token disponible');
-          break;
-        }
-
-        debugPrint(
-          'FCM: esperando APNs token... intento $intento/10',
-        );
-
-        await Future<void>.delayed(
-          const Duration(milliseconds: 500),
-        );
-      }
-
-      if (apnsToken == null || apnsToken.isEmpty) {
-        debugPrint('❌ FCM: APNs token no disponible');
-        return;
-      }
-    }
-
-    final token = await _fcm.getToken();
-
-    if (token == null || token.isEmpty) {
-      debugPrint('FCM: sin token aún');
+  /// Registra el token FCM del usuario autenticado.
+  ///
+  /// En iOS espera primero a que APNs entregue su token antes de solicitar
+  /// el token FCM. Esto evita que el registro falle cuando APNs todavía
+  /// no ha terminado de inicializarse.
+  ///
+  /// En Android obtiene directamente el token FCM.
+  ///
+  /// @return `Future<void>`
+  Future<void> registrarTokenUsuarioActual() async {
+    if (!_ready) {
+      debugPrint('FCM: servicio aún no está listo');
       return;
     }
 
-    await _guardarToken(
-      usuarioId: uid,
-      token: token,
-    );
+    final uid = Supabase.instance.client.auth.currentUser?.id;
 
-    debugPrint('✅ Token FCM guardado para $uid');
-  } catch (e) {
-    debugPrint('❌ Error registrando token FCM: $e');
+    if (uid == null) {
+      debugPrint('FCM: no hay usuario autenticado');
+      return;
+    }
+
+    try {
+      // iOS necesita primero obtener el token de APNs.
+      if (Platform.isIOS) {
+        String? apnsToken;
+
+        for (var intento = 1; intento <= 20; intento++) {
+          apnsToken = await _fcm.getAPNSToken();
+
+          if (apnsToken != null && apnsToken.isNotEmpty) {
+            debugPrint('✅ APNs token disponible');
+            break;
+          }
+
+          debugPrint(
+            'FCM: esperando APNs token... intento $intento/20',
+          );
+
+          await Future<void>.delayed(
+            const Duration(milliseconds: 500),
+          );
+        }
+
+        if (apnsToken == null || apnsToken.isEmpty) {
+          debugPrint('❌ FCM: APNs token no disponible');
+          return;
+        }
+      }
+
+      final token = await _fcm.getToken();
+
+      if (token == null || token.isEmpty) {
+        debugPrint('FCM: sin token aún');
+        return;
+      }
+
+      await _guardarToken(
+        usuarioId: uid,
+        token: token,
+      );
+
+      debugPrint('✅ Token FCM guardado para $uid');
+    } catch (e) {
+      debugPrint('❌ Error registrando token FCM: $e');
+    }
   }
-}
 
   Future<void> _guardarToken({
     required String usuarioId,
@@ -197,8 +199,7 @@ Future<void> registrarTokenUsuarioActual() async {
     try {
       await Supabase.instance.client
           .from('device_tokens')
-          .update({'activo': false})
-          .eq('usuario_id', uid);
+          .update({'activo': false}).eq('usuario_id', uid);
     } catch (e) {
       debugPrint('Error desactivando tokens: $e');
     }
