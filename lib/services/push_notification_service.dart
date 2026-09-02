@@ -104,24 +104,70 @@ class PushNotificationService {
     }
   }
 
-  /// Llamar tras login o al recuperar sesión.
-  Future<void> registrarTokenUsuarioActual() async {
-    if (!_ready) return;
-    final uid = Supabase.instance.client.auth.currentUser?.id;
-    if (uid == null) return;
+ /// Registra el token FCM del usuario autenticado.
+///
+/// En iOS espera primero a que APNs entregue su token, ya que Firebase
+/// necesita asociar el token APNs con el token FCM antes de poder obtenerlo.
+///
+/// @return Future<void>
+Future<void> registrarTokenUsuarioActual() async {
+  if (!_ready) {
+    debugPrint('FCM: servicio aún no está listo');
+    return;
+  }
 
-    try {
-      final token = await _fcm.getToken();
-      if (token == null || token.isEmpty) {
-        debugPrint('FCM: sin token aún');
+  final uid = Supabase.instance.client.auth.currentUser?.id;
+
+  if (uid == null) {
+    debugPrint('FCM: no hay usuario autenticado');
+    return;
+  }
+
+  try {
+    if (Platform.isIOS || Platform.isMacOS) {
+      String? apnsToken;
+
+      // APNs puede tardar un poco después de conceder permisos.
+      for (var intento = 1; intento <= 10; intento++) {
+        apnsToken = await _fcm.getAPNSToken();
+
+        if (apnsToken != null && apnsToken.isNotEmpty) {
+          debugPrint('✅ APNs token disponible');
+          break;
+        }
+
+        debugPrint(
+          'FCM: esperando APNs token... intento $intento/10',
+        );
+
+        await Future<void>.delayed(
+          const Duration(milliseconds: 500),
+        );
+      }
+
+      if (apnsToken == null || apnsToken.isEmpty) {
+        debugPrint('❌ FCM: APNs token no disponible');
         return;
       }
-      await _guardarToken(usuarioId: uid, token: token);
-      debugPrint('✅ Token FCM guardado para $uid');
-    } catch (e) {
-      debugPrint('Error registrando token FCM: $e');
     }
+
+    final token = await _fcm.getToken();
+
+    if (token == null || token.isEmpty) {
+      debugPrint('FCM: sin token aún');
+      return;
+    }
+
+    await _guardarToken(
+      usuarioId: uid,
+      token: token,
+    );
+
+    debugPrint('✅ Token FCM guardado para $uid');
+  } catch (e) {
+    debugPrint('❌ Error registrando token FCM: $e');
   }
+}
 
   Future<void> _guardarToken({
     required String usuarioId,
