@@ -342,6 +342,7 @@ class _PagosScreenState extends State<PagosScreen> with SingleTickerProviderStat
         label: Text('Registrar gasto', style: GoogleFonts.poppins(fontWeight: FontWeight.w600)),
       );
     }
+    if (!auth.puedeGestionarPagos) return null;
     return FloatingActionButton.extended(
       onPressed: () => _mostrarMenuAgregarPago(context),
       heroTag: 'agregar_pago',
@@ -1588,23 +1589,50 @@ class _PagosScreenState extends State<PagosScreen> with SingleTickerProviderStat
             ),
             if (!completamentePagado) ...[
               const SizedBox(height: 14),
-              SizedBox(
-                width: double.infinity,
-                child: FilledButton.icon(
-                  onPressed: () async {
-                    await context.push('/acreditar-pago/${pago.id}');
-                    if (context.mounted) await _refrescarPagosPendientes(service);
-                  },
-                  icon: const Icon(Icons.payments_outlined, size: 20),
-                  label: const Text('Acreditar pago'),
-                  style: FilledButton.styleFrom(
-                    backgroundColor: const Color(0xFF6B5B95),
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              if (context.read<AuthService>().puedeGestionarPagos) ...[
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.icon(
+                    onPressed: () async {
+                      await context.push('/acreditar-pago/${pago.id}');
+                      if (context.mounted) {
+                        await _refrescarPagosPendientes(service);
+                      }
+                    },
+                    icon: const Icon(Icons.payments_outlined, size: 20),
+                    label: const Text('Acreditar pago'),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: const Color(0xFF6B5B95),
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
                   ),
                 ),
-              ),
+                const SizedBox(height: 8),
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    onPressed: () => _mostrarDialogoAjustarMonto(
+                      context,
+                      service,
+                      pago,
+                    ),
+                    icon: const Icon(Icons.tune, size: 18),
+                    label: const Text('Ajustar monto'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: const Color(0xFF6B5B95),
+                      side: const BorderSide(color: Color(0xFF6B5B95)),
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
             ],
             if (pago.montoPagado > 0) ...[
               const SizedBox(height: 14),
@@ -1933,6 +1961,236 @@ class _PagosScreenState extends State<PagosScreen> with SingleTickerProviderStat
         ),
       ),
     );
+  }
+
+  Future<void> _mostrarDialogoAjustarMonto(
+    BuildContext context,
+    SupabaseService service,
+    Pago pago,
+  ) async {
+    final montoController = TextEditingController(
+      text: pago.montoBruto > 0
+          ? pago.montoBruto.toStringAsFixed(2)
+          : pago.monto.toStringAsFixed(2),
+    );
+    final descuentoController = TextEditingController(
+      text: pago.descuento.toStringAsFixed(2),
+    );
+    final notasController = TextEditingController(text: pago.notas ?? '');
+
+    final confirmar = await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        final bottomInset = MediaQuery.viewPaddingOf(context).bottom;
+        return AlertDialog(
+          insetPadding:
+              const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
+          title: Row(
+            children: [
+              Icon(Icons.tune, color: AppColors.morado, size: 26),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  'Ajustar monto',
+                  style: GoogleFonts.fredoka(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          content: SizedBox(
+            width: 420,
+            child: SingleChildScrollView(
+              child: StatefulBuilder(
+                builder: (context, setLocal) {
+                  final bruto = double.tryParse(
+                        montoController.text.replaceAll(',', '.'),
+                      ) ??
+                      0;
+                  final desc = double.tryParse(
+                        descuentoController.text.replaceAll(',', '.'),
+                      ) ??
+                      0;
+                  double? neto;
+                  String? aviso;
+                  try {
+                    if (bruto > 0) {
+                      neto = PagoHelpers.montoNeto(
+                        montoBruto: bruto,
+                        descuento: desc,
+                      );
+                      if (neto < pago.montoPagado) {
+                        aviso =
+                            'El neto no puede ser menor a lo abonado '
+                            '(\$${_formatoMonto(pago.montoPagado)})';
+                      }
+                    }
+                  } catch (e) {
+                    neto = null;
+                    aviso = e.toString().replaceFirst('Invalid argument(s): ', '');
+                  }
+
+                  return Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Text(
+                        pago.descripcionCompleta,
+                        style: GoogleFonts.poppins(
+                          fontWeight: FontWeight.w600,
+                          fontSize: 14,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Actual: \$${_formatoMonto(pago.monto)}'
+                        '${pago.montoPagado > 0 ? ' · Abonado \$${_formatoMonto(pago.montoPagado)}' : ''}',
+                        style: GoogleFonts.poppins(
+                          fontSize: 12,
+                          color: Colors.grey[700],
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      TextFormField(
+                        controller: montoController,
+                        keyboardType: const TextInputType.numberWithOptions(
+                          decimal: true,
+                        ),
+                        onChanged: (_) => setLocal(() {}),
+                        decoration: InputDecoration(
+                          labelText: 'Monto bruto *',
+                          prefixText: '\$ ',
+                          helperText:
+                              'Puedes subir el monto (recargo) o bajarlo',
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      TextFormField(
+                        controller: descuentoController,
+                        keyboardType: const TextInputType.numberWithOptions(
+                          decimal: true,
+                        ),
+                        onChanged: (_) => setLocal(() {}),
+                        decoration: InputDecoration(
+                          labelText: 'Descuento',
+                          prefixText: '\$ ',
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                      ),
+                      if (neto != null) ...[
+                        const SizedBox(height: 8),
+                        Text(
+                          'A cobrar (neto): \$${_formatoMonto(neto)}',
+                          style: GoogleFonts.poppins(
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.morado,
+                          ),
+                        ),
+                      ],
+                      if (aviso != null) ...[
+                        const SizedBox(height: 6),
+                        Text(
+                          aviso,
+                          style: GoogleFonts.poppins(
+                            fontSize: 12,
+                            color: AppColors.rojo,
+                          ),
+                        ),
+                      ],
+                      const SizedBox(height: 12),
+                      TextFormField(
+                        controller: notasController,
+                        maxLines: 2,
+                        decoration: InputDecoration(
+                          labelText: 'Notas',
+                          hintText: 'Ej. ajuste por recargo / descuento',
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                      ),
+                      SizedBox(height: bottomInset > 0 ? 8 : 0),
+                    ],
+                  );
+                },
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancelar'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(context, true),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.morado,
+                foregroundColor: Colors.white,
+              ),
+              child: const Text('Guardar'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirmar != true) {
+      montoController.dispose();
+      descuentoController.dispose();
+      notasController.dispose();
+      return;
+    }
+
+    final bruto =
+        double.tryParse(montoController.text.replaceAll(',', '.'));
+    final desc =
+        double.tryParse(descuentoController.text.replaceAll(',', '.')) ?? 0;
+    final notas = notasController.text.trim();
+
+    montoController.dispose();
+    descuentoController.dispose();
+    notasController.dispose();
+
+    if (bruto == null || bruto <= 0) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Indica un monto bruto válido'),
+          backgroundColor: AppColors.rojo,
+        ),
+      );
+      return;
+    }
+
+    try {
+      await service.ajustarMontoPago(
+        pagoId: pago.id,
+        montoBruto: bruto,
+        descuento: desc,
+        notas: notas.isEmpty ? null : notas,
+      );
+      if (!context.mounted) return;
+      await _refrescarPagosPendientes(service);
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Monto actualizado'),
+          backgroundColor: AppColors.verde,
+        ),
+      );
+    } catch (e) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error: $e'), backgroundColor: AppColors.rojo),
+      );
+    }
   }
 
   Future<void> _mostrarDialogoCrearPagoManual(BuildContext context) async {

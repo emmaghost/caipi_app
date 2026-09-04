@@ -112,6 +112,7 @@ class _DashboardDirectoraState extends State<DashboardDirectora> {
     final usuario = authService.currentUser;
     final menuCompleto = usuario != null &&
         !usuario.esSecretaria &&
+        !usuario.esCaja &&
         !usuario.esMaestraIngles;
 
     // Si no hay usuario, mostrar loading
@@ -290,9 +291,11 @@ class _DashboardDirectoraState extends State<DashboardDirectora> {
                         Text(
                           usuario.esSecretaria
                               ? 'Alta de alumnos (junta)'
-                              : usuario.esMaestraIngles
-                                  ? 'Inglés — tu grupo'
-                                  : 'Panel de Directora',
+                              : usuario.esCaja
+                                  ? 'Caja / Pagos'
+                                  : usuario.esMaestraIngles
+                                      ? 'Inglés — tu grupo'
+                                      : 'Panel de Directora',
                           style: GoogleFonts.poppins(
                             fontSize: 14,
                             color: Colors.white.withOpacity(0.9),
@@ -443,6 +446,46 @@ class _DashboardDirectoraState extends State<DashboardDirectora> {
             const SizedBox(height: 24),
             ],
 
+            if (usuario.esCaja) ...[
+              Text(
+                'Resumen de pagos',
+                style: GoogleFonts.poppins(
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                  color: AppColors.negro,
+                ),
+              ),
+              const SizedBox(height: 16),
+              StreamBuilder<List<Map<String, dynamic>>>(
+                stream: Supabase.instance.client
+                    .from('pagos')
+                    .stream(primaryKey: ['id']),
+                builder: (context, pagosSnapshot) {
+                  final pagosVencidos = (pagosSnapshot.data ?? []).where((raw) {
+                    try {
+                      return Pago.fromJson(
+                        Map<String, dynamic>.from(raw),
+                      ).estaVencido;
+                    } catch (_) {
+                      return false;
+                    }
+                  }).length;
+                  return _buildStatCard(
+                    context: context,
+                    title: 'Pagos vencidos',
+                    value: pagosVencidos,
+                    icon: Icons.payment,
+                    color: AppColors.naranja,
+                    gradient: const LinearGradient(
+                      colors: [AppColors.amarillo, AppColors.naranja],
+                    ),
+                    onTap: () => context.go('/directora/pagos'),
+                  );
+                },
+              ),
+              const SizedBox(height: 24),
+            ],
+
             if (usuario.esSecretaria) ...[
               Card(
                 elevation: 0,
@@ -494,7 +537,11 @@ class _DashboardDirectoraState extends State<DashboardDirectora> {
 
             // Acciones rápidas
             Text(
-              usuario.esSecretaria ? 'Más opciones' : 'Acciones Rápidas',
+              usuario.esSecretaria
+                  ? 'Más opciones'
+                  : usuario.esCaja
+                      ? 'Acciones de caja'
+                      : 'Acciones Rápidas',
               style: GoogleFonts.poppins(
                 fontSize: 20,
                 fontWeight: FontWeight.bold,
@@ -511,7 +558,7 @@ class _DashboardDirectoraState extends State<DashboardDirectora> {
               crossAxisSpacing: accionesGap,
               childAspectRatio: accionesAspect,
               children: [
-                if (!usuario.esSecretaria)
+                if (!usuario.esSecretaria && !usuario.esCaja)
                   _buildActionCard(
                   context: context,
                   title: 'Ver Alumnos',
@@ -533,7 +580,7 @@ class _DashboardDirectoraState extends State<DashboardDirectora> {
                     titleSize: accionesFont,
                     onTap: () => context.go('/directora/calificaciones'),
                   ),
-                if (usuario.esDirectora)
+                if (usuario.puedeGestionarPagos)
                   _buildActionCard(
                     context: context,
                     title: 'Gestionar Pagos',
@@ -616,7 +663,9 @@ class _DashboardDirectoraState extends State<DashboardDirectora> {
                     context.push('/directora/alumnos/crear');
                   },
                 ),
-                if (usuario.esSecretaria || usuario.esMaestraIngles)
+                if (usuario.esSecretaria ||
+                    usuario.esCaja ||
+                    usuario.esMaestraIngles)
                   _buildActionCard(
                     context: context,
                     title: 'Cambiar contraseña',
@@ -648,6 +697,14 @@ class _DashboardDirectoraState extends State<DashboardDirectora> {
     required Gradient gradient,
     VoidCallback? onTap,
   }) {
+    final h = MediaQuery.sizeOf(context).height;
+    final textScale = MediaQuery.textScalerOf(context).scale(1.0);
+    final compact = h < 720 || textScale > 1.1;
+    final pad = compact ? 12.0 : 20.0;
+    final iconSize = compact ? 24.0 : 32.0;
+    final valueSize = compact ? 24.0 : 32.0;
+    final titleSize = compact ? 11.0 : 13.0;
+
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(20),
@@ -664,26 +721,29 @@ class _DashboardDirectoraState extends State<DashboardDirectora> {
           ],
         ),
         child: Padding(
-          padding: const EdgeInsets.all(20),
+          padding: EdgeInsets.all(pad),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               Container(
-                padding: const EdgeInsets.all(12),
+                padding: EdgeInsets.all(compact ? 8 : 12),
                 decoration: BoxDecoration(
                   color: Colors.white.withOpacity(0.3),
                   shape: BoxShape.circle,
                 ),
-                child: Icon(icon, size: 32, color: Colors.white),
+                child: Icon(icon, size: iconSize, color: Colors.white),
               ),
-              const SizedBox(height: 12),
-              Text(
-                value.toString(),
-                style: GoogleFonts.poppins(
-                  fontSize: 32,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.white,
+              SizedBox(height: compact ? 8 : 12),
+              FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(
+                  value.toString(),
+                  style: GoogleFonts.poppins(
+                    fontSize: valueSize,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                  ),
                 ),
               ),
               const SizedBox(height: 4),
@@ -691,8 +751,9 @@ class _DashboardDirectoraState extends State<DashboardDirectora> {
                 title,
                 textAlign: TextAlign.center,
                 maxLines: 2,
+                overflow: TextOverflow.ellipsis,
                 style: GoogleFonts.poppins(
-                  fontSize: 13,
+                  fontSize: titleSize,
                   fontWeight: FontWeight.w600,
                   color: Colors.white.withOpacity(0.95),
                 ),

@@ -25,9 +25,17 @@ class _PortageListaEditorScreenState extends State<PortageListaEditorScreen> {
   bool _loading = true;
   bool _saving = false;
   bool _activa = true;
+  String _tipo = 'habilidades';
 
   bool get _puedeEditar =>
       context.read<AuthService>().currentUser?.esDirectora == true;
+
+  bool get _esAlertas => _tipo == 'alertas';
+
+  String get _tipoEtiqueta => _esAlertas ? 'Alertas' : 'Habilidades';
+
+  String get _tituloItems =>
+      _esAlertas ? 'Signos / ítems de alerta' : 'Indicadores de habilidades';
 
   @override
   void initState() {
@@ -62,6 +70,7 @@ class _PortageListaEditorScreenState extends State<PortageListaEditorScreen> {
       setState(() {
         _nombreListaCtrl.text = lista?.nombre ?? '';
         _activa = lista?.activa ?? true;
+        _tipo = lista?.tipo ?? 'habilidades';
         _loading = false;
       });
     } catch (e) {
@@ -112,17 +121,67 @@ class _PortageListaEditorScreenState extends State<PortageListaEditorScreen> {
     }
   }
 
+  Future<void> _eliminarLista() async {
+    if (!_puedeEditar) return;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('¿Eliminar lista?'),
+        content: const Text(
+          'Si borras esta lista, también se borrarán las evaluaciones y '
+          'calificaciones ya hechas con ella. Esta acción no se puede deshacer.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: FilledButton.styleFrom(backgroundColor: AppColors.rojo),
+            child: const Text('Eliminar'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    try {
+      await _portage.eliminarLista(widget.listaId);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Lista eliminada'),
+          backgroundColor: AppColors.verde,
+        ),
+      );
+      context.pop(true);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error: $e'), backgroundColor: AppColors.rojo),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.grisClaro,
       appBar: AppBar(
         title: Text(
-          'Indicadores de desarrollo',
+          _loading ? 'Lista' : _tipoEtiqueta,
           style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
         ),
         backgroundColor: AppColors.morado,
         foregroundColor: Colors.white,
+        actions: [
+          if (_puedeEditar && !_loading)
+            IconButton(
+              tooltip: 'Eliminar lista',
+              onPressed: _eliminarLista,
+              icon: const Icon(Icons.delete_outline),
+            ),
+        ],
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
@@ -138,10 +197,28 @@ class _PortageListaEditorScreenState extends State<PortageListaEditorScreen> {
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: Text(
-                      'Solo lectura: la directora edita los indicadores. Tú calificas por niño en signos de alerta.',
+                      _esAlertas
+                          ? 'Solo lectura: la directora edita las alertas. Tú calificas por niño en el seguimiento.'
+                          : 'Solo lectura: la directora edita las habilidades. Tú calificas por niño en el seguimiento.',
                       style: GoogleFonts.poppins(fontSize: 13),
                     ),
                   ),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Chip(
+                    label: Text(
+                      _tipoEtiqueta,
+                      style: GoogleFonts.poppins(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    backgroundColor: _esAlertas
+                        ? AppColors.naranjaClaro.withOpacity(0.35)
+                        : AppColors.morado.withOpacity(0.12),
+                  ),
+                ),
+                const SizedBox(height: 8),
                 TextField(
                   controller: _nombreListaCtrl,
                   enabled: _puedeEditar,
@@ -160,12 +237,14 @@ class _PortageListaEditorScreenState extends State<PortageListaEditorScreen> {
                   ),
                 const SizedBox(height: 12),
                 Text(
-                  'Indicadores de desarrollo',
+                  _tituloItems,
                   style: GoogleFonts.poppins(fontWeight: FontWeight.w700),
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  'Logrado / En proceso / Observaciones se llenan al evaluar a cada niño.',
+                  _esAlertas
+                      ? 'Logrado / En proceso / Observaciones se llenan al evaluar a cada niño en el seguimiento.'
+                      : 'Logrado / En proceso / Observaciones se llenan al evaluar a cada niño.',
                   style: GoogleFonts.poppins(fontSize: 12, color: AppColors.gris),
                 ),
                 const SizedBox(height: 12),
@@ -190,7 +269,9 @@ class _PortageListaEditorScreenState extends State<PortageListaEditorScreen> {
                             enabled: _puedeEditar,
                             maxLines: 2,
                             decoration: InputDecoration(
-                              hintText: 'Ej. Mantiene la cabeza en línea media…',
+                              hintText: _esAlertas
+                                  ? 'Ej. No camina solo a los 18 meses…'
+                                  : 'Ej. Mantiene la cabeza en línea media…',
                               border: OutlineInputBorder(
                                 borderRadius: BorderRadius.circular(12),
                               ),
@@ -213,7 +294,9 @@ class _PortageListaEditorScreenState extends State<PortageListaEditorScreen> {
                   OutlinedButton.icon(
                     onPressed: _agregarFila,
                     icon: const Icon(Icons.add),
-                    label: const Text('Agregar indicador'),
+                    label: Text(
+                      _esAlertas ? 'Agregar alerta' : 'Agregar indicador',
+                    ),
                   ),
                   const SizedBox(height: 16),
                   FilledButton(
@@ -232,6 +315,19 @@ class _PortageListaEditorScreenState extends State<PortageListaEditorScreen> {
                             ),
                           )
                         : const Text('Guardar lista'),
+                  ),
+                  const SizedBox(height: 12),
+                  OutlinedButton.icon(
+                    onPressed: _eliminarLista,
+                    icon: const Icon(Icons.delete_outline, color: AppColors.rojo),
+                    label: const Text(
+                      'Eliminar lista',
+                      style: TextStyle(color: AppColors.rojo),
+                    ),
+                    style: OutlinedButton.styleFrom(
+                      side: const BorderSide(color: AppColors.rojo),
+                      minimumSize: const Size.fromHeight(48),
+                    ),
                   ),
                 ],
               ],

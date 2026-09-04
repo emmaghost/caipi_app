@@ -46,9 +46,10 @@ class _AppDrawerState extends State<AppDrawer> {
       final auth = Provider.of<AuthService>(context, listen: false);
       final user = auth.currentUser;
 
-      // Padres / secretaria / inglés: menú fijo, sin RPC.
+      // Padres / secretaria / caja / inglés: menú fijo, sin RPC.
       if (user?.esPadre == true ||
           user?.esSecretaria == true ||
+          user?.esCaja == true ||
           user?.esMaestraIngles == true) {
         if (mounted) {
           setState(() {
@@ -192,6 +193,7 @@ class _AppDrawerState extends State<AppDrawer> {
                           // Chat siempre visible para staff (no depende de RPC de permisos).
                           if (usuario?.esStaff == true &&
                               usuario?.esSecretaria != true &&
+                              usuario?.esCaja != true &&
                               usuario?.esMaestraIngles != true &&
                               usuario?.esPadre != true) ...[
                             _buildMenuItem(
@@ -207,6 +209,7 @@ class _AppDrawerState extends State<AppDrawer> {
                               usuario?.esStaff == true &&
                               usuario?.esPadre != true &&
                               usuario?.esSecretaria != true &&
+                              usuario?.esCaja != true &&
                               usuario?.esMaestraIngles != true)
                             const Padding(
                               padding: EdgeInsets.symmetric(vertical: 24),
@@ -310,6 +313,26 @@ class _AppDrawerState extends State<AppDrawer> {
                             ),
                           ]
 
+                          // ===== CAJA: solo pagos =====
+                          else if (usuario?.esCaja == true) ...[
+                            _buildSectionHeader('PAGOS'),
+                            _buildMenuItem(
+                              context: context,
+                              icon: Icons.attach_money,
+                              title: 'Pagos',
+                              ruta: '/directora/pagos',
+                              tienePermiso: true,
+                            ),
+                            _buildSectionHeader('CUENTA'),
+                            _buildMenuItem(
+                              context: context,
+                              icon: Icons.lock_outline,
+                              title: 'Cambiar contraseña',
+                              ruta: '/cambiar-contrasena',
+                              tienePermiso: true,
+                            ),
+                          ]
+
                           // ===== MENÚ STAFF (directora / profesoras) =====
                           else if (usuario?.esStaff == true) ...[
                           const SizedBox(height: 4),
@@ -361,7 +384,7 @@ class _AppDrawerState extends State<AppDrawer> {
                             ),
                           ],
 
-                          // SECCIÓN: PAGOS (solo directora)
+                          // SECCIÓN: PAGOS (directora; caja tiene menú propio)
                           if (_permisos['ver_pagos'] == true &&
                               usuario?.esDirectora == true) ...[
                             _buildSectionHeader('PAGOS'),
@@ -494,6 +517,13 @@ class _AppDrawerState extends State<AppDrawer> {
                               icon: Icons.schedule,
                               title: 'Horario del chat',
                               ruta: '/directora/config-chat-horario',
+                              tienePermiso: true,
+                            ),
+                            _buildMenuItem(
+                              context: context,
+                              icon: Icons.forum_outlined,
+                              title: 'Canales de chat',
+                              ruta: '/directora/config-chat-canales',
                               tienePermiso: true,
                             ),
                           ],
@@ -666,6 +696,8 @@ class _AppDrawerState extends State<AppDrawer> {
         return '👩‍🏫⭐ Profesora Admin';
       case 'secretaria':
         return '📋 Secretaria (altas)';
+      case 'caja':
+        return 'Caja / Pagos';
       case 'padre':
         return '👨‍👩‍👧 Padre/Madre';
       default:
@@ -679,6 +711,7 @@ class _AppDrawerState extends State<AppDrawer> {
       case 'profesor':
       case 'profesor_admin':
       case 'secretaria':
+      case 'caja':
         return '/directora';
       case 'padre':
         final restringido =

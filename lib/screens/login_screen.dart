@@ -82,7 +82,14 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
   @override
   Widget build(BuildContext context) {
     final authService = context.watch<AuthService>();
-    final size = MediaQuery.of(context).size;
+    final media = MediaQuery.of(context);
+    final size = media.size;
+    final viewInsets = media.viewInsets;
+    final textScaler = media.textScaler;
+    final compact = size.height < 700;
+    final pad = compact ? 16.0 : 24.0;
+    final titleSize = compact || size.width < 360 ? 26.0 : 32.0;
+    final logoSize = (size.height * 0.18).clamp(96.0, 140.0);
 
     return Scaffold(
       body: Container(
@@ -100,17 +107,22 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
         child: SafeArea(
           child: Center(
             child: SingleChildScrollView(
-              padding: const EdgeInsets.all(24),
+              padding: EdgeInsets.only(
+                left: pad,
+                right: pad,
+                top: pad,
+                bottom: pad + viewInsets.bottom,
+              ),
               child: FadeTransition(
                 opacity: _fadeAnimation,
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     // Logo circular con sombra colorida
-                    _buildLogoSection(),
-                    
-                    const SizedBox(height: 40),
-                    
+                    _buildLogoSection(logoSize),
+
+                    SizedBox(height: compact ? 20 : 40),
+
                     // Card de login
                     Card(
                       elevation: 20,
@@ -120,23 +132,35 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
                       ),
                       child: Container(
                         constraints: const BoxConstraints(maxWidth: 450),
-                        padding: const EdgeInsets.all(32),
+                        padding: EdgeInsets.all(compact ? 20 : 32),
                         child: Form(
                           key: _formKey,
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.stretch,
                             children: [
                               // Título
-                              Text(
-                                '¡Bienvenido!',
-                                textAlign: TextAlign.center,
-                                style: GoogleFonts.poppins(
-                                  fontSize: 32,
-                                  fontWeight: FontWeight.bold,
-                                  foreground: Paint()
-                                    ..shader = const LinearGradient(
-                                      colors: [AppColors.morado, AppColors.rosa],
-                                    ).createShader(const Rect.fromLTWH(0, 0, 200, 70)),
+                              FittedBox(
+                                fit: BoxFit.scaleDown,
+                                child: Text(
+                                  '¡Bienvenido!',
+                                  textAlign: TextAlign.center,
+                                  textScaler: textScaler.clamp(
+                                    minScaleFactor: 0.85,
+                                    maxScaleFactor: 1.2,
+                                  ),
+                                  style: GoogleFonts.poppins(
+                                    fontSize: titleSize,
+                                    fontWeight: FontWeight.bold,
+                                    foreground: Paint()
+                                      ..shader = const LinearGradient(
+                                        colors: [
+                                          AppColors.morado,
+                                          AppColors.rosa,
+                                        ],
+                                      ).createShader(
+                                        const Rect.fromLTWH(0, 0, 200, 70),
+                                      ),
+                                  ),
                                 ),
                               ),
                               const SizedBox(height: 8),
@@ -144,16 +168,22 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
                                 'CAIPI',
                                 textAlign: TextAlign.center,
                                 style: GoogleFonts.fredoka(
-                                  fontSize: 24,
+                                  fontSize: compact ? 20 : 24,
                                   fontWeight: FontWeight.bold,
                                   foreground: Paint()
                                     ..shader = const LinearGradient(
-                                      colors: [AppColors.verdeClaro, AppColors.morado, AppColors.rosa],
-                                    ).createShader(const Rect.fromLTWH(0, 0, 200, 70)),
+                                      colors: [
+                                        AppColors.verdeClaro,
+                                        AppColors.morado,
+                                        AppColors.rosa,
+                                      ],
+                                    ).createShader(
+                                      const Rect.fromLTWH(0, 0, 200, 70),
+                                    ),
                                 ),
                               ),
-                              const SizedBox(height: 32),
-                              
+                              SizedBox(height: compact ? 20 : 32),
+
                               // Campo de email
                               _buildTextField(
                                 controller: _emailController,
@@ -172,7 +202,7 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
                                 },
                               ),
                               const SizedBox(height: 20),
-                              
+
                               // Campo de contraseña
                               _buildTextField(
                                 controller: _passwordController,
@@ -204,7 +234,7 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
                                 },
                               ),
                               const SizedBox(height: 12),
-                              
+
                               // Recuperar contraseña
                               Align(
                                 alignment: Alignment.centerRight,
@@ -219,8 +249,8 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
                                   ),
                                 ),
                               ),
-                              const SizedBox(height: 24),
-                              
+                              SizedBox(height: compact ? 16 : 24),
+
                               // Botón de login con gradiente
                               Container(
                                 height: 56,
@@ -238,7 +268,9 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
                                   ],
                                 ),
                                 child: ElevatedButton(
-                                  onPressed: authService.isLoading ? null : _handleLogin,
+                                  onPressed: authService.isLoading
+                                      ? null
+                                      : _handleLogin,
                                   style: ElevatedButton.styleFrom(
                                     backgroundColor: Colors.transparent,
                                     shadowColor: Colors.transparent,
@@ -252,7 +284,10 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
                                           height: 24,
                                           child: CircularProgressIndicator(
                                             strokeWidth: 3,
-                                            valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                                            valueColor:
+                                                AlwaysStoppedAnimation<Color>(
+                                              Colors.white,
+                                            ),
                                           ),
                                         )
                                       : Text(
@@ -270,9 +305,9 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
                         ),
                       ),
                     ),
-                    
+
                     const SizedBox(height: 24),
-                    
+
                     // Footer decorativo
                     _buildFooter(),
                   ],
@@ -285,9 +320,9 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
     );
   }
 
-  Widget _buildLogoSection() {
+  Widget _buildLogoSection(double logoSize) {
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: EdgeInsets.all(logoSize < 120 ? 10 : 16),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(28),
@@ -306,18 +341,18 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
       ),
       child: Image.asset(
         'assets/images/icono_caipi.png',
-        width: 180,
-        height: 180,
+        width: logoSize,
+        height: logoSize,
         fit: BoxFit.contain,
         errorBuilder: (context, error, stackTrace) {
           return SizedBox(
-            width: 180,
-            height: 180,
+            width: logoSize,
+            height: logoSize,
             child: Center(
               child: Text(
                 'CAIPI',
                 style: GoogleFonts.fredoka(
-                  fontSize: 32,
+                  fontSize: logoSize < 120 ? 24 : 32,
                   fontWeight: FontWeight.bold,
                   foreground: Paint()
                     ..shader = const LinearGradient(

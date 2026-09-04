@@ -38,9 +38,10 @@ class Usuario {
   bool get esProfesor => rol == 'profesor' || rol == 'profesor_admin';
   bool get esProfesorAdmin => rol == 'profesor_admin';
   bool get esSecretaria => rol == 'secretaria';
+  bool get esCaja => rol == 'caja';
   bool get esPadre => rol == 'padre';
-  /// Directora, profesoras o secretaria: usan pantallas /directora.
-  bool get esStaff => esDirectora || esProfesor || esSecretaria;
+  /// Directora, profesoras, secretaria o caja: usan pantallas /directora.
+  bool get esStaff => esDirectora || esProfesor || esSecretaria || esCaja;
 
   /// Maestra de inglés: mismo grupo que la titular, solo calificaciones de Inglés.
   bool get esMaestraIngles {
@@ -72,6 +73,9 @@ class Usuario {
   /// Puede completar/editar fichas de alumnos (alta rápida).
   bool get puedeEditarAlumnos =>
       esDirectora || esProfesorAdmin || esSecretaria;
+
+  /// Directora o caja: administrar cobros / acreditar pagos.
+  bool get puedeGestionarPagos => esDirectora || esCaja;
 
   factory Usuario.fromJson(Map<String, dynamic> json) {
     return Usuario(

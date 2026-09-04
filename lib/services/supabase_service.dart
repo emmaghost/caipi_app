@@ -806,6 +806,51 @@ class SupabaseService {
         .eq('id', pago.id);
   }
 
+  /// Ajusta el monto a cobrar (neto) de un pago pendiente/parcial.
+  /// El neto no puede ser menor a lo ya abonado ([montoPagado]).
+  Future<void> ajustarMontoPago({
+    required String pagoId,
+    required double montoBruto,
+    double descuento = 0,
+    String? notas,
+  }) async {
+    final pago = await obtenerPagoPorId(pagoId);
+    if (pago == null) throw Exception('Pago no encontrado');
+    if (pago.estaPagado) {
+      throw Exception('No se puede ajustar un pago ya liquidado');
+    }
+    final neto = PagoHelpers.montoNeto(
+      montoBruto: montoBruto,
+      descuento: descuento,
+    );
+    if (neto <= 0) {
+      throw ArgumentError('El monto a cobrar debe ser mayor a cero');
+    }
+    if (neto < pago.montoPagado) {
+      throw ArgumentError(
+        'El monto a cobrar (\$${neto.toStringAsFixed(2)}) no puede ser '
+        'menor a lo ya abonado (\$${pago.montoPagado.toStringAsFixed(2)})',
+      );
+    }
+    final notasFinal = PagoHelpers.notasConDescuento(
+      montoBruto: montoBruto,
+      descuento: descuento,
+      notasUsuario: notas,
+    );
+    final estatus = pago.montoPagado > 0
+        ? (pago.montoPagado >= neto ? 'pagado' : 'parcial')
+        : 'pendiente';
+    await actualizarPago(
+      pago.copyWith(
+        monto: neto,
+        descuento: descuento,
+        notas: notasFinal,
+        estatus: estatus,
+        updatedAt: DateTime.now(),
+      ),
+    );
+  }
+
   Future<void> eliminarPago(String pagoId) async {
     final deleted = await _supabase
         .from('pagos')

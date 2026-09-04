@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../config/app_colors.dart';
 import '../../models/grado.dart';
+import '../../services/auth_service.dart';
 import '../../services/chat_service.dart';
 import '../../widgets/app_drawer.dart';
 
@@ -404,9 +406,19 @@ class _PadresScreenState extends State<PadresScreen> {
                     color: AppColors.morado),
                 tooltip: 'Chat',
                 onPressed: () async {
+                  final user =
+                      context.read<AuthService>().currentUser;
                   final chatService = ChatService();
-                  final conversacion = await chatService
-                      .obtenerOCrearConversacion(padre['id'] as String);
+                  final esProfesorCanal = user != null &&
+                      user.esProfesor &&
+                      !user.esDirectora &&
+                      !user.esProfesorAdmin;
+                  final conversacion =
+                      await chatService.obtenerOCrearConversacion(
+                    padre['id'] as String,
+                    canal: esProfesorCanal ? 'profesor' : 'directora',
+                    staffId: esProfesorCanal ? user.id : null,
+                  );
                   if (!context.mounted) return;
                   context.push(
                     '/directora/chat/${conversacion.id}',

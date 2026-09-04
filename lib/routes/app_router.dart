@@ -52,6 +52,7 @@ import '../screens/directora/portage_alumno_hub_screen.dart';
 import '../screens/directora/ligas_drive_screen.dart';
 import '../screens/directora/reportes_pdf_screen.dart';
 import '../screens/directora/config_chat_horario_screen.dart';
+import '../screens/directora/config_chat_canales_screen.dart';
 import '../screens/padres/dashboard_padre.dart';
 import '../screens/padres/detalle_hijo_screen.dart';
 import '../screens/padres/bitacora_padre_screen.dart';
@@ -147,6 +148,16 @@ GoRouter createRouter({
         }
         final permitida = loc == '/directora' ||
             loc.startsWith('/directora/alumnos') ||
+            loc == '/cambiar-contrasena';
+        if (!permitida) return '/directora';
+      }
+
+      final esCaja = authService.currentUser?.esCaja == true;
+      if (isLoggedIn && esCaja && isRutaStaff) {
+        final permitida = loc == '/directora' ||
+            loc == '/directora/pagos' ||
+            loc.startsWith('/directora/pagos/') ||
+            loc.startsWith('/acreditar-pago') ||
             loc == '/cambiar-contrasena';
         if (!permitida) return '/directora';
       }
@@ -268,6 +279,10 @@ GoRouter createRouter({
     GoRoute(
       path: '/directora/config-chat-horario',
       builder: (context, state) => const ConfigChatHorarioScreen(),
+    ),
+    GoRoute(
+      path: '/directora/config-chat-canales',
+      builder: (context, state) => const ConfigChatCanalesScreen(),
     ),
     GoRoute(
       path: '/directora/pagos',

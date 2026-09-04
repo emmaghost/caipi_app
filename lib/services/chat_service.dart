@@ -2,18 +2,49 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../models/conversacion.dart';
 import '../models/mensaje_chat.dart';
+import '../utils/constantes.dart';
+
+class ChatConfig {
+  final bool padrePuedeDirectora;
+  final bool padrePuedeMaestraGrupo;
+  final bool padrePuedeMaestraIngles;
+
+  const ChatConfig({
+    this.padrePuedeDirectora = true,
+    this.padrePuedeMaestraGrupo = true,
+    this.padrePuedeMaestraIngles = true,
+  });
+
+  factory ChatConfig.fromJson(Map<String, dynamic> json) {
+    return ChatConfig(
+      padrePuedeDirectora: json['padre_puede_directora'] as bool? ?? true,
+      padrePuedeMaestraGrupo:
+          json['padre_puede_maestra_grupo'] as bool? ?? true,
+      padrePuedeMaestraIngles:
+          json['padre_puede_maestra_ingles'] as bool? ?? true,
+    );
+  }
+}
 
 class ChatService {
   final SupabaseClient _supabase = Supabase.instance.client;
 
-  Stream<List<Conversacion>> streamConversaciones() {
+  Stream<List<Conversacion>> streamConversaciones({
+    String? canal,
+    String? staffId,
+  }) {
     return _supabase
         .from('conversaciones')
         .stream(primaryKey: ['id'])
         .order('ultimo_mensaje_at', ascending: false)
         .map((rows) {
-          final list = rows.map(Conversacion.fromJson).toList();
-          // Más reciente arriba (como bandeja de chats).
+          var list = rows.map(Conversacion.fromJson).toList();
+          if (canal != null) {
+            list = list.where((c) => c.canal == canal).toList();
+          }
+          if (staffId != null) {
+            list = list.where((c) => c.staffId == staffId).toList();
+          }
           list.sort((a, b) {
             final fa = a.ultimoMensajeAt ?? a.updatedAt;
             final fb = b.ultimoMensajeAt ?? b.updatedAt;
@@ -31,33 +62,206 @@ class ChatService {
         .order('created_at', ascending: true)
         .map((rows) {
           final list = rows.map(MensajeChat.fromJson).toList();
-          // El stream a veces no respeta el order; forzar cronológico (viejo → nuevo).
           list.sort((a, b) => a.createdAt.compareTo(b.createdAt));
           return list;
         });
   }
 
-  Future<Conversacion?> obtenerConversacionPorPadre(String padreId) async {
-    final response = await _supabase
+  Future<Conversacion?> obtenerConversacionPorPadre(
+    String padreId, {
+    String canal = 'directora',
+    String? staffId,
+  }) async {
+    var query = _supabase
         .from('conversaciones')
         .select()
         .eq('padre_id', padreId)
-        .maybeSingle();
+        .eq('canal', canal);
 
+    if (canal == 'profesor' && staffId != null) {
+      query = query.eq('staff_id', staffId);
+    } else if (canal == 'directora') {
+      query = query.isFilter('staff_id', null);
+    }
+
+    final response = await query.maybeSingle();
     return response != null ? Conversacion.fromJson(response) : null;
   }
 
-  Future<Conversacion> obtenerOCrearConversacion(String padreId) async {
-    final existente = await obtenerConversacionPorPadre(padreId);
+  Future<Conversacion> obtenerOCrearConversacion(
+    String padreId, {
+    String canal = 'directora',
+    String? staffId,
+  }) async {
+    final existente = await obtenerConversacionPorPadre(
+      padreId,
+      canal: canal,
+      staffId: staffId,
+    );
     if (existente != null) return existente;
+
+    final payload = <String, dynamic>{
+      'padre_id': padreId,
+      'canal': canal,
+      'staff_id': canal == 'profesor' ? staffId : null,
+    };
 
     final response = await _supabase
         .from('conversaciones')
-        .insert({'padre_id': padreId})
+        .insert(payload)
         .select()
         .single();
 
     return Conversacion.fromJson(response);
+  }
+
+  Future<ChatConfig> obtenerChatConfig() async {
+    try {
+      final row = await _supabase
+          .from('chat_config')
+          .select()
+          .eq('id', 1)
+          .maybeSingle();
+      if (row == null) return const ChatConfig();
+      return ChatConfig.fromJson(Map<String, dynamic>.from(row));
+    } catch (_) {
+      return const ChatConfig();
+    }
+  }
+
+  Future<void> guardarChatConfig({
+    required bool padrePuedeDirectora,
+    required bool padrePuedeMaestraGrupo,
+    required bool padrePuedeMaestraIngles,
+  }) async {
+    await _supabase.from('chat_config').upsert({
+      'id': 1,
+      'padre_puede_directora': padrePuedeDirectora,
+      'padre_puede_maestra_grupo': padrePuedeMaestraGrupo,
+      'padre_puede_maestra_ingles': padrePuedeMaestraIngles,
+      'updated_at': DateTime.now().toIso8601String(),
+    });
+  }
+
+  /// Contactos disponibles para el padre según [chat_config] y maestras de sus hijos.
+  Future<List<Map<String, dynamic>>> contactosParaPadre(String padreId) async {
+    final config = await obtenerChatConfig();
+    final contactos = <Map<String, dynamic>>[];
+
+    if (config.padrePuedeDirectora) {
+      contactos.add({
+        'canal': 'directora',
+        'staffId': null,
+        'titulo': 'Directora',
+      });
+    }
+
+    if (!config.padrePuedeMaestraGrupo && !config.padrePuedeMaestraIngles) {
+      return contactos;
+    }
+
+    // Hijos del padre (columna padre_id + alumnos_padres).
+    final gradoIds = <String>{};
+    try {
+      final alumnos = await _supabase
+          .from('alumnos')
+          .select('id, grado_id')
+          .eq('padre_id', padreId)
+          .eq('activo', true);
+      final alumnoIds = <String>[];
+      for (final row in alumnos as List) {
+        final gid = row['grado_id'] as String?;
+        if (gid != null) gradoIds.add(gid);
+        final aid = row['id'] as String?;
+        if (aid != null) alumnoIds.add(aid);
+      }
+      if (alumnoIds.isNotEmpty) {
+        try {
+          final vinculos = await _supabase
+              .from('alumnos_padres')
+              .select('alumno_id')
+              .eq('padre_id', padreId);
+          final extraIds = (vinculos as List)
+              .map((r) => r['alumno_id'] as String?)
+              .whereType<String>()
+              .where((id) => !alumnoIds.contains(id))
+              .toList();
+          if (extraIds.isNotEmpty) {
+            final extras = await _supabase
+                .from('alumnos')
+                .select('grado_id')
+                .inFilter('id', extraIds)
+                .eq('activo', true);
+            for (final row in extras as List) {
+              final gid = row['grado_id'] as String?;
+              if (gid != null) gradoIds.add(gid);
+            }
+          }
+        } catch (_) {}
+      }
+    } catch (_) {
+      return contactos;
+    }
+
+    if (gradoIds.isEmpty) return contactos;
+
+    try {
+      final profesores = await _supabase
+          .from('profesores')
+          .select('usuario_id, grado_id, especialidad, usuarios!inner(nombre, apellidos, activo)')
+          .inFilter('grado_id', gradoIds.toList())
+          .eq('activo', true);
+
+      final vistosGrupo = <String>{};
+      final vistosIngles = <String>{};
+
+      for (final row in profesores as List) {
+        final map = Map<String, dynamic>.from(row as Map);
+        final usuarioId = map['usuario_id'] as String?;
+        if (usuarioId == null) continue;
+        final usuario = map['usuarios'];
+        if (usuario is Map && usuario['activo'] == false) continue;
+
+        final esp = ((map['especialidad'] as String?) ?? '')
+            .toLowerCase()
+            .replaceAll('é', 'e')
+            .replaceAll('í', 'i');
+        final esIngles =
+            esp == Constantes.especialidadIngles || esp.contains('ingles');
+
+        String nombreStaff = 'Maestra';
+        if (usuario is Map) {
+          final n = usuario['nombre'] as String? ?? '';
+          final a = usuario['apellidos'] as String? ?? '';
+          final full = '$n $a'.trim();
+          if (full.isNotEmpty) nombreStaff = full;
+        }
+
+        if (esIngles) {
+          if (!config.padrePuedeMaestraIngles) continue;
+          if (vistosIngles.contains(usuarioId)) continue;
+          vistosIngles.add(usuarioId);
+          contactos.add({
+            'canal': 'profesor',
+            'staffId': usuarioId,
+            'titulo': 'Maestra de inglés · $nombreStaff',
+          });
+        } else {
+          if (!config.padrePuedeMaestraGrupo) continue;
+          if (vistosGrupo.contains(usuarioId)) continue;
+          vistosGrupo.add(usuarioId);
+          contactos.add({
+            'canal': 'profesor',
+            'staffId': usuarioId,
+            'titulo': 'Maestra de grupo · $nombreStaff',
+          });
+        }
+      }
+    } catch (_) {
+      // Sin tabla profesores o RLS: solo directora.
+    }
+
+    return contactos;
   }
 
   Future<MensajeChat> enviarMensaje({
@@ -84,7 +288,6 @@ class ChatService {
         }
       } catch (e) {
         if (e is StateError && e.message == 'FUERA_HORARIO') rethrow;
-        // Si la función no existe aún, permitir envío
       }
     }
 
@@ -154,8 +357,7 @@ class ChatService {
     return ids.toList();
   }
 
-  /// Envía el mismo texto a muchos padres (crea conversación si falta).
-  /// Devuelve cuántos envíos tuvieron éxito.
+  /// Envía el mismo texto a muchos padres (crea conversación canal directora).
   Future<int> enviarMensajeMasivoAPadres({
     required String remitenteId,
     required String contenido,
@@ -170,7 +372,6 @@ class ChatService {
     var padreIds = soloPadreIds ??
         await idsPadresDestino(paraTodos: paraTodos, gradoIds: gradoIds);
 
-    // Si vienen IDs sueltos, dejar solo papás activos.
     if (soloPadreIds != null && soloPadreIds.isNotEmpty) {
       final activos = await _supabase
           .from('usuarios')
@@ -190,7 +391,10 @@ class ChatService {
     Object? ultimoError;
     for (final padreId in padreIds) {
       try {
-        final conv = await obtenerOCrearConversacion(padreId);
+        final conv = await obtenerOCrearConversacion(
+          padreId,
+          canal: 'directora',
+        );
         await enviarMensaje(
           conversacionId: conv.id,
           remitenteId: remitenteId,
@@ -247,7 +451,6 @@ class ChatService {
     return count;
   }
 
-  /// Conversaciones con mensajes de papás aún no leídos por la escuela.
   Future<Set<String>> idsConversacionesNoLeidasEscuela() async {
     final idsPadres = await _supabase
         .from('usuarios')
@@ -275,7 +478,6 @@ class ChatService {
     return convIds;
   }
 
-  /// Stream de IDs de conversación con mensajes no leídos de papás.
   Stream<Set<String>> streamConversacionesNoLeidasEscuela() {
     return _supabase
         .from('mensajes_chat')
@@ -303,13 +505,21 @@ class ChatService {
   }
 
   Future<int> contarNoLeidosPadre(String padreId) async {
-    final conv = await obtenerConversacionPorPadre(padreId);
-    if (conv == null) return 0;
+    final convs = await _supabase
+        .from('conversaciones')
+        .select('id')
+        .eq('padre_id', padreId);
+
+    final ids = (convs as List)
+        .map((c) => c['id'] as String?)
+        .whereType<String>()
+        .toList();
+    if (ids.isEmpty) return 0;
 
     final response = await _supabase
         .from('mensajes_chat')
         .select('id')
-        .eq('conversacion_id', conv.id)
+        .inFilter('conversacion_id', ids)
         .eq('leido', false)
         .neq('remitente_id', padreId);
 

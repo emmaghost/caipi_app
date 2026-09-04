@@ -32,7 +32,7 @@ class _CrearProfesorScreenState extends State<CrearProfesorScreen> {
   final _telefonoController = TextEditingController();
   
   String? _grupoSeleccionado;
-  /// 'profesor' | 'profesor_admin' | 'secretaria'
+  /// 'profesor' | 'profesor_admin' | 'secretaria' | 'caja'
   String _rol = 'profesor';
   /// 'titular' | 'ingles' — solo aplica si _rol es profesor.
   String _especialidad = Constantes.especialidadTitular;
@@ -93,6 +93,8 @@ class _CrearProfesorScreenState extends State<CrearProfesorScreen> {
         final rol = usuarioData['rol'] as String? ?? 'profesor';
         if (rol == 'secretaria') {
           _rol = 'secretaria';
+        } else if (rol == 'caja') {
+          _rol = 'caja';
         } else if (rol == 'profesor_admin') {
           _rol = 'profesor_admin';
         } else {
@@ -201,13 +203,16 @@ class _CrearProfesorScreenState extends State<CrearProfesorScreen> {
             .update({'activo': _accesoActivo})
             .eq('id', newUserId);
 
-        if (_rol == 'secretaria') {
+        if (_rol == 'secretaria' || _rol == 'caja') {
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
                 content: Text(
-                  '✅ Secretaria creada. Contraseña inicial: Caipi2026\n'
-                  'En el iPad entra con este correo. Solo altas, sin beca.',
+                  _rol == 'caja'
+                      ? '✅ Usuario de caja creado. Contraseña inicial: Caipi2026\n'
+                          'Solo administración de pagos.'
+                      : '✅ Secretaria creada. Contraseña inicial: Caipi2026\n'
+                          'En el iPad entra con este correo. Solo altas, sin beca.',
                   style: GoogleFonts.poppins(fontSize: 13),
                 ),
                 backgroundColor: AppColors.verde,
@@ -493,6 +498,16 @@ class _CrearProfesorScreenState extends State<CrearProfesorScreen> {
                 groupValue: _rol,
                 onChanged: (v) => setState(() => _rol = v!),
               ),
+              RadioListTile<String>(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Caja / Pagos'),
+                subtitle: const Text(
+                  'Solo administrar cobros y acreditar pagos. Sin alumnos.',
+                ),
+                value: 'caja',
+                groupValue: _rol,
+                onChanged: (v) => setState(() => _rol = v!),
+              ),
               SwitchListTile(
                 contentPadding: EdgeInsets.zero,
                 title: const Text('Acceso activo'),
@@ -524,7 +539,7 @@ class _CrearProfesorScreenState extends State<CrearProfesorScreen> {
               ),
               const SizedBox(height: 16),
 
-              if (_rol != 'secretaria') ...[
+              if (_rol != 'secretaria' && _rol != 'caja') ...[
               // Grupo asignado
               DropdownButtonFormField<String>(
                 value: _grupoSeleccionado,

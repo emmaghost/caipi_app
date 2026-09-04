@@ -11,6 +11,7 @@ import '../../models/portage.dart';
 import '../../services/auth_service.dart';
 import '../../services/portage_service.dart';
 import '../../services/supabase_service.dart';
+import '../../utils/portage_plantilla.dart';
 import '../../widgets/app_drawer.dart';
 
 /// Flujo: 1) grupo → 2) buscar/elegir niño → ficha del niño.
@@ -137,26 +138,63 @@ class _PortageHomeScreenState extends State<PortageHomeScreen> {
 
   Future<void> _crearLista() async {
     if (!_puedeEditarListas || _gradoId == null) return;
-    final nombreCtrl = TextEditingController(text: 'Indicadores de desarrollo');
+    String tipo = PortagePlantilla.tipoHabilidades;
+    final nombreCtrl = TextEditingController(text: 'Lista de habilidades');
     final ok = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Nueva lista'),
-        content: TextField(
-          controller: nombreCtrl,
-          decoration: const InputDecoration(labelText: 'Nombre de la lista'),
-          autofocus: true,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setLocal) => AlertDialog(
+          title: const Text('Nueva lista'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              DropdownButtonFormField<String>(
+                value: tipo,
+                decoration: const InputDecoration(labelText: 'Tipo'),
+                items: const [
+                  DropdownMenuItem(
+                    value: PortagePlantilla.tipoHabilidades,
+                    child: Text('Habilidades'),
+                  ),
+                  DropdownMenuItem(
+                    value: PortagePlantilla.tipoAlertas,
+                    child: Text('Alertas'),
+                  ),
+                ],
+                onChanged: (v) {
+                  if (v == null) return;
+                  setLocal(() {
+                    tipo = v;
+                    if (nombreCtrl.text.trim().isEmpty ||
+                        nombreCtrl.text == 'Lista de habilidades' ||
+                        nombreCtrl.text == 'Lista de alertas') {
+                      nombreCtrl.text = v == PortagePlantilla.tipoAlertas
+                          ? 'Lista de alertas'
+                          : 'Lista de habilidades';
+                    }
+                  });
+                },
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: nombreCtrl,
+                decoration:
+                    const InputDecoration(labelText: 'Nombre de la lista'),
+                autofocus: true,
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancelar'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Crear'),
+            ),
+          ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancelar'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Crear'),
-          ),
-        ],
       ),
     );
     if (ok != true || !mounted) {
@@ -164,13 +202,17 @@ class _PortageHomeScreenState extends State<PortageHomeScreen> {
       return;
     }
     final user = context.read<AuthService>().currentUser!;
+    final nombreDefault = tipo == PortagePlantilla.tipoAlertas
+        ? 'Lista de alertas'
+        : 'Lista de habilidades';
     try {
       final lista = await _portage.crearLista(
         gradoId: _gradoId!,
         nombre: nombreCtrl.text.trim().isEmpty
-            ? 'Indicadores de desarrollo'
+            ? nombreDefault
             : nombreCtrl.text.trim(),
         createdBy: user.id,
+        tipo: tipo,
       );
       nombreCtrl.dispose();
       if (!mounted) return;
@@ -185,13 +227,79 @@ class _PortageHomeScreenState extends State<PortageHomeScreen> {
     }
   }
 
+  Future<void> _cargarPlantillas() async {
+    if (!_puedeEditarListas || _gradoId == null) return;
+    final user = context.read<AuthService>().currentUser!;
+    final incluirAlertas = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Cargar plantilla habilidades'),
+        content: const Text(
+          'Se crearán las listas de habilidades del grado (si aún no existen).\n\n'
+          '¿También cargar una lista de alertas de ejemplo?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancelar'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Solo habilidades'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Habilidades + alertas'),
+          ),
+        ],
+      ),
+    );
+    if (incluirAlertas == null || !mounted) return;
+    setState(() => _loading = true);
+    try {
+      final creadas = await _portage.cargarPlantillaHabilidades(
+        gradoId: _gradoId!,
+        createdBy: user.id,
+        plantillas: PortagePlantilla.habilidades,
+      );
+      if (incluirAlertas) {
+        await _portage.cargarPlantillaAlertas(
+          gradoId: _gradoId!,
+          createdBy: user.id,
+          items: PortagePlantilla.alertasEjemplo,
+        );
+      }
+      await _cargarGrado();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            creadas == 0
+                ? 'Las plantillas de habilidades ya estaban cargadas'
+                    '${incluirAlertas ? ' (alertas revisadas)' : ''}'
+                : 'Se crearon $creadas lista(s) de habilidades'
+                    '${incluirAlertas ? ' (+ alertas)' : ''}',
+          ),
+          backgroundColor: AppColors.verde,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error: $e'), backgroundColor: AppColors.rojo),
+      );
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
   Future<void> _crearEvaluacion() async {
     if (_gradoId == null) return;
     final listasActivas = _listas.where((l) => l.activa).toList();
     if (listasActivas.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Primero crea una lista de indicadores para este grado'),
+          content: Text('Primero crea una lista de habilidades o alertas para este grado'),
         ),
       );
       return;
@@ -211,13 +319,16 @@ class _PortageHomeScreenState extends State<PortageHomeScreen> {
               DropdownButtonFormField<String>(
                 value: listaId,
                 decoration: const InputDecoration(
-                  labelText: 'Lista de indicadores',
+                  labelText: 'Lista (habilidades / alertas)',
                 ),
                 items: listasActivas
                     .map(
                       (l) => DropdownMenuItem(
                         value: l.id,
-                        child: Text(l.nombre, overflow: TextOverflow.ellipsis),
+                        child: Text(
+                          '${l.nombre} (${l.tipoEtiqueta})',
+                          overflow: TextOverflow.ellipsis,
+                        ),
                       ),
                     )
                     .toList(),
@@ -230,7 +341,7 @@ class _PortageHomeScreenState extends State<PortageHomeScreen> {
                 controller: tituloCtrl,
                 decoration: const InputDecoration(
                   labelText: 'Título (opcional)',
-                  hintText: 'Ej. Signos de alerta — marzo',
+                  hintText: 'Ej. Seguimiento — marzo',
                 ),
               ),
               const SizedBox(height: 12),
@@ -498,7 +609,7 @@ class _PortageHomeScreenState extends State<PortageHomeScreen> {
                               ),
                               subtitle: Text(
                                 _esDirectora
-                                    ? 'Listas de indicadores y altas de mes'
+                                    ? 'Listas de habilidades / alertas y seguimientos'
                                     : 'Ver listas (solo lectura) y seguimientos del grupo',
                                 style: GoogleFonts.poppins(fontSize: 11),
                               ),
@@ -518,7 +629,7 @@ class _PortageHomeScreenState extends State<PortageHomeScreen> {
                                         children: [
                                           Expanded(
                                             child: Text(
-                                              'Indicadores de desarrollo',
+                                              'Listas de habilidades / alertas',
                                               style: GoogleFonts.poppins(
                                                 fontWeight: FontWeight.w600,
                                               ),
@@ -532,6 +643,20 @@ class _PortageHomeScreenState extends State<PortageHomeScreen> {
                                             ),
                                         ],
                                       ),
+                                      if (_puedeEditarListas)
+                                        Align(
+                                          alignment: Alignment.centerLeft,
+                                          child: TextButton.icon(
+                                            onPressed: _cargarPlantillas,
+                                            icon: const Icon(
+                                              Icons.library_add_outlined,
+                                              size: 18,
+                                            ),
+                                            label: const Text(
+                                              'Cargar plantilla habilidades',
+                                            ),
+                                          ),
+                                        ),
                                       if (_listas.isEmpty)
                                         Text(
                                           'Sin listas aún.',
@@ -545,8 +670,42 @@ class _PortageHomeScreenState extends State<PortageHomeScreen> {
                                           dense: true,
                                           contentPadding: EdgeInsets.zero,
                                           title: Text(l.nombre),
-                                          subtitle: Text(
-                                            l.activa ? 'Activa' : 'Inactiva',
+                                          subtitle: Row(
+                                            children: [
+                                              Chip(
+                                                label: Text(
+                                                  l.tipoEtiqueta,
+                                                  style: GoogleFonts.poppins(
+                                                    fontSize: 10,
+                                                    fontWeight: FontWeight.w600,
+                                                  ),
+                                                ),
+                                                visualDensity:
+                                                    VisualDensity.compact,
+                                                materialTapTargetSize:
+                                                    MaterialTapTargetSize
+                                                        .shrinkWrap,
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                  horizontal: 4,
+                                                ),
+                                                backgroundColor: l.esAlertas
+                                                    ? AppColors.naranjaClaro
+                                                        .withOpacity(0.35)
+                                                    : AppColors.morado
+                                                        .withOpacity(0.12),
+                                              ),
+                                              const SizedBox(width: 8),
+                                              Text(
+                                                l.activa
+                                                    ? 'Activa'
+                                                    : 'Inactiva',
+                                                style: GoogleFonts.poppins(
+                                                  fontSize: 11,
+                                                  color: AppColors.gris,
+                                                ),
+                                              ),
+                                            ],
                                           ),
                                           trailing:
                                               const Icon(Icons.chevron_right),
@@ -563,7 +722,7 @@ class _PortageHomeScreenState extends State<PortageHomeScreen> {
                                         children: [
                                           Expanded(
                                             child: Text(
-                                              'Signos de alerta…',
+                                              'Seguimientos',
                                               style: GoogleFonts.poppins(
                                                 fontWeight: FontWeight.w600,
                                               ),
@@ -589,11 +748,7 @@ class _PortageHomeScreenState extends State<PortageHomeScreen> {
                                         (e) => ListTile(
                                           dense: true,
                                           contentPadding: EdgeInsets.zero,
-                                          title: Text(
-                                            e.titulo?.trim().isNotEmpty == true
-                                                ? e.titulo!
-                                                : 'Seguimiento ${DateFormat('dd/MM/yyyy').format(e.fechaInicio)}',
-                                          ),
+                                          title: Text(e.tituloDisplay),
                                           subtitle: Text(
                                             DateFormat('dd/MM/yyyy')
                                                 .format(e.fechaInicio),

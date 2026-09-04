@@ -37,6 +37,8 @@ class PortageLista {
   final String gradoId;
   final String nombre;
   final bool activa;
+  /// `habilidades` | `alertas`
+  final String tipo;
   final String? createdBy;
   final DateTime createdAt;
   final DateTime updatedAt;
@@ -46,10 +48,16 @@ class PortageLista {
     required this.gradoId,
     required this.nombre,
     this.activa = true,
+    this.tipo = 'habilidades',
     this.createdBy,
     required this.createdAt,
     required this.updatedAt,
   });
+
+  bool get esAlertas => tipo == 'alertas';
+  bool get esHabilidades => !esAlertas;
+
+  String get tipoEtiqueta => esAlertas ? 'Alertas' : 'Habilidades';
 
   factory PortageLista.fromJson(Map<String, dynamic> json) {
     return PortageLista(
@@ -57,6 +65,7 @@ class PortageLista {
       gradoId: json['grado_id'] as String,
       nombre: json['nombre'] as String? ?? 'Indicadores de desarrollo',
       activa: json['activa'] as bool? ?? true,
+      tipo: (json['tipo'] as String?) ?? 'habilidades',
       createdBy: json['created_by'] as String?,
       createdAt: DateTime.parse(json['created_at'] as String),
       updatedAt: DateTime.parse(json['updated_at'] as String),
@@ -68,6 +77,7 @@ class PortageLista {
       'grado_id': gradoId,
       'nombre': nombre,
       'activa': activa,
+      'tipo': tipo,
       if (createdBy != null) 'created_by': createdBy,
     };
   }
@@ -129,7 +139,7 @@ class PortageEvaluacion {
   String get tituloDisplay =>
       (titulo != null && titulo!.trim().isNotEmpty)
           ? titulo!.trim()
-          : 'Signos de alerta';
+          : 'Seguimiento';
 
   factory PortageEvaluacion.fromJson(Map<String, dynamic> json) {
     return PortageEvaluacion(

@@ -36,6 +36,7 @@ class PortageService {
     required String nombre,
     required String createdBy,
     bool activa = true,
+    String tipo = 'habilidades',
   }) async {
     final response = await _supabase
         .from('portage_listas')
@@ -43,6 +44,7 @@ class PortageService {
           'grado_id': gradoId,
           'nombre': nombre.trim(),
           'activa': activa,
+          'tipo': tipo,
           'created_by': createdBy,
         })
         .select()
@@ -55,12 +57,14 @@ class PortageService {
     required String listaId,
     String? nombre,
     bool? activa,
+    String? tipo,
   }) async {
     final payload = <String, dynamic>{
       'updated_at': DateTime.now().toUtc().toIso8601String(),
     };
     if (nombre != null) payload['nombre'] = nombre.trim();
     if (activa != null) payload['activa'] = activa;
+    if (tipo != null) payload['tipo'] = tipo;
 
     final response = await _supabase
         .from('portage_listas')
@@ -70,6 +74,59 @@ class PortageService {
         .single();
 
     return PortageLista.fromJson(response);
+  }
+
+  /// Crea las 5 listas de habilidades de la plantilla Viri en un grado.
+  /// Omite nombres que ya existan (mismo grado + tipo habilidades).
+  Future<int> cargarPlantillaHabilidades({
+    required String gradoId,
+    required String createdBy,
+    required List<({String nombre, List<String> items})> plantillas,
+  }) async {
+    final existentes = await listarListasPorGrado(gradoId);
+    final nombresExistentes = existentes
+        .where((l) => l.tipo == 'habilidades')
+        .map((l) => l.nombre.toLowerCase())
+        .toSet();
+
+    var creadas = 0;
+    for (final p in plantillas) {
+      if (nombresExistentes.contains(p.nombre.toLowerCase())) continue;
+      final lista = await crearLista(
+        gradoId: gradoId,
+        nombre: p.nombre,
+        createdBy: createdBy,
+        tipo: 'habilidades',
+      );
+      await guardarIndicadores(lista.id, p.items);
+      creadas++;
+    }
+    return creadas;
+  }
+
+  Future<PortageLista> cargarPlantillaAlertas({
+    required String gradoId,
+    required String createdBy,
+    required List<String> items,
+    String nombre = 'Signos de alerta',
+  }) async {
+    final existentes = await listarListasPorGrado(gradoId);
+    final ya = existentes.any(
+      (l) => l.tipo == 'alertas' && l.nombre.toLowerCase() == nombre.toLowerCase(),
+    );
+    if (ya) {
+      return existentes.firstWhere(
+        (l) => l.tipo == 'alertas' && l.nombre.toLowerCase() == nombre.toLowerCase(),
+      );
+    }
+    final lista = await crearLista(
+      gradoId: gradoId,
+      nombre: nombre,
+      createdBy: createdBy,
+      tipo: 'alertas',
+    );
+    await guardarIndicadores(lista.id, items);
+    return lista;
   }
 
   Future<void> eliminarLista(String listaId) async {

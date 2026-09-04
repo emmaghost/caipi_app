@@ -17,6 +17,9 @@ class AuthService extends ChangeNotifier {
   bool get esProfesor => _currentUser?.esProfesor ?? false;
   bool get esStaff => _currentUser?.esStaff ?? false;
   bool get esMaestraIngles => _currentUser?.esMaestraIngles ?? false;
+  bool get esCaja => _currentUser?.esCaja ?? false;
+  bool get puedeGestionarPagos =>
+      _currentUser?.puedeGestionarPagos ?? false;
   bool get isPadre => esPadre; // Backward compatibility
   bool get isStaff => esStaff;
 

@@ -195,6 +195,13 @@ class _ChatListaEscuelaScreenState extends State<ChatListaEscuelaScreen> {
   @override
   Widget build(BuildContext context) {
     final chatService = ChatService();
+    final user = context.watch<AuthService>().currentUser;
+    final esCanalProfesor = user != null &&
+        user.esProfesor &&
+        !user.esDirectora &&
+        !user.esProfesorAdmin;
+    final puedeMensajeMasivo =
+        user?.esDirectora == true || user?.esProfesorAdmin == true;
 
     return Scaffold(
       backgroundColor: AppColors.grisClaro,
@@ -307,7 +314,14 @@ class _ChatListaEscuelaScreenState extends State<ChatListaEscuelaScreen> {
                             .toList()),
                     builder: (context, padresSnapshot) {
                       return StreamBuilder<List<Conversacion>>(
-                        stream: chatService.streamConversaciones(),
+                        stream: esCanalProfesor
+                            ? chatService.streamConversaciones(
+                                canal: 'profesor',
+                                staffId: user.id,
+                              )
+                            : chatService.streamConversaciones(
+                                canal: 'directora',
+                              ),
                         builder: (context, convSnapshot) {
                           return StreamBuilder<Set<String>>(
                             stream: chatService
@@ -328,7 +342,7 @@ class _ChatListaEscuelaScreenState extends State<ChatListaEscuelaScreen> {
                                   child: Padding(
                                     padding: const EdgeInsets.all(24),
                                     child: Text(
-                                      'Error al cargar chats.\n¿Ejecutaste ADD_CHAT_PADRES_ESCUELA.sql?',
+                                      'Error al cargar chats.\n¿Ejecutaste ADD_CHAT_MULTI_CANAL.sql?',
                                       textAlign: TextAlign.center,
                                       style: GoogleFonts.poppins(
                                           color: AppColors.gris),
@@ -548,7 +562,14 @@ class _ChatListaEscuelaScreenState extends State<ChatListaEscuelaScreen> {
                                         final conversacion = conv ??
                                             await chatService
                                                 .obtenerOCrearConversacion(
-                                                    padreId);
+                                          padreId,
+                                          canal: esCanalProfesor
+                                              ? 'profesor'
+                                              : 'directora',
+                                          staffId: esCanalProfesor
+                                              ? user.id
+                                              : null,
+                                        );
                                         if (!context.mounted) return;
                                         context.push(
                                           '/directora/chat/${conversacion.id}',
@@ -568,21 +589,23 @@ class _ChatListaEscuelaScreenState extends State<ChatListaEscuelaScreen> {
                 ),
               ],
             ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: _mostrarDialogoMensajeMasivo,
-        backgroundColor: AppColors.exitoPago,
-        foregroundColor: Colors.white,
-        elevation: 4,
-        icon: const Icon(Icons.campaign, color: Colors.white),
-        label: Text(
-          'Mensaje masivo',
-          style: GoogleFonts.poppins(
-            color: Colors.white,
-            fontWeight: FontWeight.w700,
-            fontSize: 14,
-          ),
-        ),
-      ),
+      floatingActionButton: puedeMensajeMasivo
+          ? FloatingActionButton.extended(
+              onPressed: _mostrarDialogoMensajeMasivo,
+              backgroundColor: AppColors.exitoPago,
+              foregroundColor: Colors.white,
+              elevation: 4,
+              icon: const Icon(Icons.campaign, color: Colors.white),
+              label: Text(
+                'Mensaje masivo',
+                style: GoogleFonts.poppins(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 14,
+                ),
+              ),
+            )
+          : null,
     );
   }
 
