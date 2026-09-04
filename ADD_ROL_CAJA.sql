@@ -1,5 +1,6 @@
 -- =============================================================================
 -- Rol CAJA: solo pagos / administración de cobros (sin ver alumnos)
+-- Corregido: columna nivel_jerarquia (no "nivel")
 -- =============================================================================
 
 -- Ampliar check de rol en usuarios (si existe)
@@ -27,7 +28,7 @@ EXCEPTION WHEN duplicate_object THEN
   NULL;
 END $$;
 
-INSERT INTO public.roles (codigo, nombre, descripcion, nivel)
+INSERT INTO public.roles (codigo, nombre, descripcion, nivel_jerarquia)
 VALUES (
   'caja',
   'Caja / Pagos',
@@ -35,9 +36,20 @@ VALUES (
   4
 )
 ON CONFLICT (codigo) DO UPDATE
-  SET nombre = EXCLUDED.nombre, descripcion = EXCLUDED.descripcion;
+  SET nombre = EXCLUDED.nombre,
+      descripcion = EXCLUDED.descripcion,
+      nivel_jerarquia = EXCLUDED.nivel_jerarquia;
 
--- Permisos de pagos (si existen en permisos)
+-- Asegurar permisos de pagos (clave, no codigo)
+INSERT INTO public.permisos (clave, nombre, descripcion, modulo)
+VALUES
+  ('ver_pagos', 'Ver Pagos', 'Ver lista de pagos', 'pagos'),
+  ('crear_pago', 'Crear Pago', 'Registrar cargos', 'pagos'),
+  ('editar_pago', 'Editar Pago', 'Ajustar montos / descuentos', 'pagos'),
+  ('acreditar_pago', 'Acreditar Pago', 'Registrar abonos', 'pagos'),
+  ('eliminar_pago', 'Eliminar Pago', 'Borrar cargos sin abonos', 'pagos')
+ON CONFLICT (clave) DO NOTHING;
+
 INSERT INTO public.roles_permisos (rol_id, permiso_id)
 SELECT r.id, p.id
 FROM public.roles r
@@ -48,7 +60,6 @@ WHERE r.codigo = 'caja'
   )
 ON CONFLICT DO NOTHING;
 
--- Helper: ¿usuario es caja o directora para pagos?
 CREATE OR REPLACE FUNCTION public.usuario_gestiona_pagos(p_uid UUID DEFAULT auth.uid())
 RETURNS BOOLEAN
 LANGUAGE sql
@@ -66,3 +77,6 @@ $$;
 
 COMMENT ON FUNCTION public.usuario_gestiona_pagos IS
   'Directora o rol caja pueden administrar pagos';
+
+-- Verificación
+SELECT codigo, nombre, nivel_jerarquia FROM public.roles WHERE codigo = 'caja';

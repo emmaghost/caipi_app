@@ -115,6 +115,11 @@ class ChatService {
     return Conversacion.fromJson(response);
   }
 
+  /// Solo directora (RLS). Borra el hilo; los mensajes caen por CASCADE.
+  Future<void> eliminarConversacion(String conversacionId) async {
+    await _supabase.from('conversaciones').delete().eq('id', conversacionId);
+  }
+
   Future<ChatConfig> obtenerChatConfig() async {
     try {
       final row = await _supabase

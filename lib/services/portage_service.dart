@@ -205,6 +205,14 @@ class PortageService {
     return PortageEvaluacion.fromJson(response);
   }
 
+  /// Borra el seguimiento y, por CASCADE, todas sus calificaciones.
+  Future<void> eliminarEvaluacion(String evaluacionId) async {
+    await _supabase
+        .from('portage_evaluaciones')
+        .delete()
+        .eq('id', evaluacionId);
+  }
+
   Future<List<PortageEvaluacion>> listarEvaluacionesPorGrado(
     String gradoId,
   ) async {

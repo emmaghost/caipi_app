@@ -318,6 +318,7 @@ class _PortageHomeScreenState extends State<PortageHomeScreen> {
             children: [
               DropdownButtonFormField<String>(
                 value: listaId,
+                isExpanded: true,
                 decoration: const InputDecoration(
                   labelText: 'Lista (habilidades / alertas)',
                 ),
@@ -328,6 +329,19 @@ class _PortageHomeScreenState extends State<PortageHomeScreen> {
                         child: Text(
                           '${l.nombre} (${l.tipoEtiqueta})',
                           overflow: TextOverflow.ellipsis,
+                          maxLines: 2,
+                        ),
+                      ),
+                    )
+                    .toList(),
+                selectedItemBuilder: (context) => listasActivas
+                    .map(
+                      (l) => Align(
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          '${l.nombre} (${l.tipoEtiqueta})',
+                          overflow: TextOverflow.ellipsis,
+                          maxLines: 1,
                         ),
                       ),
                     )
@@ -410,6 +424,50 @@ class _PortageHomeScreenState extends State<PortageHomeScreen> {
       );
     } catch (e) {
       tituloCtrl.dispose();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error: $e'), backgroundColor: AppColors.rojo),
+      );
+    }
+  }
+
+  Future<void> _eliminarEvaluacion(PortageEvaluacion eval) async {
+    if (!_esDirectora) return;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('¿Borrar este seguimiento?'),
+        content: Text(
+          'Se eliminará «${eval.tituloDisplay}» '
+          '(${DateFormat('dd/MM/yyyy').format(eval.fechaInicio)}).\n\n'
+          'También se borrarán todas las calificaciones ya hechas en este '
+          'seguimiento. Esta acción no se puede deshacer.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: AppColors.rojo),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Borrar'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    try {
+      await _portage.eliminarEvaluacion(eval.id);
+      await _cargarGrado();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Seguimiento eliminado'),
+          backgroundColor: AppColors.verde,
+        ),
+      );
+    } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Error: $e'), backgroundColor: AppColors.rojo),
@@ -753,8 +811,21 @@ class _PortageHomeScreenState extends State<PortageHomeScreen> {
                                             DateFormat('dd/MM/yyyy')
                                                 .format(e.fechaInicio),
                                           ),
-                                          trailing: const Icon(
-                                            Icons.chevron_right,
+                                          trailing: Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              if (_esDirectora)
+                                                IconButton(
+                                                  tooltip: 'Borrar seguimiento',
+                                                  icon: const Icon(
+                                                    Icons.delete_outline,
+                                                    color: AppColors.rojo,
+                                                  ),
+                                                  onPressed: () =>
+                                                      _eliminarEvaluacion(e),
+                                                ),
+                                              const Icon(Icons.chevron_right),
+                                            ],
                                           ),
                                           onTap: () => context.push(
                                             '/directora/portage/evaluacion/${e.id}',

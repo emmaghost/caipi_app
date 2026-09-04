@@ -79,6 +79,56 @@ class _ChatConversacionScreenState extends State<ChatConversacionScreen> {
     );
   }
 
+  Future<void> _borrarConversacion() async {
+    final usuario = context.read<AuthService>().currentUser;
+    if (usuario?.esDirectora != true) return;
+
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('¿Borrar este chat?'),
+        content: Text(
+          'Se eliminará toda la conversación con «${widget.titulo}» '
+          'y todos sus mensajes. Esta acción no se puede deshacer.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: AppColors.rojo),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Borrar'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+
+    try {
+      await _chatService.eliminarConversacion(widget.conversacionId);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Chat eliminado'),
+          backgroundColor: AppColors.verde,
+        ),
+      );
+      context.go('/directora/chat');
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'No se pudo borrar. ¿Ejecutaste ADD_CHAT_DIRECTORA_BORRAR.sql?\n$e',
+          ),
+          backgroundColor: AppColors.rojo,
+        ),
+      );
+    }
+  }
+
   Future<void> _enviarMensaje() async {
     final usuario = context.read<AuthService>().currentUser;
     if (usuario == null || _enviando || !_puedeEnviar) return;
@@ -156,6 +206,12 @@ class _ChatConversacionScreenState extends State<ChatConversacionScreen> {
         backgroundColor: AppColors.azulOscuro,
         foregroundColor: Colors.white,
         actions: [
+          if (context.read<AuthService>().currentUser?.esDirectora == true)
+            IconButton(
+              icon: const Icon(Icons.delete_outline),
+              tooltip: 'Borrar chat',
+              onPressed: _borrarConversacion,
+            ),
           IconButton(
             icon: const Icon(Icons.home),
             onPressed: () => context.go(rutaInicio),
