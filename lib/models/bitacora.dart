@@ -13,6 +13,8 @@ class Bitacora {
   final bool siesta;
   final String? estadoAnimo; // 'feliz', 'normal', 'triste', 'irritable'
   final String? observaciones;
+  final bool huboIncidencia;
+  final String? tipoIncidencia;
   final DateTime createdAt;
   final DateTime updatedAt;
 
@@ -31,6 +33,8 @@ class Bitacora {
     this.siesta = false,
     this.estadoAnimo,
     this.observaciones,
+    this.huboIncidencia = false,
+    this.tipoIncidencia,
     required this.createdAt,
     required this.updatedAt,
   });
@@ -51,6 +55,8 @@ class Bitacora {
       siesta: json['siesta'] as bool? ?? false,
       estadoAnimo: json['estado_animo'] as String?,
       observaciones: json['observaciones'] as String?,
+      huboIncidencia: json['hubo_incidencia'] as bool? ?? false,
+      tipoIncidencia: json['tipo_incidencia'] as String?,
       createdAt: DateTime.parse(json['created_at']),
       updatedAt: DateTime.parse(json['updated_at']),
     );
@@ -79,6 +85,8 @@ class Bitacora {
       'siesta': siesta,
       'estado_animo': estadoAnimo,
       'observaciones': observaciones,
+      'hubo_incidencia': huboIncidencia,
+      'tipo_incidencia': huboIncidencia ? tipoIncidencia : null,
     };
   }
 }

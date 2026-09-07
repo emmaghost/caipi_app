@@ -5,6 +5,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../config/app_colors.dart';
 import '../../widgets/app_drawer.dart';
+import '../../widgets/caipi_app_bar_leading.dart';
 
 class PersonasAutorizadasScreen extends StatelessWidget {
   final String alumnoId;
@@ -22,6 +23,7 @@ class PersonasAutorizadasScreen extends StatelessWidget {
       backgroundColor: AppColors.grisClaro,
       drawer: const AppDrawer(),
       appBar: AppBar(
+        leading: const CaipiAppBarLeading(),
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [

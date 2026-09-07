@@ -6,6 +6,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../config/app_colors.dart';
 import '../../models/grado.dart';
 import '../../widgets/app_drawer.dart';
+import '../../widgets/caipi_app_bar_leading.dart';
 
 class GradosScreen extends StatefulWidget {
   const GradosScreen({super.key});
@@ -44,6 +45,7 @@ class _GradosScreenState extends State<GradosScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
+        leading: const CaipiAppBarLeading(),
         title: Row(
           children: [
             const Icon(Icons.school, color: Colors.white),

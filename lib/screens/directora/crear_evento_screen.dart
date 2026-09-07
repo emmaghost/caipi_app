@@ -9,6 +9,7 @@ import '../../config/app_colors.dart';
 import '../../widgets/app_drawer.dart';
 import '../../models/evento.dart';
 import '../../models/grado.dart';
+import '../../widgets/caipi_app_bar_leading.dart';
 
 class CrearEventoScreen extends StatefulWidget {
   final String? eventoId;
@@ -178,6 +179,7 @@ class _CrearEventoScreenState extends State<CrearEventoScreen> {
       backgroundColor: AppColors.grisClaro,
       drawer: const AppDrawer(),
       appBar: AppBar(
+        leading: const CaipiAppBarLeading(),
         backgroundColor: AppColors.morado,
         foregroundColor: Colors.white,
         title: Text(

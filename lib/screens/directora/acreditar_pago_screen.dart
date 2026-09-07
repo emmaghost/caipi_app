@@ -9,6 +9,7 @@ import '../../models/pago.dart';
 import '../../models/alumno.dart';
 import '../../config/app_colors.dart';
 import '../../utils/constantes.dart';
+import '../../widgets/caipi_app_bar_leading.dart';
 
 class AcreditarPagoScreen extends StatefulWidget {
   final String pagoId;
@@ -211,6 +212,7 @@ class _AcreditarPagoScreenState extends State<AcreditarPagoScreen> {
     return Scaffold(
       backgroundColor: AppColors.grisClaro,
       appBar: AppBar(
+        leading: const CaipiAppBarLeading(),
         title: Text(
           'Acreditar Pago',
           style: GoogleFonts.poppins(fontWeight: FontWeight.bold),

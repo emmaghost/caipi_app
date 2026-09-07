@@ -7,6 +7,7 @@ import 'package:uuid/uuid.dart';
 import '../../config/app_colors.dart';
 import '../../models/grado.dart';
 import '../../widgets/app_drawer.dart';
+import '../../widgets/caipi_app_bar_leading.dart';
 
 class CrearGradoScreen extends StatefulWidget {
   final String? gradoId;
@@ -94,10 +95,7 @@ class _CrearGradoScreenState extends State<CrearGradoScreen> {
           ],
         ),
         backgroundColor: AppColors.morado,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Colors.white),
-          onPressed: () => GoRouter.of(context).pop(),
-        ),
+        leading: const CaipiAppBarLeading(),
       ),
       drawer: const AppDrawer(),
       body: _cargando

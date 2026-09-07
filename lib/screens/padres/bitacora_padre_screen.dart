@@ -5,6 +5,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../config/app_colors.dart';
 import '../../models/bitacora.dart';
+import '../../widgets/caipi_app_bar_leading.dart';
 
 /// Bitácora del hijo: lectura rápida (etiqueta → valor), por día o por mes.
 class BitacoraPadreScreen extends StatefulWidget {
@@ -74,6 +75,7 @@ class _BitacoraPadreScreenState extends State<BitacoraPadreScreen>
     return Scaffold(
       backgroundColor: const Color(0xFFFFF5F8),
       appBar: AppBar(
+        leading: const CaipiAppBarLeading(),
         backgroundColor: const Color(0xFFEC407A),
         foregroundColor: Colors.white,
         title: Text(
@@ -549,6 +551,24 @@ class _BitacoraPadreScreenState extends State<BitacoraPadreScreen>
                 style: GoogleFonts.poppins(fontSize: 15),
               ),
             ],
+            if (b.huboIncidencia) ...[
+              const Divider(height: 24),
+              Text(
+                'Incidencia',
+                style: GoogleFonts.poppins(
+                  fontWeight: FontWeight.w700,
+                  fontSize: 12,
+                  color: Colors.orange.shade800,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                b.tipoIncidencia?.trim().isNotEmpty == true
+                    ? b.tipoIncidencia!
+                    : 'Sí hubo incidencia',
+                style: GoogleFonts.poppins(fontSize: 15),
+              ),
+            ],
           ],
         ),
       ),
@@ -566,6 +586,20 @@ class _BitacoraPadreScreenState extends State<BitacoraPadreScreen>
       ('Actividades', _iconoSiNo(b.realizoActividades)),
       ('Dientes', _iconoSiNo(b.lavoDientes)),
       ('Siesta', _iconoSiesta(b.siesta)),
+      if (b.huboIncidencia)
+        (
+          'Incidencia',
+          Text(
+            b.tipoIncidencia?.trim().isNotEmpty == true
+                ? b.tipoIncidencia!
+                : 'Sí',
+            style: GoogleFonts.poppins(
+              fontSize: 15,
+              fontWeight: FontWeight.w600,
+              color: Colors.orange.shade800,
+            ),
+          ),
+        ),
     ];
     return filas
         .map(

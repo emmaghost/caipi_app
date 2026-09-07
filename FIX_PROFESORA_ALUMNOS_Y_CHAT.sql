@@ -135,16 +135,30 @@ CREATE POLICY "usuarios_select" ON public.usuarios
     )
   );
 
--- ---- ALUMNOS: usa helpers, no EXISTS crudo sobre usuarios ----
+-- ---- ALUMNOS: directora/admin/caja/secretaria = TODOS; maestra = sus grados ----
+CREATE OR REPLACE FUNCTION public.caipi_puede_ver_todos_alumnos()
+RETURNS BOOLEAN
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT public.caipi_rol_actual() IN (
+    'directora', 'profesor_admin', 'secretaria', 'caja'
+  );
+$$;
+
+GRANT EXECUTE ON FUNCTION public.caipi_puede_ver_todos_alumnos() TO authenticated;
+
 DROP POLICY IF EXISTS "alumnos_select" ON public.alumnos;
 DROP POLICY IF EXISTS "Ver alumnos" ON public.alumnos;
 
 CREATE POLICY "alumnos_select" ON public.alumnos
   FOR SELECT TO authenticated
   USING (
-    public.usuario_gestiona_pagos()
+    public.caipi_puede_ver_todos_alumnos()
+    OR public.usuario_gestiona_pagos()
     OR public.caipi_puede_alta_alumnos()
-    OR public.caipi_rol_actual() = 'profesor_admin'
     OR padre_id = auth.uid()
     OR (
       to_regclass('public.alumnos_padres') IS NOT NULL

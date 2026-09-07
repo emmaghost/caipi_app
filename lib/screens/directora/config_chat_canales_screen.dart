@@ -7,6 +7,7 @@ import '../../config/app_colors.dart';
 import '../../services/auth_service.dart';
 import '../../services/chat_service.dart';
 import '../../widgets/app_drawer.dart';
+import '../../widgets/caipi_app_bar_leading.dart';
 
 class ConfigChatCanalesScreen extends StatefulWidget {
   const ConfigChatCanalesScreen({super.key});
@@ -81,6 +82,7 @@ class _ConfigChatCanalesScreenState extends State<ConfigChatCanalesScreen> {
       backgroundColor: AppColors.grisClaro,
       drawer: const AppDrawer(),
       appBar: AppBar(
+        leading: const CaipiAppBarLeading(),
         title: Text(
           'Canales de chat',
           style: GoogleFonts.poppins(fontWeight: FontWeight.bold),

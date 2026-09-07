@@ -11,6 +11,7 @@ import '../../models/grado.dart';
 import '../../services/auth_service.dart';
 import '../../services/exportacion_gastos_excel.dart';
 import '../../widgets/app_drawer.dart';
+import '../../widgets/caipi_app_bar_leading.dart';
 
 String formatoMontoBitacoraGasto(double monto) {
   return NumberFormat.currency(locale: 'es_MX', symbol: r'$').format(monto);
@@ -579,6 +580,7 @@ class _BitacoraGastosScreenState extends State<BitacoraGastosScreen> {
       backgroundColor: AppColors.rosaClaro,
       drawer: const AppDrawer(),
       appBar: AppBar(
+        leading: const CaipiAppBarLeading(),
         backgroundColor: AppColors.morado,
         foregroundColor: Colors.white,
         title: Row(

@@ -8,6 +8,7 @@ import '../../services/auth_service.dart';
 import '../../services/profesor_grupos_service.dart';
 import '../../widgets/app_drawer.dart';
 import '../../widgets/panel_solicitudes_recogida_escuela.dart';
+import '../../widgets/caipi_app_bar_leading.dart';
 
 /// Menú dedicado: papás que ya están en la entrada y piden entregar al niño.
 class EntregaAfueraScreen extends StatefulWidget {
@@ -29,11 +30,11 @@ class _EntregaAfueraScreenState extends State<EntregaAfueraScreen> {
 
   Future<void> _cargarFiltroProfesor() async {
     final user = context.read<AuthService>().currentUser;
-    if (user == null || user.esDirectora || user.esProfesorAdmin) {
+    if (user == null || user.puedeVerTodosLosAlumnos) {
       if (mounted) setState(() => _cargandoFiltro = false);
       return;
     }
-    if (!user.esProfesor) {
+    if (!user.esMaestraAula) {
       if (mounted) setState(() => _cargandoFiltro = false);
       return;
     }
@@ -56,6 +57,7 @@ class _EntregaAfueraScreenState extends State<EntregaAfueraScreen> {
       backgroundColor: AppColors.grisClaro,
       drawer: const AppDrawer(),
       appBar: AppBar(
+        leading: const CaipiAppBarLeading(),
         title: Text(
           'Niños afuera',
           style: GoogleFonts.poppins(fontWeight: FontWeight.bold),

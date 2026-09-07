@@ -9,6 +9,7 @@ import '../../config/app_colors.dart';
 import '../../services/auth_service.dart';
 import '../../services/profesor_grupos_service.dart';
 import '../../widgets/app_drawer.dart';
+import '../../widgets/caipi_app_bar_leading.dart';
 
 class AnunciosScreen extends StatefulWidget {
   const AnunciosScreen({super.key});
@@ -82,6 +83,7 @@ class _AnunciosScreenState extends State<AnunciosScreen> {
 
     return Scaffold(
       appBar: AppBar(
+        leading: const CaipiAppBarLeading(),
         title: Row(
           children: [
             const Icon(Icons.campaign, color: Colors.white),

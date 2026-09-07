@@ -15,6 +15,7 @@ import '../../models/alumno.dart';
 import '../../models/grado.dart';
 import '../../config/app_colors.dart';
 import '../../utils/constantes.dart';
+import '../../widgets/caipi_app_bar_leading.dart';
 
 class CrearAlumnoScreen extends StatefulWidget {
   final String? alumnoId;
@@ -599,6 +600,7 @@ class _CrearAlumnoScreenState extends State<CrearAlumnoScreen> {
     return Scaffold(
       backgroundColor: AppColors.grisClaro,
       appBar: AppBar(
+        leading: const CaipiAppBarLeading(),
         title: Text(
           widget.alumnoId == null ? 'Nuevo Alumno' : 'Editar Alumno',
           style: GoogleFonts.poppins(fontWeight: FontWeight.bold),

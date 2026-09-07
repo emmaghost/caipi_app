@@ -68,6 +68,10 @@ class Usuario {
   bool get puedeVerPortage =>
       esDirectora || esProfesorAdmin || esMaestraTitular;
 
+  /// Lista completa de alumnos (sin filtro de grupo de maestra).
+  bool get puedeVerTodosLosAlumnos =>
+      esDirectora || esProfesorAdmin || esSecretaria || esCaja;
+
   Usuario conPerfilProfesor({String? especialidad, String? gradoId}) {
     return Usuario(
       id: id,

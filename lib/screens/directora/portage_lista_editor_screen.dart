@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import '../../config/app_colors.dart';
 import '../../services/auth_service.dart';
 import '../../services/portage_service.dart';
+import '../../widgets/caipi_app_bar_leading.dart';
 
 /// Editor de lista: repeater de nombres de indicadores (solo directora edita).
 class PortageListaEditorScreen extends StatefulWidget {
@@ -168,6 +169,7 @@ class _PortageListaEditorScreenState extends State<PortageListaEditorScreen> {
     return Scaffold(
       backgroundColor: AppColors.grisClaro,
       appBar: AppBar(
+        leading: const CaipiAppBarLeading(),
         title: Text(
           _loading ? 'Lista' : _tipoEtiqueta,
           style: GoogleFonts.poppins(fontWeight: FontWeight.w600),

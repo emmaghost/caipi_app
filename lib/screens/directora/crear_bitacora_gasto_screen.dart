@@ -11,6 +11,7 @@ import '../../config/app_colors.dart';
 import '../../models/bitacora_gasto.dart';
 import '../../models/grado.dart';
 import '../../widgets/app_drawer.dart';
+import '../../widgets/caipi_app_bar_leading.dart';
 
 class CrearBitacoraGastoScreen extends StatefulWidget {
   final String? gastoId;
@@ -278,10 +279,7 @@ class _CrearBitacoraGastoScreenState extends State<CrearBitacoraGastoScreen> {
           _esEdicion ? 'Editar gasto' : 'Registrar gasto',
           style: GoogleFonts.fredoka(fontSize: 20, fontWeight: FontWeight.w600),
         ),
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Colors.white),
-          onPressed: () => context.pop(),
-        ),
+        leading: const CaipiAppBarLeading(),
       ),
       body: _cargando
           ? const Center(child: CircularProgressIndicator())

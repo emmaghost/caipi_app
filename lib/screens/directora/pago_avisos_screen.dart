@@ -8,6 +8,7 @@ import '../../services/auth_service.dart';
 import '../../services/chat_service.dart';
 import '../../services/pago_avisos_service.dart';
 import '../../widgets/app_drawer.dart';
+import '../../widgets/caipi_app_bar_leading.dart';
 
 /// Directora y caja: programar avisos de pronto pago y de adeudo/recargo.
 class PagoAvisosScreen extends StatefulWidget {
@@ -386,6 +387,7 @@ class _PagoAvisosScreenState extends State<PagoAvisosScreen> {
       backgroundColor: AppColors.grisClaro,
       drawer: const AppDrawer(),
       appBar: AppBar(
+        leading: const CaipiAppBarLeading(),
         title: Text(
           'Avisos de pago',
           style: GoogleFonts.poppins(fontWeight: FontWeight.bold),

@@ -7,6 +7,7 @@ import 'package:intl/intl.dart';
 import '../../config/app_colors.dart';
 import '../../widgets/app_drawer.dart';
 import '../../models/evento.dart';
+import '../../widgets/caipi_app_bar_leading.dart';
 
 class EventosPadreScreen extends StatefulWidget {
   const EventosPadreScreen({Key? key}) : super(key: key);
@@ -24,6 +25,7 @@ class _EventosPadreScreenState extends State<EventosPadreScreen> {
       backgroundColor: AppColors.grisClaro,
       drawer: const AppDrawer(),
       appBar: AppBar(
+        leading: const CaipiAppBarLeading(),
         backgroundColor: const Color(0xFFEC407A), // Rosa pastel (igual que Mis Hijos)
         foregroundColor: Colors.white,
         elevation: 0,

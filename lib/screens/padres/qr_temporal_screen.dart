@@ -7,6 +7,7 @@ import 'package:intl/intl.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../../config/app_colors.dart';
+import '../../widgets/caipi_app_bar_leading.dart';
 
 class QrTemporalScreen extends StatelessWidget {
   final String codigo;
@@ -29,6 +30,7 @@ class QrTemporalScreen extends StatelessWidget {
     
     return Scaffold(
       appBar: AppBar(
+        leading: const CaipiAppBarLeading(),
         title: Text(
           'QR Temporal',
           style: GoogleFonts.poppins(fontWeight: FontWeight.bold),

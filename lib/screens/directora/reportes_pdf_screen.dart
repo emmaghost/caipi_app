@@ -6,6 +6,7 @@ import 'package:intl/intl.dart';
 import '../../config/app_colors.dart';
 import '../../services/reportes_pdf_service.dart';
 import '../../widgets/app_drawer.dart';
+import '../../widgets/caipi_app_bar_leading.dart';
 
 /// Pantalla solo directora: exportar reportes PDF con rango de fechas.
 class ReportesPdfScreen extends StatefulWidget {
@@ -84,6 +85,7 @@ class _ReportesPdfScreenState extends State<ReportesPdfScreen> {
       backgroundColor: AppColors.grisClaro,
       drawer: const AppDrawer(),
       appBar: AppBar(
+        leading: const CaipiAppBarLeading(),
         title: Text(
           'Reportes PDF',
           style: GoogleFonts.poppins(fontWeight: FontWeight.bold),

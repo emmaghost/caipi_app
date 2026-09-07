@@ -199,6 +199,22 @@ class NotificationService {
     );
   }
 
+  /// Niño ya entregado / recogido
+  Future<void> notificarNinoRecogido({
+    required String nombreAlumno,
+    String? quienRecibio,
+  }) async {
+    final quien = (quienRecibio ?? '').trim();
+    await showNotification(
+      id: DateTime.now().millisecondsSinceEpoch.remainder(100000) + 2,
+      title: 'Niño recogido',
+      body: quien.isEmpty
+          ? '$nombreAlumno ya fue entregado'
+          : '$nombreAlumno ya fue entregado. Lo recogió: $quien',
+      payload: '/directora/entrega-afuera',
+    );
+  }
+
   /// Notificación de recordatorio
   Future<void> notificarRecordatorio({
     required String titulo,

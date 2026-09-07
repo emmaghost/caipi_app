@@ -14,6 +14,7 @@ import '../../widgets/app_drawer.dart';
 import '../../widgets/solicitud_recogida_padre_card.dart';
 import '../../widgets/ligas_padre_vista.dart';
 import '../directora/portage_evaluacion_screen.dart';
+import '../../widgets/caipi_app_bar_leading.dart';
 
 class DetalleHijoScreen extends StatelessWidget {
   final String alumnoId;
@@ -66,6 +67,7 @@ class DetalleHijoScreen extends StatelessWidget {
         return Scaffold(
           drawer: const AppDrawer(),
           appBar: AppBar(
+        leading: const CaipiAppBarLeading(),
             title: Text(alumno.nombreCompleto),
             backgroundColor: const Color(0xFFEC407A), // Rosa pastel (igual que vista padre)
             foregroundColor: Colors.white,

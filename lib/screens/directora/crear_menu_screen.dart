@@ -8,6 +8,7 @@ import 'package:uuid/uuid.dart';
 import '../../config/app_colors.dart';
 import '../../models/menu_maternal.dart';
 import '../../widgets/app_drawer.dart';
+import '../../widgets/caipi_app_bar_leading.dart';
 
 class CrearMenuScreen extends StatefulWidget {
   final String? menuId;
@@ -110,10 +111,7 @@ class _CrearMenuScreenState extends State<CrearMenuScreen> {
           ],
         ),
         backgroundColor: AppColors.azulOscuro,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Colors.white),
-          onPressed: () => GoRouter.of(context).pop(),
-        ),
+        leading: const CaipiAppBarLeading(),
       ),
       drawer: const AppDrawer(),
       body: _cargando

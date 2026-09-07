@@ -6,6 +6,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../models/clase_extracurricular.dart';
 import '../../config/app_colors.dart';
 import '../../widgets/app_drawer.dart';
+import '../../widgets/caipi_app_bar_leading.dart';
 
 class ClasesExtracurricularesScreen extends StatefulWidget {
   const ClasesExtracurricularesScreen({super.key});
@@ -19,6 +20,7 @@ class _ClasesExtracurricularesScreenState extends State<ClasesExtracurricularesS
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
+        leading: const CaipiAppBarLeading(),
         title: const Text('Clases Extracurriculares'),
         backgroundColor: AppColors.azulOscuro,
         foregroundColor: Colors.white,

@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 import '../../config/app_colors.dart';
 import '../../models/pago.dart';
 import '../../models/abono.dart';
+import '../../widgets/caipi_app_bar_leading.dart';
 
 class RegistrarAbonoScreen extends StatefulWidget {
   final Pago pago;
@@ -143,6 +144,7 @@ class _RegistrarAbonoScreenState extends State<RegistrarAbonoScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
+        leading: const CaipiAppBarLeading(),
         title: const Text('Registrar Abono'),
         flexibleSpace: Container(
           decoration: BoxDecoration(

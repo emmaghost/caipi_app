@@ -7,6 +7,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../config/app_colors.dart';
 import '../../services/auth_service.dart';
 import '../../widgets/app_drawer.dart';
+import '../../widgets/caipi_app_bar_leading.dart';
 
 class VerPadreScreen extends StatefulWidget {
   final String padreId;
@@ -206,6 +207,7 @@ class _VerPadreScreenState extends State<VerPadreScreen> {
       backgroundColor: AppColors.grisClaro,
       drawer: const AppDrawer(),
       appBar: AppBar(
+        leading: const CaipiAppBarLeading(),
         title: Text(
           'Detalles del Padre',
           style: GoogleFonts.poppins(fontWeight: FontWeight.bold),

@@ -8,6 +8,7 @@ import '../../services/auth_service.dart';
 import '../../services/chat_service.dart';
 import '../../widgets/app_drawer.dart';
 import 'chat_conversacion_screen.dart';
+import '../../widgets/caipi_app_bar_leading.dart';
 
 class ChatPadreScreen extends StatefulWidget {
   const ChatPadreScreen({super.key});
@@ -86,6 +87,7 @@ class _ChatPadreScreenState extends State<ChatPadreScreen> {
       backgroundColor: AppColors.grisClaro,
       drawer: const AppDrawer(),
       appBar: AppBar(
+        leading: const CaipiAppBarLeading(),
         title: Text(
           'Chat con la Escuela',
           style: GoogleFonts.poppins(fontWeight: FontWeight.bold),

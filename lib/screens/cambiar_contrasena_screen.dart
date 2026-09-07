@@ -7,6 +7,7 @@ import 'package:provider/provider.dart';
 import '../config/app_colors.dart';
 import '../services/auth_service.dart';
 import '../widgets/app_drawer.dart';
+import '../widgets/caipi_app_bar_leading.dart';
 
 /// Cambio de contraseña para usuario ya autenticado (directora, secretaria, profesora, padre).
 class CambiarContrasenaScreen extends StatefulWidget {
@@ -90,6 +91,7 @@ class _CambiarContrasenaScreenState extends State<CambiarContrasenaScreen> {
       backgroundColor: AppColors.grisClaro,
       drawer: const AppDrawer(),
       appBar: AppBar(
+        leading: const CaipiAppBarLeading(),
         title: Text(
           'Cambiar contraseña',
           style: GoogleFonts.poppins(fontWeight: FontWeight.bold),

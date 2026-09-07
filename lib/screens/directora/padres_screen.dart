@@ -10,6 +10,7 @@ import '../../services/auth_service.dart';
 import '../../services/chat_service.dart';
 import '../../utils/constantes.dart';
 import '../../widgets/app_drawer.dart';
+import '../../widgets/caipi_app_bar_leading.dart';
 
 class PadresScreen extends StatefulWidget {
   const PadresScreen({super.key});
@@ -150,6 +151,7 @@ class _PadresScreenState extends State<PadresScreen> {
       backgroundColor: AppColors.grisClaro,
       drawer: const AppDrawer(),
       appBar: AppBar(
+        leading: const CaipiAppBarLeading(),
         title: Text(
           'Padres de Familia',
           style: GoogleFonts.poppins(fontWeight: FontWeight.bold),

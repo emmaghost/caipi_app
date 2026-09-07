@@ -13,6 +13,7 @@ import '../../services/portage_service.dart';
 import '../../services/supabase_service.dart';
 import '../../utils/portage_plantilla.dart';
 import '../../widgets/app_drawer.dart';
+import '../../widgets/caipi_app_bar_leading.dart';
 
 /// Flujo: 1) grupo → 2) buscar/elegir niño → ficha del niño.
 class PortageHomeScreen extends StatefulWidget {
@@ -482,6 +483,7 @@ class _PortageHomeScreenState extends State<PortageHomeScreen> {
       backgroundColor: AppColors.grisClaro,
       drawer: const AppDrawer(),
       appBar: AppBar(
+        leading: const CaipiAppBarLeading(),
         title: Text(
           'Indicadores de desarrollo',
           style: GoogleFonts.poppins(fontWeight: FontWeight.w600),

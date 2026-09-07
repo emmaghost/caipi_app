@@ -13,6 +13,7 @@ import '../../services/portage_service.dart';
 import '../../services/supabase_service.dart';
 import '../../utils/portage_stats.dart';
 import '../../widgets/portage_line_chart.dart';
+import '../../widgets/caipi_app_bar_leading.dart';
 
 /// Ficha de un niño:
 /// - Solo el **último** seguimiento para calificar / PDF.
@@ -193,6 +194,7 @@ class _PortageAlumnoHubScreenState extends State<PortageAlumnoHubScreen> {
     return Scaffold(
       backgroundColor: AppColors.grisClaro,
       appBar: AppBar(
+        leading: const CaipiAppBarLeading(),
         title: Text(
           alumno?.nombreCompleto ?? 'Niño',
           style: GoogleFonts.poppins(fontWeight: FontWeight.w600),

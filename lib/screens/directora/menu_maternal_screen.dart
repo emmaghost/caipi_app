@@ -7,6 +7,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../config/app_colors.dart';
 import '../../models/menu_maternal.dart';
 import '../../widgets/app_drawer.dart';
+import '../../widgets/caipi_app_bar_leading.dart';
 
 class MenuMaternalScreen extends StatefulWidget {
   const MenuMaternalScreen({super.key});
@@ -22,6 +23,7 @@ class _MenuMaternalScreenState extends State<MenuMaternalScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
+        leading: const CaipiAppBarLeading(),
         title: Row(
           children: [
             const Icon(Icons.restaurant_menu, color: Colors.white),

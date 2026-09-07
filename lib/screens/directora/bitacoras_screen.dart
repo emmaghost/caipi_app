@@ -10,6 +10,7 @@ import '../../models/bitacora.dart';
 import '../../models/grado.dart';
 import '../../services/auth_service.dart';
 import '../../widgets/app_drawer.dart';
+import '../../widgets/caipi_app_bar_leading.dart';
 
 class BitacorasScreen extends StatefulWidget {
   const BitacorasScreen({super.key});
@@ -153,6 +154,7 @@ class _BitacorasScreenState extends State<BitacorasScreen> {
     return Scaffold(
       backgroundColor: AppColors.rosaClaro,
       appBar: AppBar(
+        leading: const CaipiAppBarLeading(),
         backgroundColor: AppColors.morado,
         foregroundColor: Colors.white,
         title: Row(
@@ -467,30 +469,6 @@ class _BitacorasScreenState extends State<BitacorasScreen> {
                                           color: Colors.grey[700],
                                         ),
                                       ),
-                                      if (_esDirectora || !_profesoraSinGrupo) ...[
-                                        const SizedBox(height: 24),
-                                        ElevatedButton.icon(
-                                          onPressed: () {
-                                            GoRouter.of(context).push(
-                                              '/directora/bitacoras/crear',
-                                              extra: {
-                                                'fecha': _fechaSeleccionada,
-                                              },
-                                            );
-                                          },
-                                          icon: const Icon(Icons.add,
-                                              color: Colors.white),
-                                          label: const Text('Crear bitácora'),
-                                          style: ElevatedButton.styleFrom(
-                                            backgroundColor: AppColors.morado,
-                                            foregroundColor: Colors.white,
-                                            padding: const EdgeInsets.symmetric(
-                                              horizontal: 24,
-                                              vertical: 14,
-                                            ),
-                                          ),
-                                        ),
-                                      ],
                                     ],
                                   ),
                                 ),
@@ -696,6 +674,23 @@ class _BitacoraCard extends StatelessWidget {
                     label: 'Siesta',
                     valor: bitacora.siesta,
                   ),
+                  if (bitacora.huboIncidencia)
+                    Chip(
+                      avatar: Icon(Icons.report_problem,
+                          size: 16, color: Colors.orange.shade800),
+                      label: Text(
+                        bitacora.tipoIncidencia?.trim().isNotEmpty == true
+                            ? bitacora.tipoIncidencia!
+                            : 'Incidencia',
+                        style: GoogleFonts.poppins(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.orange.shade900,
+                        ),
+                      ),
+                      backgroundColor: Colors.orange.shade50,
+                      side: BorderSide(color: Colors.orange.shade300),
+                    ),
                 ],
               ),
               if (bitacora.observaciones != null &&
@@ -892,6 +887,14 @@ class _BitacoraCard extends StatelessWidget {
               _buildDetalleItem(
                   'Se lavó los dientes', bitacora.lavoDientes ? 'Sí' : 'No'),
               _buildDetalleItem('Siesta', bitacora.siesta ? 'Sí' : 'No'),
+              _buildDetalleItem(
+                'Incidencia',
+                bitacora.huboIncidencia
+                    ? (bitacora.tipoIncidencia?.trim().isNotEmpty == true
+                        ? bitacora.tipoIncidencia!
+                        : 'Sí')
+                    : 'No',
+              ),
               if (bitacora.observaciones != null &&
                   bitacora.observaciones!.isNotEmpty)
                 _buildDetalleItem('Observaciones', bitacora.observaciones!),

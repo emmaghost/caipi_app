@@ -9,6 +9,7 @@ import '../../models/alumno.dart';
 import '../../models/grado.dart';
 import '../../widgets/alumno_card.dart';
 import '../../widgets/app_drawer.dart';
+import '../../widgets/caipi_app_bar_leading.dart';
 
 class AlumnosScreen extends StatefulWidget {
   const AlumnosScreen({super.key});
@@ -97,10 +98,11 @@ class _AlumnosScreenState extends State<AlumnosScreen> {
       String filtro = 'Todos';
       var bloqueado = false;
       Set<String>? permitidos;
-      if (user != null &&
-          user.esProfesor &&
-          !user.esDirectora &&
-          !user.esProfesorAdmin) {
+      // Solo maestra de aula se limita a sus grupos. Directora/admin/caja/secretaria: todos.
+      final limitarASusGrupos = user != null &&
+          user.esMaestraAula &&
+          !user.puedeVerTodosLosAlumnos;
+      if (limitarASusGrupos) {
         final ids = await ProfesorGruposService().gradoIdsDeUsuario(user.id);
         if (ids.isNotEmpty) {
           permitidos = ids.toSet();
@@ -136,6 +138,7 @@ class _AlumnosScreenState extends State<AlumnosScreen> {
 
     return Scaffold(
       appBar: AppBar(
+        leading: const CaipiAppBarLeading(),
         title: const Text('Alumnos'),
         actions: [
           if (puedeEditar)
@@ -293,10 +296,14 @@ class _AlumnosScreenState extends State<AlumnosScreen> {
 
     var alumnos = List<Alumno>.from(_alumnos);
 
-    // Maestra: nunca mostrar fuera de sus grados (aunque el chip diga "Mis grupos").
-    if (_gradoIdsPermitidos != null) {
+    // Maestra: nunca mostrar fuera de sus grados.
+    // Directora/admin/etc.: _gradoIdsPermitidos queda null → sin este filtro.
+    if (_gradoIdsPermitidos != null &&
+        !(context.read<AuthService>().currentUser?.puedeVerTodosLosAlumnos ??
+            false)) {
       alumnos = alumnos
-          .where((a) => _gradoIdsPermitidos!.contains(a.gradoId))
+          .where((a) =>
+              a.gradoId != null && _gradoIdsPermitidos!.contains(a.gradoId))
           .toList();
     }
 

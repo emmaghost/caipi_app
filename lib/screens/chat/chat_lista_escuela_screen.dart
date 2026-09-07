@@ -12,6 +12,7 @@ import '../../services/auth_service.dart';
 import '../../services/chat_service.dart';
 import '../../services/profesor_grupos_service.dart';
 import '../../widgets/app_drawer.dart';
+import '../../widgets/caipi_app_bar_leading.dart';
 
 class ChatListaEscuelaScreen extends StatefulWidget {
   const ChatListaEscuelaScreen({super.key});
@@ -212,6 +213,7 @@ class _ChatListaEscuelaScreenState extends State<ChatListaEscuelaScreen> {
       backgroundColor: AppColors.grisClaro,
       drawer: const AppDrawer(),
       appBar: AppBar(
+        leading: const CaipiAppBarLeading(),
         title: Text(
           'Chat con Padres',
           style: GoogleFonts.poppins(fontWeight: FontWeight.bold),

@@ -7,6 +7,7 @@ import 'package:uuid/uuid.dart';
 import '../../models/clase_extracurricular.dart';
 import '../../config/app_colors.dart';
 import '../../widgets/app_drawer.dart';
+import '../../widgets/caipi_app_bar_leading.dart';
 
 class CrearClaseExtracurricularScreen extends StatefulWidget {
   final String? claseId;
@@ -98,6 +99,7 @@ class _CrearClaseExtracurricularScreenState extends State<CrearClaseExtracurricu
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
+        leading: const CaipiAppBarLeading(),
         title: Text(widget.claseId == null ? 'Nueva Clase Extracurricular' : 'Editar Clase'),
         backgroundColor: AppColors.azulOscuro,
         foregroundColor: Colors.white,

@@ -10,6 +10,7 @@ import '../../services/profesor_grupos_service.dart';
 import '../../models/grado.dart';
 import '../../config/app_colors.dart';
 import '../../utils/constantes.dart';
+import '../../widgets/caipi_app_bar_leading.dart';
 
 class CrearProfesorScreen extends StatefulWidget {
   final String? profesorId;
@@ -366,6 +367,7 @@ class _CrearProfesorScreenState extends State<CrearProfesorScreen> {
     return Scaffold(
       backgroundColor: AppColors.grisClaro,
       appBar: AppBar(
+        leading: const CaipiAppBarLeading(),
         title: Text(
           widget.profesorId == null ? 'Nuevo docente' : 'Editar docente',
           style: GoogleFonts.poppins(fontWeight: FontWeight.bold),

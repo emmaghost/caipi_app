@@ -7,6 +7,7 @@ import 'package:intl/intl.dart';
 import '../../config/app_colors.dart';
 import '../../widgets/app_drawer.dart';
 import '../../models/incidente.dart';
+import '../../widgets/caipi_app_bar_leading.dart';
 
 class IncidentesScreen extends StatefulWidget {
   const IncidentesScreen({Key? key}) : super(key: key);
@@ -25,6 +26,7 @@ class _IncidentesScreenState extends State<IncidentesScreen> {
       backgroundColor: AppColors.grisClaro,
       drawer: const AppDrawer(),
       appBar: AppBar(
+        leading: const CaipiAppBarLeading(),
         flexibleSpace: Container(
           decoration: const BoxDecoration(
             gradient: LinearGradient(

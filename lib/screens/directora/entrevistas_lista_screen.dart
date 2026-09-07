@@ -8,6 +8,7 @@ import '../../models/alumno.dart';
 import '../../models/entrevista_padres.dart';
 import '../../services/reportes_pdf_service.dart';
 import '../../widgets/app_drawer.dart';
+import '../../widgets/caipi_app_bar_leading.dart';
 
 /// Lista de alumnos para ver / crear / descargar entrevista por hijo.
 class EntrevistasListaScreen extends StatefulWidget {
@@ -118,6 +119,7 @@ class _EntrevistasListaScreenState extends State<EntrevistasListaScreen> {
       backgroundColor: AppColors.grisClaro,
       drawer: const AppDrawer(),
       appBar: AppBar(
+        leading: const CaipiAppBarLeading(),
         title: Text(
           'Entrevistas por alumno',
           style: GoogleFonts.poppins(fontWeight: FontWeight.bold),

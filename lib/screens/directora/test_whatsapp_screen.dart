@@ -3,6 +3,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../services/whatsapp_service.dart';
 import '../../config/app_colors.dart';
+import '../../widgets/caipi_app_bar_leading.dart';
 
 /// Prueba Twilio + vista previa de plantillas (adeudo vs pago de mes).
 class TestWhatsAppScreen extends StatefulWidget {
@@ -174,11 +175,7 @@ class _TestWhatsAppScreenState extends State<TestWhatsAppScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
-          onPressed: () => Navigator.of(context).pop(),
-          tooltip: 'Volver',
-        ),
+        leading: const CaipiAppBarLeading(),
         title: const Text('Prueba de WhatsApp'),
         flexibleSpace: Container(
           decoration: BoxDecoration(

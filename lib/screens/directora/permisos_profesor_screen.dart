@@ -7,6 +7,7 @@ import '../../models/permiso.dart';
 import '../../models/usuario.dart';
 import '../../config/app_colors.dart';
 import '../../widgets/app_drawer.dart';
+import '../../widgets/caipi_app_bar_leading.dart';
 
 class PermisosProfesorScreen extends StatefulWidget {
   final String usuarioId;
@@ -106,6 +107,7 @@ class _PermisosProfesorScreenState extends State<PermisosProfesorScreen> {
       backgroundColor: AppColors.grisClaro,
       drawer: const AppDrawer(),
       appBar: AppBar(
+        leading: const CaipiAppBarLeading(),
         backgroundColor: AppColors.azulOscuro,
         foregroundColor: Colors.white,
         title: Column(

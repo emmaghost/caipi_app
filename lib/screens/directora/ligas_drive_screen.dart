@@ -9,6 +9,7 @@ import '../../models/liga_drive.dart';
 import '../../services/auth_service.dart';
 import '../../services/liga_drive_service.dart';
 import '../../widgets/app_drawer.dart';
+import '../../widgets/caipi_app_bar_leading.dart';
 
 class LigasDriveScreen extends StatefulWidget {
   const LigasDriveScreen({super.key});
@@ -68,6 +69,7 @@ class _LigasDriveScreenState extends State<LigasDriveScreen> {
       backgroundColor: AppColors.grisClaro,
       drawer: const AppDrawer(),
       appBar: AppBar(
+        leading: const CaipiAppBarLeading(),
         title: Text(
           'Ligas Drive',
           style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
@@ -323,6 +325,7 @@ class _LigaDriveFormScreenState extends State<LigaDriveFormScreen> {
     return Scaffold(
       backgroundColor: AppColors.grisClaro,
       appBar: AppBar(
+        leading: const CaipiAppBarLeading(),
         title: Text(
           _esEdicion ? 'Editar liga' : 'Crear nueva liga',
           style: GoogleFonts.poppins(fontWeight: FontWeight.w600),

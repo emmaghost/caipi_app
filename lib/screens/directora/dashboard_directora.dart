@@ -35,7 +35,7 @@ class _DashboardDirectoraState extends State<DashboardDirectora> {
   Future<void> _cargarGradosProfesor() async {
     final auth = context.read<AuthService>();
     final user = auth.currentUser;
-    if (user == null || user.esDirectora || user.esProfesorAdmin) {
+    if (user == null || user.puedeVerTodosLosAlumnos) {
       if (mounted) setState(() => _gradosProfesorListos = true);
       return;
     }

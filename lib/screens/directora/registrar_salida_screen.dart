@@ -9,8 +9,10 @@ import '../../config/app_colors.dart';
 import '../../models/alumno.dart';
 import '../../models/control_salida.dart';
 import '../../models/persona_autorizada.dart';
+import '../../services/notificacion_entrega_service.dart';
 import '../../services/solicitud_recogida_service.dart';
 import '../../widgets/app_drawer.dart';
+import '../../widgets/caipi_app_bar_leading.dart';
 
 class RegistrarSalidaScreen extends StatefulWidget {
   final String? controlId;
@@ -135,6 +137,7 @@ class _RegistrarSalidaScreenState extends State<RegistrarSalidaScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
+        leading: const CaipiAppBarLeading(),
         flexibleSpace: Container(
           decoration: const BoxDecoration(
             gradient: LinearGradient(
@@ -157,10 +160,6 @@ class _RegistrarSalidaScreenState extends State<RegistrarSalidaScreen> {
               ),
             ),
           ],
-        ),
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Colors.white),
-          onPressed: () => GoRouter.of(context).pop(),
         ),
       ),
       drawer: const AppDrawer(),
@@ -715,6 +714,10 @@ class _RegistrarSalidaScreenState extends State<RegistrarSalidaScreen> {
             );
           }
         } catch (_) {}
+        await NotificacionEntregaService().avisarNinoRecogido(
+          alumnoId: _alumnoSeleccionadoId!,
+          quienRecibio: _quienRecogioController.text.trim(),
+        );
       }
 
       if (mounted) {

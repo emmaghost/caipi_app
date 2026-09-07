@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 
 import '../../config/app_colors.dart';
 import '../../services/auth_service.dart';
+import '../../widgets/caipi_app_bar_leading.dart';
 
 class CrearPadreScreen extends StatefulWidget {
   const CrearPadreScreen({super.key});
@@ -88,6 +89,7 @@ class _CrearPadreScreenState extends State<CrearPadreScreen> {
     return Scaffold(
       backgroundColor: AppColors.grisClaro,
       appBar: AppBar(
+        leading: const CaipiAppBarLeading(),
         title: Text(
           'Nuevo Padre/Madre',
           style: GoogleFonts.poppins(fontWeight: FontWeight.bold),

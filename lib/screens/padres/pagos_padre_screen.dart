@@ -10,6 +10,7 @@ import '../../models/grado.dart';
 import '../../models/pago.dart';
 import '../../services/supabase_service.dart';
 import '../../utils/pago_helpers.dart';
+import '../../widgets/caipi_app_bar_leading.dart';
 
 /// Solo colegiatura / otros (sin inscripción ni seguro en el cuadro).
 enum _CatPadre { todas, colegiatura }
@@ -113,6 +114,7 @@ class _PagosPadreScreenState extends State<PagosPadreScreen> {
     if (_puedeVerPagos == false) {
       return Scaffold(
         appBar: AppBar(
+        leading: const CaipiAppBarLeading(),
           title: const Text('Pagos'),
           backgroundColor: const Color(0xFFEC407A),
           foregroundColor: Colors.white,
@@ -134,6 +136,7 @@ class _PagosPadreScreenState extends State<PagosPadreScreen> {
     return Scaffold(
       backgroundColor: const Color(0xFFFFF5F8),
       appBar: AppBar(
+        leading: const CaipiAppBarLeading(),
         backgroundColor: const Color(0xFFEC407A),
         foregroundColor: Colors.white,
         title: Column(

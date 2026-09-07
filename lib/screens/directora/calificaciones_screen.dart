@@ -8,6 +8,7 @@ import '../../config/app_colors.dart';
 import '../../models/alumno.dart';
 import '../../services/auth_service.dart';
 import '../../widgets/app_drawer.dart';
+import '../../widgets/caipi_app_bar_leading.dart';
 
 class CalificacionesScreen extends StatefulWidget {
   const CalificacionesScreen({super.key});
@@ -33,6 +34,7 @@ class _CalificacionesScreenState extends State<CalificacionesScreen> {
 
     return Scaffold(
       appBar: AppBar(
+        leading: const CaipiAppBarLeading(),
         title: Row(
           children: [
             const Icon(Icons.grade, color: Colors.white),

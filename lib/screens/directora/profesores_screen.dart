@@ -6,6 +6,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../config/app_colors.dart';
 import '../../services/profesor_grupos_service.dart';
 import '../../widgets/app_drawer.dart';
+import '../../widgets/caipi_app_bar_leading.dart';
 
 class ProfesoresScreen extends StatefulWidget {
   const ProfesoresScreen({super.key});
@@ -250,6 +251,7 @@ class _ProfesoresScreenState extends State<ProfesoresScreen> {
       backgroundColor: AppColors.grisClaro,
       drawer: const AppDrawer(),
       appBar: AppBar(
+        leading: const CaipiAppBarLeading(),
         title: Text(
           'Personal',
           style: GoogleFonts.poppins(fontWeight: FontWeight.bold),

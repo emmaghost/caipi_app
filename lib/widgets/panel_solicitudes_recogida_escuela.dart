@@ -11,6 +11,7 @@ import 'package:uuid/uuid.dart';
 import '../config/app_colors.dart';
 import '../models/solicitud_recogida.dart';
 import '../services/auth_service.dart';
+import '../services/notificacion_entrega_service.dart';
 import '../services/solicitud_recogida_service.dart';
 
 class PanelSolicitudesRecogidaEscuela extends StatefulWidget {
@@ -293,6 +294,10 @@ class _FilaSolicitudState extends State<_FilaSolicitud> {
         quienRecogio: nombrePadre,
         nota: 'Entregado al papá/mamá (solicitud en entrada)',
       );
+      await NotificacionEntregaService().avisarNinoRecogido(
+        alumnoId: widget.solicitud.alumnoId,
+        quienRecibio: nombrePadre,
+      );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -421,6 +426,10 @@ class _FilaSolicitudState extends State<_FilaSolicitud> {
         quienRecogio: nombrePersona,
         personaAutorizadaId: personaId,
         nota: 'Entregado por QR ($codigo)',
+      );
+      await NotificacionEntregaService().avisarNinoRecogido(
+        alumnoId: widget.solicitud.alumnoId,
+        quienRecibio: nombrePersona,
       );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(

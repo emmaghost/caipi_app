@@ -12,6 +12,7 @@ import '../../models/bitacora.dart';
 import '../../models/grado.dart';
 import '../../services/auth_service.dart';
 import '../../widgets/app_drawer.dart';
+import '../../widgets/caipi_app_bar_leading.dart';
 
 class CrearBitacoraScreen extends StatefulWidget {
   final String? bitacoraId;
@@ -42,6 +43,8 @@ class _CrearBitacoraScreenState extends State<CrearBitacoraScreen> {
   bool _respetoDemas = false;
   bool _realizoActividades = false;
   bool _siesta = false;
+  bool _huboIncidencia = false;
+  final _tipoIncidenciaController = TextEditingController();
   
   bool _cargando = false;
   bool _esEdicion = false;
@@ -157,6 +160,8 @@ class _CrearBitacoraScreenState extends State<CrearBitacoraScreen> {
     _respetoDemas = bitacora.respetoDemas;
     _realizoActividades = bitacora.realizoActividades;
     _siesta = bitacora.siesta;
+    _huboIncidencia = bitacora.huboIncidencia;
+    _tipoIncidenciaController.text = bitacora.tipoIncidencia ?? '';
     _observacionesController.text = bitacora.observaciones ?? '';
 
     if (_esDirectora) {
@@ -181,6 +186,7 @@ class _CrearBitacoraScreenState extends State<CrearBitacoraScreen> {
   @override
   void dispose() {
     _observacionesController.dispose();
+    _tipoIncidenciaController.dispose();
     super.dispose();
   }
 
@@ -207,10 +213,7 @@ class _CrearBitacoraScreenState extends State<CrearBitacoraScreen> {
             ),
           ],
         ),
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Colors.white),
-          onPressed: () => GoRouter.of(context).pop(),
-        ),
+        leading: const CaipiAppBarLeading(),
       ),
       drawer: const AppDrawer(),
       body: _cargando
@@ -598,6 +601,40 @@ class _CrearBitacoraScreenState extends State<CrearBitacoraScreen> {
                               valor: _siesta,
                               onChanged: (v) => setState(() => _siesta = v),
                             ),
+                            const Divider(height: 20),
+                            _buildSwitchItem(
+                              icon: Icons.report_problem_outlined,
+                              label: '¿Hubo incidencia?',
+                              valor: _huboIncidencia,
+                              onChanged: (v) => setState(() {
+                                _huboIncidencia = v;
+                                if (!v) _tipoIncidenciaController.clear();
+                              }),
+                            ),
+                            if (_huboIncidencia) ...[
+                              const SizedBox(height: 12),
+                              TextFormField(
+                                controller: _tipoIncidenciaController,
+                                decoration: InputDecoration(
+                                  labelText: 'Tipo de incidencia *',
+                                  hintText: 'Ej. golpe leve, pelea, caída…',
+                                  prefixIcon: const Icon(Icons.edit_note),
+                                  filled: true,
+                                  fillColor: Colors.orange.shade50,
+                                  border: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                ),
+                                textCapitalization: TextCapitalization.sentences,
+                                validator: (v) {
+                                  if (!_huboIncidencia) return null;
+                                  if (v == null || v.trim().isEmpty) {
+                                    return 'Indica qué tipo de incidencia fue';
+                                  }
+                                  return null;
+                                },
+                              ),
+                            ],
                           ],
                         ),
                       ),
@@ -842,6 +879,10 @@ class _CrearBitacoraScreenState extends State<CrearBitacoraScreen> {
         'respeto_demas': _respetoDemas,
         'realizo_actividades': _realizoActividades,
         'siesta': _siesta,
+        'hubo_incidencia': _huboIncidencia,
+        'tipo_incidencia': _huboIncidencia
+            ? _tipoIncidenciaController.text.trim()
+            : null,
         'estado_animo': _estadoAnimo,
         'observaciones': _observacionesController.text.trim().isEmpty
             ? null

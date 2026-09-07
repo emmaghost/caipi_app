@@ -11,6 +11,7 @@ import '../../services/auth_service.dart';
 import '../../services/portage_service.dart';
 import '../../services/supabase_service.dart';
 import '../../widgets/portage_grafica_sheet.dart';
+import '../../widgets/caipi_app_bar_leading.dart';
 
 /// Alumnos de un seguimiento (con búsqueda) — atajo desde administración.
 class PortageEvaluacionScreen extends StatefulWidget {
@@ -118,6 +119,7 @@ class _PortageEvaluacionScreenState extends State<PortageEvaluacionScreen> {
     return Scaffold(
       backgroundColor: AppColors.grisClaro,
       appBar: AppBar(
+        leading: const CaipiAppBarLeading(),
         title: Text(
           eval == null
               ? 'Seguimiento'
@@ -369,6 +371,7 @@ class _PortageCalificarAlumnoScreenState
     return Scaffold(
       backgroundColor: AppColors.grisClaro,
       appBar: AppBar(
+        leading: const CaipiAppBarLeading(),
         title: Text(
           _alumno?.nombreCompleto ?? 'Calificar',
           style: GoogleFonts.poppins(fontWeight: FontWeight.w600),

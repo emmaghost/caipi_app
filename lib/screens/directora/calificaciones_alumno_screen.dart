@@ -11,6 +11,7 @@ import '../../models/alumno.dart';
 import '../../services/auth_service.dart';
 import '../../utils/constantes.dart';
 import '../../widgets/app_drawer.dart';
+import '../../widgets/caipi_app_bar_leading.dart';
 
 class CalificacionesAlumnoScreen extends StatefulWidget {
   final String alumnoId;
@@ -90,10 +91,7 @@ class _CalificacionesAlumnoScreenState
           ],
         ),
         backgroundColor: AppColors.azulOscuro,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Colors.white),
-          onPressed: () => GoRouter.of(context).pop(),
-        ),
+        leading: const CaipiAppBarLeading(),
       ),
       drawer: const AppDrawer(),
       body: _cargando

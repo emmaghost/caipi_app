@@ -13,6 +13,7 @@ import '../../services/auth_service.dart';
 import '../../services/chat_service.dart';
 import '../../services/profesor_grupos_service.dart';
 import '../../widgets/app_drawer.dart';
+import '../../widgets/caipi_app_bar_leading.dart';
 
 class CrearAnuncioScreen extends StatefulWidget {
   final String? anuncioId;
@@ -182,10 +183,7 @@ class _CrearAnuncioScreenState extends State<CrearAnuncioScreen> {
           ],
         ),
         backgroundColor: AppColors.azulOscuro,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Colors.white),
-          onPressed: () => GoRouter.of(context).pop(),
-        ),
+        leading: const CaipiAppBarLeading(),
       ),
       drawer: const AppDrawer(),
       body: _cargando

@@ -8,6 +8,7 @@ import '../../config/app_colors.dart';
 import '../../models/configuracion_costos.dart';
 import '../../utils/pago_helpers.dart';
 import '../../widgets/app_drawer.dart';
+import '../../widgets/caipi_app_bar_leading.dart';
 
 class ConfiguracionCostosScreen extends StatefulWidget {
   const ConfiguracionCostosScreen({super.key});
@@ -252,23 +253,7 @@ class _ConfiguracionCostosScreenState extends State<ConfiguracionCostosScreen> {
           ),
         ),
         iconTheme: const IconThemeData(color: Colors.white),
-        leading: Builder(
-          builder: (ctx) {
-            final canPop = ModalRoute.of(ctx)?.canPop ?? false;
-            if (canPop) {
-              return IconButton(
-                icon: const Icon(Icons.arrow_back_rounded),
-                tooltip: 'Volver',
-                onPressed: () => Navigator.maybePop(ctx),
-              );
-            }
-            return IconButton(
-              icon: const Icon(Icons.menu_rounded),
-              tooltip: 'Menú',
-              onPressed: () => Scaffold.of(ctx).openDrawer(),
-            );
-          },
-        ),
+        leading: const CaipiAppBarLeading(),
         actions: [
           Builder(
             builder: (ctx) {

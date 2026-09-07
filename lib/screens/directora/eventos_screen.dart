@@ -7,6 +7,7 @@ import 'package:intl/intl.dart';
 import '../../config/app_colors.dart';
 import '../../widgets/app_drawer.dart';
 import '../../models/evento.dart';
+import '../../widgets/caipi_app_bar_leading.dart';
 
 class EventosScreen extends StatefulWidget {
   const EventosScreen({Key? key}) : super(key: key);
@@ -35,6 +36,7 @@ class _EventosScreenState extends State<EventosScreen> {
       backgroundColor: AppColors.grisClaro,
       drawer: const AppDrawer(),
       appBar: AppBar(
+        leading: const CaipiAppBarLeading(),
         backgroundColor: AppColors.morado,
         foregroundColor: Colors.white,
         title: Text(

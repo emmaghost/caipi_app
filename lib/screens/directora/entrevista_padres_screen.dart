@@ -6,6 +6,7 @@ import 'package:uuid/uuid.dart';
 
 import '../../config/app_colors.dart';
 import '../../models/entrevista_padres.dart';
+import '../../widgets/caipi_app_bar_leading.dart';
 
 class EntrevistaPadresScreen extends StatefulWidget {
   final String? alumnoId;
@@ -434,6 +435,7 @@ class _EntrevistaPadresScreenState extends State<EntrevistaPadresScreen> {
     return Scaffold(
       backgroundColor: AppColors.grisClaro,
       appBar: AppBar(
+        leading: const CaipiAppBarLeading(),
         title: Text(
           'Entrevista a Padres',
           style: GoogleFonts.poppins(fontWeight: FontWeight.bold),

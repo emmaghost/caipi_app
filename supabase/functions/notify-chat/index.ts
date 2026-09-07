@@ -47,7 +47,19 @@ Deno.serve(async (req) => {
       body?: string;
       usuario_ids?: string[];
       tokens?: string[];
+      tipo?: string;
+      alumno_id?: string;
+      quien_recibio?: string;
     };
+
+    // Modo entrega: papá(s) + maestra(s) del grupo
+    if (body.tipo === "entrega_completada" && body.alumno_id) {
+      const result = await handleEntregaCompletada(admin, sa, {
+        alumno_id: body.alumno_id,
+        quien_recibio: body.quien_recibio,
+      });
+      return json({ ok: true, ...result });
+    }
 
     // Modo manual: { title, body, usuario_ids } o { tokens }
     if (body.title && (body.tokens?.length || body.usuario_ids?.length)) {
@@ -64,7 +76,7 @@ Deno.serve(async (req) => {
       return json({ ok: true, ...result });
     }
 
-    // Webhook: INSERT solicitudes_recogida
+    // Webhook: INSERT solicitudes_recogida (padre pide al niño)
     if (body.table === "solicitudes_recogida" && body.record) {
       const result = await handleSolicitud(admin, sa, body.record);
       return json({ ok: true, ...result });
@@ -78,7 +90,7 @@ Deno.serve(async (req) => {
 
     return json({
       error:
-        "Payload no reconocido. Tablas: mensajes_chat | solicitudes_recogida | abonos",
+        "Payload no reconocido. Tablas: mensajes_chat | solicitudes_recogida | abonos | tipo=entrega_completada",
     }, 400);
   } catch (e) {
     console.error(e);
@@ -150,6 +162,94 @@ async function handleChatMessage(
     ruta: esPadre ? "/directora/chat" : "/padre/chat",
   });
   return { sent, destinos: destinos.length, tokens: tokens.length };
+}
+
+async function handleEntregaCompletada(
+  admin: ReturnType<typeof createClient>,
+  sa: ServiceAccount,
+  args: { alumno_id: string; quien_recibio?: string },
+) {
+  const alumnoId = args.alumno_id?.trim();
+  if (!alumnoId) return { sent: 0, reason: "sin alumno_id" };
+
+  const { data: alumno } = await admin
+    .from("alumnos")
+    .select("id, nombre, apellidos, padre_id, grado_id")
+    .eq("id", alumnoId)
+    .maybeSingle();
+
+  if (!alumno) return { sent: 0, reason: "alumno no encontrado" };
+
+  const nombreAlumno =
+    `${alumno.nombre ?? ""} ${alumno.apellidos ?? ""}`.trim() || "el niño/a";
+  const quien = (args.quien_recibio ?? "").trim();
+  const quienTxt = quien ? ` Lo recogió: ${quien}.` : "";
+
+  const destinos = new Set<string>();
+
+  if (alumno.padre_id) destinos.add(alumno.padre_id as string);
+
+  try {
+    const { data: ap } = await admin
+      .from("alumnos_padres")
+      .select("padre_id")
+      .eq("alumno_id", alumnoId);
+    for (const row of ap ?? []) {
+      if (row.padre_id) destinos.add(row.padre_id as string);
+    }
+  } catch (_) {
+    // tabla opcional
+  }
+
+  const gradoId = alumno.grado_id as string | null;
+  if (gradoId) {
+    const { data: viaLegado } = await admin
+      .from("profesores")
+      .select("usuario_id")
+      .eq("grado_id", gradoId)
+      .eq("activo", true);
+    for (const row of viaLegado ?? []) {
+      if (row.usuario_id) destinos.add(row.usuario_id as string);
+    }
+
+    const { data: viaMulti } = await admin
+      .from("profesores_grados")
+      .select("profesor_id, profesores!inner(usuario_id, activo)")
+      .eq("grado_id", gradoId);
+    for (const row of viaMulti ?? []) {
+      const p = row.profesores as
+        | { usuario_id?: string; activo?: boolean }
+        | { usuario_id?: string; activo?: boolean }[]
+        | null;
+      const list = Array.isArray(p) ? p : p ? [p] : [];
+      for (const prof of list) {
+        if (prof.activo !== false && prof.usuario_id) {
+          destinos.add(prof.usuario_id);
+        }
+      }
+    }
+  }
+
+  const ids = [...destinos];
+  if (ids.length === 0) return { sent: 0, reason: "sin destinatarios" };
+
+  const tokens = await tokensDeUsuarios(admin, ids);
+  if (tokens.length === 0) {
+    return { sent: 0, reason: "sin tokens", destinos: ids.length };
+  }
+
+  const sent = await sendFcm(
+    sa,
+    tokens,
+    "Niño recogido",
+    `${nombreAlumno} ya fue entregado.${quienTxt}`,
+    {
+      tipo: "entrega",
+      alumno_id: alumnoId,
+      ruta: "/directora/entrega-afuera",
+    },
+  );
+  return { sent, destinos: ids.length, tokens: tokens.length };
 }
 
 async function handleSolicitud(

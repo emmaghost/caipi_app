@@ -17,6 +17,7 @@ import '../../services/auth_service.dart';
 import '../../services/profesor_grupos_service.dart';
 import '../../services/solicitud_recogida_service.dart';
 import '../../widgets/app_drawer.dart';
+import '../../widgets/caipi_app_bar_leading.dart';
 
 /// Vista diaria por **grupo (grado)**: todos los alumnos del curso y su entrada/salida del día.
 /// El QR de salida lo genera el padre (Personas autorizadas); aquí se registra quién recogió y la hora.
@@ -46,7 +47,7 @@ class _ControlSalidasScreenState extends State<ControlSalidasScreen> {
     final client = Supabase.instance.client;
 
     try {
-      if (auth.isDirectora || auth.currentUser?.esProfesorAdmin == true) {
+      if (auth.currentUser?.puedeVerTodosLosAlumnos == true) {
         final g = await client
             .from('grados')
             .select()
@@ -472,6 +473,7 @@ class _ControlSalidasScreenState extends State<ControlSalidasScreen> {
 
     return Scaffold(
       appBar: AppBar(
+        leading: const CaipiAppBarLeading(),
         flexibleSpace: Container(
           decoration: const BoxDecoration(
             gradient: LinearGradient(

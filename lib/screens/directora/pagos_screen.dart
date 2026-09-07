@@ -14,6 +14,7 @@ import '../../models/alumno.dart';
 import '../../models/grado.dart';
 import '../../config/app_colors.dart';
 import '../../widgets/app_drawer.dart';
+import '../../widgets/caipi_app_bar_leading.dart';
 import '../../services/chat_service.dart';
 import '../../services/auth_service.dart';
 import '../../utils/pago_helpers.dart';
@@ -417,7 +418,7 @@ class _PagosScreenState extends State<PagosScreen> with SingleTickerProviderStat
                 tooltip: 'Cancelar selección',
                 onPressed: _salirSeleccion,
               )
-            : null,
+            : const CaipiAppBarLeading(),
         actions: [
           if (_modoSeleccion &&
               context.read<AuthService>().puedeGestionarPagos) ...[
