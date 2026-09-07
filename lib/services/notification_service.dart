@@ -177,12 +177,13 @@ class NotificationService {
   Future<void> notificarNuevoMensajeChat({
     required bool remitenteEsPadre,
     required String preview,
+    String ruta = '/directora/chat',
   }) async {
     await showNotification(
       id: DateTime.now().millisecondsSinceEpoch.remainder(100000),
       title: remitenteEsPadre ? '💬 Mensaje de padre' : '💬 Mensaje de la escuela',
       body: preview,
-      payload: 'chat',
+      payload: ruta,
     );
   }
 
@@ -194,7 +195,7 @@ class NotificationService {
       id: DateTime.now().millisecondsSinceEpoch.remainder(100000) + 1,
       title: '🚪 Padre en la entrada',
       body: 'Solicitan entregar a $nombreAlumno',
-      payload: 'solicitud_recogida',
+      payload: '/directora/entrega-afuera',
     );
   }
 

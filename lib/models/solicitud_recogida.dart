@@ -7,6 +7,9 @@ class SolicitudRecogida {
   final DateTime createdAt;
   final DateTime? atendidaAt;
   final String? atendidaPor;
+  /// `padre` | `qr` | null
+  final String? modalidadEntrega;
+  final String? quienRecibio;
 
   SolicitudRecogida({
     required this.id,
@@ -17,6 +20,8 @@ class SolicitudRecogida {
     required this.createdAt,
     this.atendidaAt,
     this.atendidaPor,
+    this.modalidadEntrega,
+    this.quienRecibio,
   });
 
   bool get esPendiente => estado == 'pendiente';
@@ -33,6 +38,8 @@ class SolicitudRecogida {
           ? DateTime.parse(json['atendida_at'] as String)
           : null,
       atendidaPor: json['atendida_por'] as String?,
+      modalidadEntrega: json['modalidad_entrega'] as String?,
+      quienRecibio: json['quien_recibio'] as String?,
     );
   }
 }

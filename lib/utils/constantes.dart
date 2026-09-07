@@ -13,7 +13,9 @@ class Constantes {
 
   static const String especialidadTitular = 'titular';
   static const String especialidadIngles = 'ingles';
+  static const String especialidadMusica = 'musica';
   static const String materiaIngles = 'Inglés';
+  static const String passwordInicial = 'Caipi2026';
 
   // Materias
   static const List<String> materias = [

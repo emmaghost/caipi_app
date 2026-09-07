@@ -2,16 +2,84 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
+import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../config/app_colors.dart';
+import '../../services/auth_service.dart';
+import '../../services/profesor_grupos_service.dart';
 import '../../widgets/app_drawer.dart';
 
-class AnunciosScreen extends StatelessWidget {
+class AnunciosScreen extends StatefulWidget {
   const AnunciosScreen({super.key});
 
   @override
+  State<AnunciosScreen> createState() => _AnunciosScreenState();
+}
+
+class _AnunciosScreenState extends State<AnunciosScreen> {
+  List<String>? _gradosMaestra;
+  String? _usuarioId;
+  /// Fuerza nuevo stream al volver de crear/editar (realtime a veces no pinta al instante).
+  int _listaEpoch = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _cargarAlcance();
+  }
+
+  Future<void> _abrirCrear() async {
+    final cambio = await GoRouter.of(context).push<bool>(
+      '/directora/anuncios/crear',
+    );
+    if (!mounted) return;
+    if (cambio == true) {
+      setState(() => _listaEpoch++);
+    }
+  }
+
+  Future<void> _abrirEditar(String id) async {
+    final cambio = await GoRouter.of(context).push<bool>(
+      '/directora/anuncios/editar/$id',
+    );
+    if (!mounted) return;
+    if (cambio == true) {
+      setState(() => _listaEpoch++);
+    }
+  }
+
+  Future<void> _cargarAlcance() async {
+    final user = context.read<AuthService>().currentUser;
+    _usuarioId = user?.id;
+    if (user == null || !user.esMaestraAula) {
+      setState(() => _gradosMaestra = null);
+      return;
+    }
+    final ids = await ProfesorGruposService().gradoIdsDeUsuario(user.id);
+    if (!mounted) return;
+    setState(() => _gradosMaestra = ids);
+  }
+
+  List<Map<String, dynamic>> _filtrarParaMaestra(
+    List<Map<String, dynamic>> list,
+  ) {
+    final grados = _gradosMaestra;
+    if (grados == null) return list;
+    return list.where((a) {
+      if (a['creado_por']?.toString() == _usuarioId) return true;
+      if (a['para_todos'] == true) return true;
+      final raw = a['para_grados'] ?? a['grados'];
+      if (raw is! List) return false;
+      return raw.map((e) => e.toString()).any(grados.contains);
+    }).toList();
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final esMaestra =
+        context.read<AuthService>().currentUser?.esMaestraAula == true;
+
     return Scaffold(
       appBar: AppBar(
         title: Row(
@@ -19,7 +87,7 @@ class AnunciosScreen extends StatelessWidget {
             const Icon(Icons.campaign, color: Colors.white),
             const SizedBox(width: 8),
             Text(
-              'Anuncios',
+              esMaestra ? 'Anuncios de mi grupo' : 'Anuncios',
               style: GoogleFonts.fredoka(
                 fontSize: 22,
                 fontWeight: FontWeight.w600,
@@ -49,6 +117,7 @@ class AnunciosScreen extends StatelessWidget {
           ),
         ),
         child: StreamBuilder<List<Map<String, dynamic>>>(
+          key: ValueKey('anuncios-stream-$_listaEpoch'),
           stream: Supabase.instance.client
               .from('anuncios')
               .stream(primaryKey: ['id'])
@@ -65,7 +134,7 @@ class AnunciosScreen extends StatelessWidget {
                   DateTime.fromMillisecondsSinceEpoch(0);
               return fb.compareTo(fa);
             });
-            return list;
+            return _filtrarParaMaestra(list);
           }),
           builder: (context, snapshot) {
             if (snapshot.connectionState == ConnectionState.waiting) {
@@ -106,12 +175,19 @@ class AnunciosScreen extends StatelessWidget {
                     ),
                     const SizedBox(height: 24),
                     ElevatedButton.icon(
-                      onPressed: () {
-                        GoRouter.of(context).push('/directora/anuncios/crear');
-                      },
-                      icon: const Icon(Icons.add),
-                      label: const Text('Crear Primer Anuncio'),
+                      onPressed: _abrirCrear,
+                      icon: const Icon(Icons.add, color: Colors.white),
+                      label: Text(
+                        'Crear Primer Anuncio',
+                        style: GoogleFonts.poppins(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
                       style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF059669),
+                        foregroundColor: Colors.white,
+                        elevation: 3,
                         padding: const EdgeInsets.symmetric(
                           horizontal: 24,
                           vertical: 12,
@@ -125,28 +201,42 @@ class AnunciosScreen extends StatelessWidget {
 
             final anuncios = snapshot.data!;
 
-            return ListView.builder(
-              padding: const EdgeInsets.all(16),
-              itemCount: anuncios.length,
-              itemBuilder: (context, index) {
-                final anuncio = anuncios[index];
-                return _AnuncioCard(anuncio: anuncio);
+            return RefreshIndicator(
+              onRefresh: () async {
+                setState(() => _listaEpoch++);
+                await Future<void>.delayed(const Duration(milliseconds: 350));
               },
+              child: ListView.builder(
+                physics: const AlwaysScrollableScrollPhysics(),
+                padding: const EdgeInsets.all(16),
+                itemCount: anuncios.length,
+                itemBuilder: (context, index) {
+                  final anuncio = anuncios[index];
+                  return _AnuncioCard(
+                    anuncio: anuncio,
+                    onEditar: () => _abrirEditar(anuncio['id'] as String),
+                    onEliminado: () {
+                      if (mounted) setState(() => _listaEpoch++);
+                    },
+                  );
+                },
+              ),
             );
           },
         ),
       ),
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: () {
-          GoRouter.of(context).push('/directora/anuncios/crear');
-        },
-        backgroundColor: AppColors.verdeClaro,
+        onPressed: _abrirCrear,
+        backgroundColor: const Color(0xFF059669),
+        foregroundColor: Colors.white,
+        elevation: 4,
         icon: const Icon(Icons.add, color: Colors.white),
         label: Text(
           'Nuevo Anuncio',
           style: GoogleFonts.poppins(
             color: Colors.white,
-            fontWeight: FontWeight.w600,
+            fontWeight: FontWeight.w700,
+            fontSize: 14,
           ),
         ),
       ),
@@ -156,8 +246,14 @@ class AnunciosScreen extends StatelessWidget {
 
 class _AnuncioCard extends StatelessWidget {
   final Map<String, dynamic> anuncio;
+  final VoidCallback? onEditar;
+  final VoidCallback? onEliminado;
 
-  const _AnuncioCard({required this.anuncio});
+  const _AnuncioCard({
+    required this.anuncio,
+    this.onEditar,
+    this.onEliminado,
+  });
 
   DateTime get _fecha {
     final raw = anuncio['fecha_publicacion'] ?? anuncio['fecha'];
@@ -198,8 +294,8 @@ class _AnuncioCard extends StatelessWidget {
                   Container(
                     padding: const EdgeInsets.all(10),
                     decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [AppColors.rosaClaro, AppColors.moradoClaro],
+                      gradient: const LinearGradient(
+                        colors: [AppColors.rosa, AppColors.morado],
                         begin: Alignment.topLeft,
                         end: Alignment.bottomRight,
                       ),
@@ -240,11 +336,18 @@ class _AnuncioCard extends StatelessWidget {
                   ),
                   IconButton(
                     icon: const Icon(Icons.edit, color: Colors.blue),
-                    onPressed: () {
-                      GoRouter.of(context).push(
-                        '/directora/anuncios/editar/${anuncio['id']}',
-                      );
-                    },
+                    tooltip: 'Editar',
+                    onPressed: onEditar ??
+                        () {
+                          GoRouter.of(context).push(
+                            '/directora/anuncios/editar/${anuncio['id']}',
+                          );
+                        },
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.delete_outline, color: Colors.red),
+                    tooltip: 'Eliminar',
+                    onPressed: () => _confirmarEliminar(context),
                   ),
                 ],
               ),
@@ -291,7 +394,7 @@ class _AnuncioCard extends StatelessWidget {
                           return _buildChip(
                             icon: Icons.school,
                             label: snapshot.data!,
-                            color: AppColors.moradoClaro,
+                            color: AppColors.purpura,
                           );
                         },
                       );
@@ -345,6 +448,53 @@ class _AnuncioCard extends StatelessWidget {
       return response['nombre'] as String;
     } catch (e) {
       return 'Grado';
+    }
+  }
+
+  Future<void> _confirmarEliminar(BuildContext context) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Eliminar anuncio', style: GoogleFonts.fredoka()),
+        content: Text(
+          '¿Segura que quieres eliminar “${anuncio['titulo']}”? No se puede deshacer.',
+          style: GoogleFonts.poppins(),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancelar'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('Eliminar'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !context.mounted) return;
+    try {
+      await Supabase.instance.client
+          .from('anuncios')
+          .delete()
+          .eq('id', anuncio['id']);
+      if (!context.mounted) return;
+      onEliminado?.call();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Anuncio eliminado'),
+          backgroundColor: Color(0xFF059669),
+        ),
+      );
+    } catch (e) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('No se pudo eliminar: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
     }
   }
 

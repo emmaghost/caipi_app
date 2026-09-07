@@ -9,7 +9,6 @@ import '../../models/mensaje_chat.dart';
 import '../../services/auth_service.dart';
 import '../../services/chat_horario_service.dart';
 import '../../services/chat_service.dart';
-import '../../widgets/app_drawer.dart';
 
 class ChatConversacionScreen extends StatefulWidget {
   final String conversacionId;
@@ -181,40 +180,78 @@ class _ChatConversacionScreenState extends State<ChatConversacionScreen> {
     );
   }
 
+  void _volverAListaChats() {
+    if (context.canPop()) {
+      context.pop();
+      return;
+    }
+    final usuario = context.read<AuthService>().currentUser;
+    if (usuario?.esPadre == true) {
+      context.go('/padre/chat');
+      return;
+    }
+    final destino = widget.rutaInicio;
+    if (destino != null && destino.contains('/chat')) {
+      context.go(destino);
+      return;
+    }
+    context.go('/directora/chat');
+  }
+
   @override
   Widget build(BuildContext context) {
     final usuario = context.watch<AuthService>().currentUser;
     final rutaInicio = widget.rutaInicio ?? _rutaInicioPorRol(usuario?.rol);
-
+    // Sin drawer aquí: si hay drawer, en Material 3 a veces se come el leading
+    // y en iOS no hay botón atrás del sistema.
     return Scaffold(
       backgroundColor: AppColors.grisClaro,
-      drawer: const AppDrawer(),
       appBar: AppBar(
+        automaticallyImplyLeading: false,
+        leadingWidth: 56,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: Colors.white, size: 26),
+          tooltip: 'Volver a chats',
+          onPressed: _volverAListaChats,
+        ),
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
               widget.titulo,
-              style: GoogleFonts.poppins(fontWeight: FontWeight.bold, fontSize: 16),
+              style: GoogleFonts.poppins(
+                fontWeight: FontWeight.bold,
+                fontSize: 16,
+                color: Colors.white,
+              ),
             ),
             Text(
-              'Chat con la escuela',
-              style: GoogleFonts.poppins(fontSize: 12, color: Colors.white70),
+              'Volver al menú de chats',
+              style: GoogleFonts.poppins(fontSize: 11, color: Colors.white70),
             ),
           ],
         ),
         backgroundColor: AppColors.azulOscuro,
         foregroundColor: Colors.white,
+        iconTheme: const IconThemeData(color: Colors.white),
         actions: [
-          if (context.read<AuthService>().currentUser?.esDirectora == true)
+          if (usuario?.esDirectora == true)
             IconButton(
-              icon: const Icon(Icons.delete_outline),
+              icon: const Icon(Icons.delete_outline, color: Colors.white),
               tooltip: 'Borrar chat',
               onPressed: _borrarConversacion,
             ),
           IconButton(
-            icon: const Icon(Icons.home),
-            onPressed: () => context.go(rutaInicio),
+            icon: const Icon(Icons.home, color: Colors.white),
+            onPressed: () {
+              if (usuario?.esPadre == true) {
+                context.go('/padre');
+              } else {
+                context.go(
+                  rutaInicio.contains('/chat') ? '/directora' : rutaInicio,
+                );
+              }
+            },
             tooltip: 'Ir al inicio',
           ),
         ],

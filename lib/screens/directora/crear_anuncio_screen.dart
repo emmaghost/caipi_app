@@ -11,6 +11,7 @@ import '../../config/app_colors.dart';
 import '../../models/grado.dart';
 import '../../services/auth_service.dart';
 import '../../services/chat_service.dart';
+import '../../services/profesor_grupos_service.dart';
 import '../../widgets/app_drawer.dart';
 
 class CrearAnuncioScreen extends StatefulWidget {
@@ -33,15 +34,70 @@ class _CrearAnuncioScreenState extends State<CrearAnuncioScreen> {
   bool _enviarComoChat = true;
   List<String> _gradosSeleccionados = [];
 
+  /// Si no es null, la maestra solo puede anunciar a estos grados.
+  List<String>? _gradosPermitidos;
+  bool _cargandoAlcance = false;
+
   bool _cargando = false;
   bool _esEdicion = false;
+
+  bool get _alcanceAcotado =>
+      _gradosPermitidos != null && _gradosPermitidos!.isNotEmpty;
 
   @override
   void initState() {
     super.initState();
     if (widget.anuncioId != null) {
       _esEdicion = true;
-      _cargarDatosAnuncio();
+    }
+    _iniciar();
+  }
+
+  bool get _puedeEnviarGeneral {
+    final u = context.read<AuthService>().currentUser;
+    return u?.esDirectora == true;
+  }
+
+  Future<void> _iniciar() async {
+    await _prepararAlcance();
+    if (_esEdicion) {
+      await _cargarDatosAnuncio();
+    }
+  }
+
+  Future<void> _prepararAlcance() async {
+    final usuario = context.read<AuthService>().currentUser;
+    if (usuario == null) return;
+
+    // Solo directora puede anunciar a toda la escuela.
+    if (!usuario.esDirectora) {
+      _paraTodos = false;
+    }
+
+    if (!usuario.esMaestraAula) {
+      if (mounted) setState(() {});
+      return;
+    }
+
+    setState(() => _cargandoAlcance = true);
+    try {
+      final ids = await ProfesorGruposService().gradoIdsDeUsuario(usuario.id);
+      if (!mounted) return;
+      setState(() {
+        _gradosPermitidos = ids;
+        _paraTodos = false;
+        if (!_esEdicion && ids.isNotEmpty) {
+          _gradosSeleccionados = List<String>.from(ids);
+        }
+        _cargandoAlcance = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _gradosPermitidos = [];
+        _paraTodos = false;
+        _cargandoAlcance = false;
+      });
     }
   }
 
@@ -62,17 +118,29 @@ class _CrearAnuncioScreenState extends State<CrearAnuncioScreen> {
       final gradosRaw =
           response['para_grados'] ?? response['grados'];
 
+      var gradosSel = gradosRaw is List
+          ? gradosRaw.map((e) => e.toString()).toList()
+          : <String>[];
+      var paraTodos = response['para_todos'] as bool? ?? true;
+      if (_alcanceAcotado) {
+        paraTodos = false;
+        gradosSel = gradosSel
+            .where((id) => _gradosPermitidos!.contains(id))
+            .toList();
+        if (gradosSel.isEmpty) {
+          gradosSel = List<String>.from(_gradosPermitidos!);
+        }
+      }
+
       setState(() {
         _tituloController.text = response['titulo'] as String? ?? '';
         _mensajeController.text = response['mensaje'] as String? ?? '';
         _fecha = fechaRaw != null
             ? (DateTime.tryParse(fechaRaw.toString()) ?? DateTime.now())
             : DateTime.now();
-        _paraTodos = response['para_todos'] as bool? ?? true;
+        _paraTodos = paraTodos;
         _urgente = response['prioridad']?.toString() == 'alta';
-        _gradosSeleccionados = gradosRaw is List
-            ? gradosRaw.map((e) => e.toString()).toList()
-            : <String>[];
+        _gradosSeleccionados = gradosSel;
         _cargando = false;
       });
     } catch (e) {
@@ -129,16 +197,23 @@ class _CrearAnuncioScreenState extends State<CrearAnuncioScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Encabezado
+                    // Encabezado (colores sólidos: texto blanco legible)
                     Container(
                       padding: const EdgeInsets.all(16),
                       decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: [AppColors.rosaClaro, AppColors.moradoClaro],
+                        gradient: const LinearGradient(
+                          colors: [AppColors.rosa, AppColors.morado],
                           begin: Alignment.topLeft,
                           end: Alignment.bottomRight,
                         ),
                         borderRadius: BorderRadius.circular(16),
+                        boxShadow: [
+                          BoxShadow(
+                            color: AppColors.rosa.withValues(alpha: 0.35),
+                            blurRadius: 10,
+                            offset: const Offset(0, 4),
+                          ),
+                        ],
                       ),
                       child: Row(
                         children: [
@@ -161,7 +236,7 @@ class _CrearAnuncioScreenState extends State<CrearAnuncioScreen> {
                                   'Comunicación con padres de familia',
                                   style: GoogleFonts.poppins(
                                     fontSize: 14,
-                                    color: Colors.white.withOpacity(0.9),
+                                    color: Colors.white,
                                   ),
                                 ),
                               ],
@@ -263,6 +338,24 @@ class _CrearAnuncioScreenState extends State<CrearAnuncioScreen> {
                     // Destinatarios
                     _buildSeccionTitulo('Destinatarios'),
                     const SizedBox(height: 12),
+                    if (_cargandoAlcance)
+                      const Padding(
+                        padding: EdgeInsets.all(16),
+                        child: Center(child: CircularProgressIndicator()),
+                      )
+                    else if (_gradosPermitidos != null &&
+                        _gradosPermitidos!.isEmpty)
+                      Card(
+                        color: Colors.orange.shade50,
+                        child: Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: Text(
+                            'No tienes grupos asignados. Pide a dirección que te asigne grado(s) para poder anunciar.',
+                            style: GoogleFonts.poppins(fontSize: 13),
+                          ),
+                        ),
+                      )
+                    else
                     Card(
                       elevation: 2,
                       shape: RoundedRectangleBorder(
@@ -272,36 +365,59 @@ class _CrearAnuncioScreenState extends State<CrearAnuncioScreen> {
                         padding: const EdgeInsets.all(16),
                         child: Column(
                           children: [
-                            SwitchListTile(
-                              value: _paraTodos,
-                              onChanged: (value) {
-                                setState(() {
-                                  _paraTodos = value;
-                                  if (value) {
-                                    _gradosSeleccionados.clear();
-                                  }
-                                });
-                              },
-                              title: Text(
-                                'Enviar a todos los padres',
-                                style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
+                            if (_puedeEnviarGeneral)
+                              SwitchListTile(
+                                value: _paraTodos,
+                                onChanged: (value) {
+                                  setState(() {
+                                    _paraTodos = value;
+                                    if (value) {
+                                      _gradosSeleccionados.clear();
+                                    }
+                                  });
+                                },
+                                title: Text(
+                                  'Enviar a todos los padres',
+                                  style: GoogleFonts.poppins(
+                                      fontWeight: FontWeight.w600),
+                                ),
+                                subtitle: Text(
+                                  _paraTodos
+                                      ? 'El anuncio será visible para todos. El chat llegará a todos los papás activos.'
+                                      : 'Solo padres de los grados seleccionados recibirán el chat',
+                                  style: GoogleFonts.poppins(fontSize: 12),
+                                ),
+                                secondary: Icon(
+                                  Icons.public,
+                                  color:
+                                      _paraTodos ? Colors.green : Colors.grey,
+                                ),
+                              )
+                            else if (_alcanceAcotado)
+                              ListTile(
+                                contentPadding: EdgeInsets.zero,
+                                leading: Icon(Icons.groups,
+                                    color: AppColors.azulOscuro),
+                                title: Text(
+                                  _gradosPermitidos!.length == 1
+                                      ? 'Anuncio solo a tu grupo'
+                                      : 'Anuncio a tus grupos asignados',
+                                  style: GoogleFonts.poppins(
+                                      fontWeight: FontWeight.w600),
+                                ),
+                                subtitle: Text(
+                                  'Solo papás de los grados que tienes asignados.',
+                                  style: GoogleFonts.poppins(fontSize: 12),
+                                ),
                               ),
-                              subtitle: Text(
-                            _paraTodos
-                                ? 'El anuncio será visible para todos. El chat llegará a todos los papás activos.'
-                                : 'Solo padres de los grados seleccionados recibirán el chat',
-                            style: GoogleFonts.poppins(fontSize: 12),
-                          ),
-                              secondary: Icon(
-                                Icons.public,
-                                color: _paraTodos ? Colors.green : Colors.grey,
-                              ),
-                            ),
                             if (!_paraTodos) ...[
-                              const Divider(),
+                              if (!_alcanceAcotado) const Divider(),
                               const SizedBox(height: 8),
                               Text(
-                                'Selecciona los grados:',
+                                _alcanceAcotado &&
+                                        _gradosPermitidos!.length == 1
+                                    ? 'Tu grupo:'
+                                    : 'Selecciona los grados:',
                                 style: GoogleFonts.poppins(
                                   fontSize: 14,
                                   fontWeight: FontWeight.w600,
@@ -319,9 +435,18 @@ class _CrearAnuncioScreenState extends State<CrearAnuncioScreen> {
                                     return const CircularProgressIndicator();
                                   }
 
-                                  final grados = snapshot.data!
+                                  var grados = snapshot.data!
                                       .map((json) => Grado.fromJson(json))
                                       .toList();
+                                  if (_alcanceAcotado) {
+                                    grados = grados
+                                        .where((g) =>
+                                            _gradosPermitidos!.contains(g.id))
+                                        .toList();
+                                  }
+
+                                  final soloUno =
+                                      _alcanceAcotado && grados.length == 1;
 
                                   return Wrap(
                                     spacing: 8,
@@ -332,15 +457,19 @@ class _CrearAnuncioScreenState extends State<CrearAnuncioScreen> {
                                       return FilterChip(
                                         selected: seleccionado,
                                         label: Text(grado.nombre),
-                                        onSelected: (selected) {
-                                          setState(() {
-                                            if (selected) {
-                                              _gradosSeleccionados.add(grado.id);
-                                            } else {
-                                              _gradosSeleccionados.remove(grado.id);
-                                            }
-                                          });
-                                        },
+                                        onSelected: soloUno
+                                            ? null
+                                            : (selected) {
+                                                setState(() {
+                                                  if (selected) {
+                                                    _gradosSeleccionados
+                                                        .add(grado.id);
+                                                  } else {
+                                                    _gradosSeleccionados
+                                                        .remove(grado.id);
+                                                  }
+                                                });
+                                              },
                                         avatar: Icon(
                                           Icons.school,
                                           size: 18,
@@ -406,7 +535,11 @@ class _CrearAnuncioScreenState extends State<CrearAnuncioScreen> {
                           ),
                         ),
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: AppColors.verdeClaro,
+                          backgroundColor: const Color(0xFF059669),
+                          foregroundColor: Colors.white,
+                          disabledBackgroundColor:
+                              const Color(0xFF059669).withValues(alpha: 0.5),
+                          elevation: 3,
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(12),
                           ),
@@ -492,10 +625,32 @@ class _CrearAnuncioScreenState extends State<CrearAnuncioScreen> {
       return;
     }
 
+    if (_alcanceAcotado) {
+      _paraTodos = false;
+      _gradosSeleccionados = _gradosSeleccionados
+          .where((id) => _gradosPermitidos!.contains(id))
+          .toList();
+      if (_gradosSeleccionados.isEmpty) {
+        _gradosSeleccionados = List<String>.from(_gradosPermitidos!);
+      }
+    } else if (!_puedeEnviarGeneral) {
+      _paraTodos = false;
+    }
+
     if (!_paraTodos && _gradosSeleccionados.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Selecciona al menos un grado'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    if (_gradosPermitidos != null && _gradosPermitidos!.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No tienes grupos asignados'),
           backgroundColor: Colors.orange,
         ),
       );
@@ -565,7 +720,7 @@ class _CrearAnuncioScreenState extends State<CrearAnuncioScreen> {
               backgroundColor: Colors.green,
             ),
           );
-          GoRouter.of(context).go('/directora/anuncios');
+          _volverALista(refresco: true);
         }
         return;
       }
@@ -577,7 +732,7 @@ class _CrearAnuncioScreenState extends State<CrearAnuncioScreen> {
             backgroundColor: Colors.green,
           ),
         );
-        GoRouter.of(context).go('/directora/anuncios');
+        _volverALista(refresco: true);
       }
     } catch (e) {
       if (mounted) {
@@ -650,7 +805,7 @@ class _CrearAnuncioScreenState extends State<CrearAnuncioScreen> {
             backgroundColor: Colors.green,
           ),
         );
-        GoRouter.of(context).go('/directora/anuncios');
+        _volverALista(refresco: true);
       }
     } catch (e) {
       if (mounted) {
@@ -665,6 +820,16 @@ class _CrearAnuncioScreenState extends State<CrearAnuncioScreen> {
       if (mounted) {
         setState(() => _cargando = false);
       }
+    }
+  }
+
+  void _volverALista({bool refresco = false}) {
+    if (!mounted) return;
+    final router = GoRouter.of(context);
+    if (router.canPop()) {
+      router.pop(refresco);
+    } else {
+      router.go('/directora/anuncios');
     }
   }
 }

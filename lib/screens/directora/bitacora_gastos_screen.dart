@@ -274,9 +274,10 @@ class _BitacoraGastosPanelState extends State<BitacoraGastosPanel> {
 
   @override
   Widget build(BuildContext context) {
-    final auth = context.watch<AuthService>();
+    final auth = context.read<AuthService>();
+    final esDirectora = auth.isDirectora;
 
-    if (!auth.isDirectora) {
+    if (!esDirectora) {
       return Center(
         child: Padding(
           padding: const EdgeInsets.all(24),
@@ -572,7 +573,7 @@ class _BitacoraGastosScreenState extends State<BitacoraGastosScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final auth = context.watch<AuthService>();
+    final auth = context.read<AuthService>();
 
     return Scaffold(
       backgroundColor: AppColors.rosaClaro,

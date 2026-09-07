@@ -234,21 +234,6 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
                                 },
                               ),
                               const SizedBox(height: 12),
-
-                              // Recuperar contraseña
-                              Align(
-                                alignment: Alignment.centerRight,
-                                child: TextButton(
-                                  onPressed: _mostrarDialogoRecuperarPassword,
-                                  child: Text(
-                                    '¿Olvidaste tu contraseña?',
-                                    style: GoogleFonts.poppins(
-                                      color: AppColors.rosa,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                ),
-                              ),
                               SizedBox(height: compact ? 16 : 24),
 
                               // Botón de login con gradiente
@@ -451,115 +436,6 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
             color: color.withOpacity(0.5),
             blurRadius: 8,
             spreadRadius: 2,
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _mostrarDialogoRecuperarPassword() {
-    final emailController = TextEditingController();
-    
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-        title: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: AppColors.morado.withOpacity(0.15),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: const Icon(Icons.lock_reset, color: AppColors.morado),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                'Recuperar contraseña',
-                style: GoogleFonts.poppins(fontWeight: FontWeight.bold),
-              ),
-            ),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Te enviaremos un enlace para restablecer tu contraseña.',
-              style: GoogleFonts.poppins(color: AppColors.gris),
-            ),
-            const SizedBox(height: 20),
-            TextField(
-              controller: emailController,
-              keyboardType: TextInputType.emailAddress,
-              style: GoogleFonts.poppins(),
-              decoration: InputDecoration(
-                labelText: 'Correo electrónico',
-                labelStyle: GoogleFonts.poppins(),
-                prefixIcon: const Icon(Icons.email_rounded, color: AppColors.morado),
-                filled: true,
-                fillColor: AppColors.grisClaro,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(16),
-                  borderSide: BorderSide.none,
-                ),
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text('Cancelar', style: GoogleFonts.poppins(color: AppColors.gris)),
-          ),
-          Container(
-            decoration: BoxDecoration(
-              gradient: const LinearGradient(colors: [AppColors.rosa, AppColors.morado]),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: ElevatedButton(
-              onPressed: () async {
-                final email = emailController.text.trim();
-                if (email.isEmpty) return;
-                
-                final authService = context.read<AuthService>();
-                final error = await authService.recuperarPassword(email);
-                
-                if (!context.mounted) return;
-                Navigator.pop(context);
-                
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Row(
-                      children: [
-                        Icon(
-                          error != null ? Icons.error_outline : Icons.check_circle_outline,
-                          color: Colors.white,
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Text(
-                            error ?? '¡Correo enviado! Revisa tu bandeja.',
-                            style: GoogleFonts.poppins(),
-                          ),
-                        ),
-                      ],
-                    ),
-                    backgroundColor: error != null ? AppColors.rojo : AppColors.verde,
-                    behavior: SnackBarBehavior.floating,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                  ),
-                );
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.transparent,
-                shadowColor: Colors.transparent,
-              ),
-              child: Text('Enviar', style: GoogleFonts.poppins(fontWeight: FontWeight.bold)),
-            ),
           ),
         ],
       ),

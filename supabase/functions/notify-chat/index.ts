@@ -191,7 +191,7 @@ async function handleSolicitud(
     tokens,
     "Padre en la entrada",
     `Solicitud de recogida: ${nombreAlumno}`,
-    { tipo: "recogida", ruta: "/directora", alumno_id: alumnoId ?? "" },
+    { tipo: "recogida", ruta: "/directora/entrega-afuera", alumno_id: alumnoId ?? "" },
   );
   return { sent };
 }

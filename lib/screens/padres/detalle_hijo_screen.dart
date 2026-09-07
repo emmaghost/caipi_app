@@ -6,6 +6,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../models/alumno.dart';
+import '../../models/grado.dart';
 // Calificaciones (no implementado): ver historial en git si se reactiva
 import '../../models/incidente.dart';
 import '../../config/app_colors.dart';
@@ -19,24 +20,25 @@ class DetalleHijoScreen extends StatelessWidget {
 
   const DetalleHijoScreen({super.key, required this.alumnoId});
 
-  /// Cargar nombre del grado desde BD
-  Future<String> _cargarNombreGrado(String? gradoId) async {
-    if (gradoId == null) return 'Sin asignar';
-    
+  Future<Grado?> _cargarGrado(String? gradoId) async {
+    if (gradoId == null) return null;
     try {
       final response = await Supabase.instance.client
           .from('grados')
-          .select('nombre')
+          .select()
           .eq('id', gradoId)
           .maybeSingle();
-      
-      if (response == null) return 'Sin asignar';
-      
-      return response['nombre'] as String? ?? 'Sin asignar';
-    } catch (e) {
-      print('Error cargando grado: $e');
-      return 'Sin asignar';
+      if (response == null) return null;
+      return Grado.fromJson(Map<String, dynamic>.from(response));
+    } catch (_) {
+      return null;
     }
+  }
+
+  /// Cargar nombre del grado desde BD
+  Future<String> _cargarNombreGrado(String? gradoId) async {
+    final g = await _cargarGrado(gradoId);
+    return g?.nombre ?? 'Sin asignar';
   }
 
   @override
@@ -288,69 +290,79 @@ class DetalleHijoScreen extends StatelessWidget {
               PortagePadreVista(alumno: alumno),
               const SizedBox(height: 12),
 
-              // —— Pagos (solo consulta; se paga en escuela) ——
-              Card(
-                elevation: 2,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                child: InkWell(
-                  onTap: () => context.push(
-                    '/padre/hijo/${alumno.id}/pagos',
-                    extra: {'alumnoNombre': alumno.nombreCompleto},
-                  ),
-                  borderRadius: BorderRadius.circular(16),
-                  child: Container(
-                    padding: const EdgeInsets.all(20),
-                    decoration: BoxDecoration(
-                      color: Colors.orange.shade50,
+              // Pagos solo Kínder 1–3 (no estimulación / maternal)
+              FutureBuilder<Grado?>(
+                future: _cargarGrado(alumno.gradoId),
+                builder: (context, gradoSnap) {
+                  final grado = gradoSnap.data;
+                  if (grado == null || !grado.muestraModuloPagos) {
+                    return const SizedBox.shrink();
+                  }
+                  return Card(
+                    elevation: 2,
+                    shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(16),
-                      border: Border.all(color: Colors.orange.shade200, width: 1),
                     ),
-                    child: Row(
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.all(14),
-                          decoration: BoxDecoration(
-                            color: Colors.orange.shade700,
-                            shape: BoxShape.circle,
-                          ),
-                          child: const Icon(
-                            Icons.payments_outlined,
-                            color: Colors.white,
-                            size: 28,
-                          ),
+                    child: InkWell(
+                      onTap: () => context.push(
+                        '/padre/hijo/${alumno.id}/pagos',
+                        extra: {'alumnoNombre': alumno.nombreCompleto},
+                      ),
+                      borderRadius: BorderRadius.circular(16),
+                      child: Container(
+                        padding: const EdgeInsets.all(20),
+                        decoration: BoxDecoration(
+                          color: Colors.orange.shade50,
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(
+                              color: Colors.orange.shade200, width: 1),
                         ),
-                        const SizedBox(width: 16),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'Pagos',
-                                style: GoogleFonts.fredoka(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.orange.shade900,
-                                ),
+                        child: Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(14),
+                              decoration: BoxDecoration(
+                                color: Colors.orange.shade700,
+                                shape: BoxShape.circle,
                               ),
-                              const SizedBox(height: 4),
-                              Text(
-                                'Pendientes o pagados · solo ver',
-                                style: GoogleFonts.poppins(
-                                  fontSize: 14,
-                                  color: AppColors.grisOscuro,
-                                ),
+                              child: const Icon(
+                                Icons.payments_outlined,
+                                color: Colors.white,
+                                size: 28,
                               ),
-                            ],
-                          ),
+                            ),
+                            const SizedBox(width: 16),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Pagos',
+                                    style: GoogleFonts.fredoka(
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.orange.shade900,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    'Pendientes o pagados · solo ver',
+                                    style: GoogleFonts.poppins(
+                                      fontSize: 14,
+                                      color: AppColors.grisOscuro,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            Icon(Icons.arrow_forward_ios,
+                                color: Colors.orange.shade800, size: 18),
+                          ],
                         ),
-                        Icon(Icons.arrow_forward_ios,
-                            color: Colors.orange.shade800, size: 18),
-                      ],
+                      ),
                     ),
-                  ),
-                ),
+                  );
+                },
               ),
               const SizedBox(height: 16),
 

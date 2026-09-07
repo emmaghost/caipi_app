@@ -10,7 +10,7 @@ import '../../models/conversacion.dart';
 import '../../models/grado.dart';
 import '../../services/auth_service.dart';
 import '../../services/chat_service.dart';
-import '../../services/portage_service.dart';
+import '../../services/profesor_grupos_service.dart';
 import '../../widgets/app_drawer.dart';
 
 class ChatListaEscuelaScreen extends StatefulWidget {
@@ -114,8 +114,9 @@ class _ChatListaEscuelaScreenState extends State<ChatListaEscuelaScreen> {
     }
 
     try {
-      final gradoId = await PortageService().obtenerGradoIdProfesor(user.id);
-      if (gradoId == null) {
+      final gradoIds =
+          await ProfesorGruposService().gradoIdsDeUsuario(user.id);
+      if (gradoIds.isEmpty) {
         if (!mounted) return;
         setState(() {
           _padreIdsPermitidos = {};
@@ -126,13 +127,16 @@ class _ChatListaEscuelaScreenState extends State<ChatListaEscuelaScreen> {
       }
       final ids = <String>{};
       for (final entry in _padreAGrados.entries) {
-        if (entry.value.contains(gradoId)) ids.add(entry.key);
+        if (entry.value.any(gradoIds.contains)) ids.add(entry.key);
       }
       if (!mounted) return;
       setState(() {
         _padreIdsPermitidos = ids;
-        _filtroGrado = gradoId;
-        _puedeElegirGrado = false;
+        // Varios grupos: puede filtrar entre los suyos; uno solo: fijo.
+        _puedeElegirGrado = gradoIds.length > 1;
+        _filtroGrado = gradoIds.length == 1 ? gradoIds.first : 'Todos';
+        // Limitar chips a sus grados
+        _grados = _grados.where((g) => gradoIds.contains(g.id)).toList();
         _filtroListo = true;
       });
     } catch (_) {
@@ -200,8 +204,9 @@ class _ChatListaEscuelaScreenState extends State<ChatListaEscuelaScreen> {
         user.esProfesor &&
         !user.esDirectora &&
         !user.esProfesorAdmin;
-    final puedeMensajeMasivo =
-        user?.esDirectora == true || user?.esProfesorAdmin == true;
+    // Directora / supervisora: todos o por filtro.
+    // Maestra: solo papás de su(s) grado(s) (ya acotado en _padreIdsPermitidos).
+    final puedeMensajeMasivo = user?.puedeAnunciarAGrupo == true;
 
     return Scaffold(
       backgroundColor: AppColors.grisClaro,
@@ -213,9 +218,10 @@ class _ChatListaEscuelaScreenState extends State<ChatListaEscuelaScreen> {
         ),
         backgroundColor: AppColors.azulOscuro,
         foregroundColor: Colors.white,
+        iconTheme: const IconThemeData(color: Colors.white),
         actions: [
           IconButton(
-            icon: const Icon(Icons.home),
+            icon: const Icon(Icons.home, color: Colors.white),
             onPressed: () => context.go('/directora'),
             tooltip: 'Ir al inicio',
           ),
@@ -623,7 +629,14 @@ class _ChatListaEscuelaScreenState extends State<ChatListaEscuelaScreen> {
     if (_padreIdsPermitidos != null) {
       paraTodos = false;
       gradoIds = const [];
-      soloPadreIds = _padreIdsPermitidos!.toList();
+      if (_puedeElegirGrado && _filtroGrado != 'Todos') {
+        soloPadreIds = _padreIdsPermitidos!
+            .where((pid) =>
+                _padreAGrados[pid]?.contains(_filtroGrado) == true)
+            .toList();
+      } else {
+        soloPadreIds = _padreIdsPermitidos!.toList();
+      }
     } else if (_puedeElegirGrado && _filtroGrado != 'Todos') {
       paraTodos = false;
       gradoIds = [_filtroGrado];
@@ -687,7 +700,9 @@ class _ChatListaEscuelaScreenState extends State<ChatListaEscuelaScreen> {
     var enviando = false;
 
     final alcanceTexto = _padreIdsPermitidos != null
-        ? 'Se enviará a los ${destinatarios.length} papás activos de tu grupo.'
+        ? (_filtroGrado != 'Todos'
+            ? 'Se enviará a ${destinatarios.length} papá(s) del grupo seleccionado.'
+            : 'Se enviará a los ${destinatarios.length} papás activos de tu(s) grupo(s).')
         : (_filtroGrado != 'Todos'
             ? 'Se enviará a ${destinatarios.length} papá(s) del grado/grupo seleccionado.'
             : 'Se enviará a ${destinatarios.length} papá(s) activos.');

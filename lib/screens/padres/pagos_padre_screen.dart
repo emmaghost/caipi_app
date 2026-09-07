@@ -3,8 +3,10 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../config/app_colors.dart';
+import '../../models/grado.dart';
 import '../../models/pago.dart';
 import '../../services/supabase_service.dart';
 import '../../utils/pago_helpers.dart';
@@ -31,6 +33,38 @@ class _PagosPadreScreenState extends State<PagosPadreScreen> {
   /// true = pendiente, false = pagado
   bool _soloPendientes = true;
   _CatPadre _categoria = _CatPadre.todas;
+  bool? _puedeVerPagos;
+
+  @override
+  void initState() {
+    super.initState();
+    _verificarGrado();
+  }
+
+  Future<void> _verificarGrado() async {
+    try {
+      final alumno = await Supabase.instance.client
+          .from('alumnos')
+          .select('grado_id')
+          .eq('id', widget.alumnoId)
+          .maybeSingle();
+      final gid = alumno?['grado_id'] as String?;
+      if (gid == null) {
+        if (mounted) setState(() => _puedeVerPagos = false);
+        return;
+      }
+      final gRow = await Supabase.instance.client
+          .from('grados')
+          .select()
+          .eq('id', gid)
+          .maybeSingle();
+      final ok = gRow != null &&
+          Grado.fromJson(Map<String, dynamic>.from(gRow)).muestraModuloPagos;
+      if (mounted) setState(() => _puedeVerPagos = ok);
+    } catch (_) {
+      if (mounted) setState(() => _puedeVerPagos = false);
+    }
+  }
 
   static _CatPadre? _categoriaDe(Pago p) {
     final t = (p.tipoPago ?? '').toLowerCase();
@@ -70,6 +104,32 @@ class _PagosPadreScreenState extends State<PagosPadreScreen> {
   @override
   Widget build(BuildContext context) {
     final service = context.read<SupabaseService>();
+
+    if (_puedeVerPagos == null) {
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
+    if (_puedeVerPagos == false) {
+      return Scaffold(
+        appBar: AppBar(
+          title: const Text('Pagos'),
+          backgroundColor: const Color(0xFFEC407A),
+          foregroundColor: Colors.white,
+        ),
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Text(
+              'Este módulo de pagos es solo para Kínder 1, 2 y 3.\n'
+              'Estimulación / maternal no lo usan.',
+              textAlign: TextAlign.center,
+              style: GoogleFonts.poppins(fontSize: 15),
+            ),
+          ),
+        ),
+      );
+    }
 
     return Scaffold(
       backgroundColor: const Color(0xFFFFF5F8),

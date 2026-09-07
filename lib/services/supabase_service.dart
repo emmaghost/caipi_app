@@ -314,7 +314,7 @@ class SupabaseService {
       'created_at': DateTime.now().toIso8601String(),
       'updated_at': DateTime.now().toIso8601String(),
     });
-    if (!g.esKinder) return;
+    if (!g.muestraModuloPagos) return;
 
     final inicio = alumno.fechaIngreso;
     final plan = PagoHelpers.normalizarPlan(alumno.planPagos);
@@ -641,6 +641,13 @@ class SupabaseService {
     await eliminarPago(pagoId);
   }
 
+  /// Borra un pago aunque tenga abonos (corrección de error).
+  /// Primero quita abonos; la FK suele ser CASCADE, pero se hace explícito.
+  Future<void> eliminarPagoForzado(String pagoId) async {
+    await _supabase.from('abonos').delete().eq('pago_id', pagoId);
+    await eliminarPago(pagoId);
+  }
+
   /// Borra varios pagos sin abonos. Devuelve cuántos se eliminaron y omitieron.
   Future<({int eliminados, int omitidos})> eliminarPagosSinAbonos(
     List<String> pagoIds,
@@ -807,11 +814,14 @@ class SupabaseService {
   }
 
   /// Ajusta el monto a cobrar (neto) de un pago pendiente/parcial.
-  /// El neto no puede ser menor a lo ya abonado ([montoPagado]).
+  /// [montoBruto] = mensualidad + recargo. [descuento] se resta.
+  /// Si [recargo] > 0 se documenta en el historial de notas.
   Future<void> ajustarMontoPago({
     required String pagoId,
     required double montoBruto,
     double descuento = 0,
+    double recargo = 0,
+    double? mensualidadBase,
     String? notas,
   }) async {
     final pago = await obtenerPagoPorId(pagoId);
@@ -832,9 +842,17 @@ class SupabaseService {
         'menor a lo ya abonado (\$${pago.montoPagado.toStringAsFixed(2)})',
       );
     }
-    final notasFinal = PagoHelpers.notasConDescuento(
-      montoBruto: montoBruto,
+    final base = mensualidadBase ?? (montoBruto - recargo);
+    final linea = PagoHelpers.lineaAjusteMonto(
+      montoAnterior: pago.monto,
+      mensualidad: base < 0 ? montoBruto : base,
+      recargo: recargo,
       descuento: descuento,
+      neto: neto,
+    );
+    final notasFinal = PagoHelpers.notasTrasAjuste(
+      notasAnteriores: pago.notas,
+      lineaAjuste: linea,
       notasUsuario: notas,
     );
     final estatus = pago.montoPagado > 0
@@ -921,6 +939,63 @@ class SupabaseService {
       'created_by': _supabase.auth.currentUser?.id,
     }).select().single();
     return Abono.fromJson(response);
+  }
+
+  /// Colegiaturas pendientes de un alumno (cuadro de pagos).
+  Future<List<Pago>> obtenerColegiaturasPendientesAlumno(String alumnoId) async {
+    final todos = await obtenerTodosPagosList();
+    final list = todos
+        .where(
+          (p) =>
+              p.alumnoId == alumnoId &&
+              !p.estaPagado &&
+              p.estatus != 'cancelado' &&
+              PagoHelpers.esColegiaturaMensual(p) &&
+              PagoHelpers.esTipoCuadroPagos(p.tipoPago, concepto: p.concepto) &&
+              p.saldoPendiente > 0,
+        )
+        .toList();
+    list.sort((a, b) {
+      if (a.fechaVencimiento == null && b.fechaVencimiento == null) return 0;
+      if (a.fechaVencimiento == null) return 1;
+      if (b.fechaVencimiento == null) return -1;
+      return a.fechaVencimiento!.compareTo(b.fechaVencimiento!);
+    });
+    return list;
+  }
+
+  /// Liquida todas las colegiaturas pendientes (pago de todo el año / restante).
+  Future<({int liquidados, double total})> liquidarColegiaturasPendientes({
+    required String alumnoId,
+    required String metodoPago,
+    required String recibidoPorNombre,
+    String? referencia,
+    String? notas,
+  }) async {
+    final pendientes = await obtenerColegiaturasPendientesAlumno(alumnoId);
+    if (pendientes.isEmpty) {
+      throw Exception('Este alumno no tiene colegiaturas pendientes.');
+    }
+    var liquidados = 0;
+    var total = 0.0;
+    final notaAnual = (notas == null || notas.trim().isEmpty)
+        ? 'Pago todo el año / colegiaturas pendientes'
+        : notas.trim();
+    for (final p in pendientes) {
+      final saldo = p.saldoPendiente;
+      if (saldo <= 0) continue;
+      await acreditarPagoParcial(
+        pagoId: p.id,
+        montoAbonar: saldo,
+        metodoPago: metodoPago,
+        recibidoPorNombre: recibidoPorNombre,
+        referencia: referencia,
+        notas: notaAnual,
+      );
+      liquidados++;
+      total += saldo;
+    }
+    return (liquidados: liquidados, total: total);
   }
 
   // ==================== CALIFICACIONES ====================

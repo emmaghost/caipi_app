@@ -13,8 +13,11 @@ Grado _g(String nombre) {
 }
 
 void main() {
-  test('kinder genera colegiatura; maternal y estimulacion no', () {
-    expect(_g('Kínder 1').generaColegiaturaAutomatica, isTrue);
+  test('kinder 1-3 generan colegiatura; maternal y estimulacion no', () {
+    expect(_g('Kínder 1').muestraModuloPagos, isTrue);
+    expect(_g('Kinder 2').muestraModuloPagos, isTrue);
+    expect(_g('Kinder 3').generaColegiaturaAutomatica, isTrue);
+    expect(_g('Kinder 4').muestraModuloPagos, isFalse);
     expect(_g('Maternal').generaColegiaturaAutomatica, isFalse);
     expect(_g('Estimulación Temprana').generaColegiaturaAutomatica, isFalse);
     expect(_g('Estimulación Temprana').cobroPorClase, isTrue);

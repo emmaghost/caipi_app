@@ -14,8 +14,9 @@ import '../../models/alumno.dart';
 import '../../models/control_salida.dart';
 import '../../models/grado.dart';
 import '../../services/auth_service.dart';
+import '../../services/profesor_grupos_service.dart';
+import '../../services/solicitud_recogida_service.dart';
 import '../../widgets/app_drawer.dart';
-import '../../widgets/panel_solicitudes_recogida_escuela.dart';
 
 /// Vista diaria por **grupo (grado)**: todos los alumnos del curso y su entrada/salida del día.
 /// El QR de salida lo genera el padre (Personas autorizadas); aquí se registra quién recogió y la hora.
@@ -45,7 +46,7 @@ class _ControlSalidasScreenState extends State<ControlSalidasScreen> {
     final client = Supabase.instance.client;
 
     try {
-      if (auth.isDirectora) {
+      if (auth.isDirectora || auth.currentUser?.esProfesorAdmin == true) {
         final g = await client
             .from('grados')
             .select()
@@ -60,24 +61,23 @@ class _ControlSalidasScreenState extends State<ControlSalidasScreen> {
       } else {
         final uid = client.auth.currentUser?.id;
         if (uid != null) {
-          final prList = await client
-              .from('profesores')
-              .select('grado_id')
-              .eq('usuario_id', uid)
-              .eq('activo', true)
-              .limit(1);
-          final pr = (prList as List).isEmpty
-              ? null
-              : Map<String, dynamic>.from(prList.first as Map);
-          final gid = pr?['grado_id'] as String?;
-          if (gid != null && gid.isNotEmpty) {
-            _gradoSeleccionadoId = gid;
-            final gr = await client.from('grados').select().eq('id', gid).single();
-            _grados = [
-              Grado.fromJson(Map<String, dynamic>.from(gr as Map)),
-            ];
-          } else {
+          final gradoIds =
+              await ProfesorGruposService().gradoIdsDeUsuario(uid);
+          if (gradoIds.isEmpty) {
             _profesoraSinGrado = true;
+          } else {
+            final gr = await client
+                .from('grados')
+                .select()
+                .inFilter('id', gradoIds)
+                .eq('activo', true)
+                .order('nombre');
+            _grados = (gr as List)
+                .map((e) => Grado.fromJson(Map<String, dynamic>.from(e as Map)))
+                .toList();
+            _gradoSeleccionadoId ??=
+                _grados.isNotEmpty ? _grados.first.id : null;
+            if (_grados.isEmpty) _profesoraSinGrado = true;
           }
         }
       }
@@ -227,9 +227,12 @@ class _ControlSalidasScreenState extends State<ControlSalidasScreen> {
       if (!valido) {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(data['mensaje'] as String? ?? 'QR inválido o ya usado'),
-            backgroundColor: Colors.red,
+          const SnackBar(
+            content: Text(
+              'Ese código no sirve: ya se usó, expiró o está mal escrito. '
+              'Pide al papá uno nuevo.',
+            ),
+            backgroundColor: Colors.orange,
           ),
         );
         return;
@@ -238,7 +241,14 @@ class _ControlSalidasScreenState extends State<ControlSalidasScreen> {
       final alumnoId = data['alumno_id'] as String?;
       final personaId = data['persona_autorizada_id'] as String?;
       if (alumnoId == null) {
-        throw Exception('El QR no trae alumno');
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Ese QR no trae datos del alumno. Genera uno nuevo.'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+        return;
       }
 
       final client = Supabase.instance.client;
@@ -293,15 +303,26 @@ class _ControlSalidasScreenState extends State<ControlSalidasScreen> {
           'prellenarSalida': true,
         },
       );
-      if (ok == true && mounted) setState(() => _listaEpoch++);
-    } catch (e) {
+      if (ok == true && mounted) {
+        try {
+          await SolicitudRecogidaService().cerrarPendientesDeAlumno(
+            alumnoId: alumnoId,
+            atendidaPorId: uid,
+            modalidadEntrega: 'qr',
+            quienRecibio: nombrePersona,
+          );
+        } catch (_) {}
+        setState(() => _listaEpoch++);
+      }
+    } catch (_) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
+        const SnackBar(
           content: Text(
-            'No se pudo validar. ¿Corriste FIX_SISTEMA_QR_TEMPORAL.sql?\n$e',
+            'No se pudo validar el código. Revisa que esté bien escrito '
+            'o pide uno nuevo al papá.',
           ),
-          backgroundColor: Colors.red,
+          backgroundColor: Colors.orange,
         ),
       );
     }
@@ -396,9 +417,58 @@ class _ControlSalidasScreenState extends State<ControlSalidasScreen> {
     }
   }
 
+  /// Equivocación: borra el registro del día (quita histórico de entrada/salida).
+  Future<void> _borrarRegistroDia(ControlSalida existente, Alumno alumno) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('¿Borrar registro?', style: GoogleFonts.fredoka()),
+        content: Text(
+          'Se elimina el historial de entrada/salida de ${alumno.nombreCompleto} '
+          'del ${DateFormat('dd/MM/yyyy').format(_fechaSeleccionada)}.\n\n'
+          'Úsalo si te equivocaste al registrar.',
+          style: GoogleFonts.poppins(fontSize: 14),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Borrar'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    try {
+      await Supabase.instance.client
+          .from('control_salidas')
+          .delete()
+          .eq('id', existente.id);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Registro borrado'),
+            backgroundColor: Colors.green,
+          ),
+        );
+        setState(() => _listaEpoch++);
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    final auth = context.watch<AuthService>();
+    final auth = context.read<AuthService>();
 
     return Scaffold(
       appBar: AppBar(
@@ -485,11 +555,45 @@ class _ControlSalidasScreenState extends State<ControlSalidasScreen> {
                         fecha: _fechaSeleccionada,
                         onCambiarFecha: _seleccionarFecha,
                       ),
-                      PanelSolicitudesRecogidaEscuela(
-                        // Directora ve todas; profesor solo ve su grado
-                        gradoIdFiltro: auth.isDirectora ? null : _gradoSeleccionadoId,
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                        child: Material(
+                          color: Colors.orange.shade50,
+                          borderRadius: BorderRadius.circular(12),
+                          child: InkWell(
+                            borderRadius: BorderRadius.circular(12),
+                            onTap: () =>
+                                context.go('/directora/entrega-afuera'),
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 14,
+                                vertical: 12,
+                              ),
+                              child: Row(
+                                children: [
+                                  Icon(Icons.door_front_door,
+                                      color: Colors.orange.shade800),
+                                  const SizedBox(width: 10),
+                                  Expanded(
+                                    child: Text(
+                                      'Niños afuera / entrega',
+                                      style: GoogleFonts.poppins(
+                                        fontWeight: FontWeight.w600,
+                                        color: Colors.orange.shade900,
+                                      ),
+                                    ),
+                                  ),
+                                  Icon(Icons.chevron_right,
+                                      color: Colors.orange.shade800),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
                       ),
-                      if (auth.isDirectora && _grados.isEmpty)
+                      if ((auth.isDirectora ||
+                              auth.currentUser?.esProfesorAdmin == true) &&
+                          _grados.isEmpty)
                         Padding(
                           padding: const EdgeInsets.symmetric(horizontal: 16),
                           child: Text(
@@ -497,7 +601,10 @@ class _ControlSalidasScreenState extends State<ControlSalidasScreen> {
                             style: GoogleFonts.poppins(color: AppColors.grisOscuro),
                           ),
                         ),
-                      if (auth.isDirectora && _grados.isNotEmpty)
+                      if ((auth.isDirectora ||
+                              auth.currentUser?.esProfesorAdmin == true ||
+                              _grados.length > 1) &&
+                          _grados.isNotEmpty)
                         Padding(
                           padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
                           child: DropdownButtonFormField<String>(
@@ -523,7 +630,9 @@ class _ControlSalidasScreenState extends State<ControlSalidasScreen> {
                             },
                           ),
                         )
-                      else if (!auth.isDirectora && _grados.isNotEmpty)
+                      else if (!auth.isDirectora &&
+                          auth.currentUser?.esProfesorAdmin != true &&
+                          _grados.length == 1)
                         Padding(
                           padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
                           child: ListTile(
@@ -620,6 +729,9 @@ class _ControlSalidasScreenState extends State<ControlSalidasScreen> {
                                     onMarcarAusente: () => _marcarNoAsistio(a, c),
                                     onQuitarAusencia:
                                         c != null && c.ausente ? () => _quitarAusencia(c) : null,
+                                    onBorrarRegistro: c != null
+                                        ? () => _borrarRegistroDia(c, a)
+                                        : null,
                                   );
                                 },
                               );
@@ -719,7 +831,9 @@ class _InfoQrSalida extends StatelessWidget {
               const SizedBox(width: 10),
               Expanded(
                 child: Text(
-                  'En la salida, el padre puede mostrar un QR temporal (Personas autorizadas) para acreditar quién recoge. Aquí registras la hora de salida y el nombre de quien recogió.',
+                  'En la salida puedes validar el QR (ícono arriba) o escribir el código. '
+                  'Al registrar la salida queda marcado «entregado por QR» y se cierra '
+                  'la solicitud de «Niños afuera» si estaba pendiente.',
                   style: GoogleFonts.poppins(fontSize: 12.5, height: 1.35, color: AppColors.grisOscuro),
                 ),
               ),
@@ -737,6 +851,7 @@ class _AlumnoAsistenciaTile extends StatelessWidget {
   final VoidCallback onTap;
   final VoidCallback onMarcarAusente;
   final VoidCallback? onQuitarAusencia;
+  final VoidCallback? onBorrarRegistro;
 
   const _AlumnoAsistenciaTile({
     required this.alumno,
@@ -744,6 +859,7 @@ class _AlumnoAsistenciaTile extends StatelessWidget {
     required this.onTap,
     required this.onMarcarAusente,
     this.onQuitarAusencia,
+    this.onBorrarRegistro,
   });
 
   String _horaCorta(DateTime? d) {
@@ -866,11 +982,17 @@ class _AlumnoAsistenciaTile extends StatelessWidget {
                     onSelected: (v) {
                       if (v == 'ausente') onMarcarAusente();
                       if (v == 'quitar') onQuitarAusencia?.call();
+                      if (v == 'borrar') onBorrarRegistro?.call();
                     },
                     itemBuilder: (ctx) => [
                       const PopupMenuItem(value: 'ausente', child: Text('Marcar que no vino')),
                       if (onQuitarAusencia != null)
                         const PopupMenuItem(value: 'quitar', child: Text('Quitar “no asistió”')),
+                      if (onBorrarRegistro != null)
+                        const PopupMenuItem(
+                          value: 'borrar',
+                          child: Text('Borrar registro del día'),
+                        ),
                     ],
                   ),
                 ],

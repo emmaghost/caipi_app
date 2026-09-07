@@ -17,6 +17,7 @@ import '../../widgets/app_drawer.dart';
 import '../../services/chat_service.dart';
 import '../../services/auth_service.dart';
 import '../../utils/pago_helpers.dart';
+import '../../utils/constantes.dart';
 import 'bitacora_gastos_screen.dart';
 
 /// Formato de miles con coma (ej: 51,460.00)
@@ -36,7 +37,7 @@ class _PagosScreenState extends State<PagosScreen> with SingleTickerProviderStat
   String? _filtroGradoId;   // null = todos los grados
   String? _filtroAlumnoId;
   String? _filtroTipoPago; // null = todos, 'mensualidad', 'otro'
-  String _filtroEstado = 'vencidos'; // 'todos' | 'vencidos' | 'pendientes' | 'futuros' | 'pagados'
+  String _filtroEstado = 'pendientes'; // 'todos' | 'vencidos' | 'pendientes' | 'futuros' | 'pagados'
 
   /// Panel de filtros de «Pagos de Alumnos» colapsado por defecto (más espacio para la lista en móvil).
   bool _filtrosAlumnosExpandidos = false;
@@ -46,12 +47,38 @@ class _PagosScreenState extends State<PagosScreen> with SingleTickerProviderStat
   SupabaseService? _pagosFutureService;
   /// Cambia al refrescar para que el [FutureBuilder] de la lista vuelva a montarse (p. ej. tras agregar uniforme).
   int _pagosListaEpoch = 0;
+  /// Alumnos + grados para filtros (no recrear Future en cada rebuild).
+  Future<List<dynamic>>? _alumnosGradosFuture;
+  SupabaseService? _alumnosGradosFutureService;
   /// Re-suscribe el stream de bitácora de gastos al volver de registrar un gasto (pestaña Bitácora).
   int _bitacoraGastosListaRefreshToken = 0;
 
-  /// Selección múltiple para borrar cargos sin abonos.
+  /// Selección múltiple: borrar cargos o armar PDF de varios meses.
   bool _modoSeleccion = false;
+  /// true = seleccionar pagos con abono para PDF; false = borrar sin abonos.
+  bool _seleccionParaPdf = false;
   final Set<String> _pagosSeleccionados = {};
+
+  bool _pagoSePuedeSeleccionar(Pago pago) {
+    if (_seleccionParaPdf) return pago.montoPagado > 0;
+    return pago.puedeEliminarse;
+  }
+
+  void _activarSeleccion({required bool paraPdf}) {
+    setState(() {
+      _modoSeleccion = true;
+      _seleccionParaPdf = paraPdf;
+      _pagosSeleccionados.clear();
+    });
+  }
+
+  void _salirSeleccion() {
+    setState(() {
+      _modoSeleccion = false;
+      _seleccionParaPdf = false;
+      _pagosSeleccionados.clear();
+    });
+  }
 
   Future<List<Pago>> _futurePagosPendientes(SupabaseService s) {
     if (_pagosFutureService != s) {
@@ -62,6 +89,16 @@ class _PagosScreenState extends State<PagosScreen> with SingleTickerProviderStat
     return _pagosPendientesFuture!;
   }
 
+  Future<List<dynamic>> _futureAlumnosGrados(SupabaseService s) {
+    if (_alumnosGradosFutureService != s) {
+      _alumnosGradosFutureService = s;
+      _alumnosGradosFuture = null;
+    }
+    _alumnosGradosFuture ??=
+        Future.wait([s.obtenerAlumnos(), s.obtenerGrados()]);
+    return _alumnosGradosFuture!;
+  }
+
   Future<void> _refrescarPagosPendientes(SupabaseService s) async {
     try {
       final list = await s.obtenerTodosPagosList();
@@ -70,6 +107,10 @@ class _PagosScreenState extends State<PagosScreen> with SingleTickerProviderStat
         _pagosFutureService = s;
         _pagosPendientesFuture = Future.value(list);
         _pagosListaEpoch++;
+        // Releer alumnos por si RLS/datos cambiaron tras el SQL.
+        _alumnosGradosFutureService = s;
+        _alumnosGradosFuture =
+            Future.wait([s.obtenerAlumnos(), s.obtenerGrados()]);
       });
     } catch (e) {
       if (!mounted) return;
@@ -307,6 +348,7 @@ class _PagosScreenState extends State<PagosScreen> with SingleTickerProviderStat
   
   void _onTabControllerChanged() {
     if (_tabController.indexIsChanging) return;
+    if (_modoSeleccion) _salirSeleccion();
     setState(() {});
   }
 
@@ -364,37 +406,61 @@ class _PagosScreenState extends State<PagosScreen> with SingleTickerProviderStat
         foregroundColor: Colors.white,
         title: Text(
           _modoSeleccion
-              ? '${_pagosSeleccionados.length} seleccionados'
+              ? (_seleccionParaPdf
+                  ? '${_pagosSeleccionados.length} para PDF'
+                  : '${_pagosSeleccionados.length} seleccionados')
               : 'Gestión de Pagos',
         ),
         leading: _modoSeleccion
             ? IconButton(
                 icon: const Icon(Icons.close),
                 tooltip: 'Cancelar selección',
-                onPressed: () => setState(() {
-                  _modoSeleccion = false;
-                  _pagosSeleccionados.clear();
-                }),
+                onPressed: _salirSeleccion,
               )
             : null,
         actions: [
-          if (_modoSeleccion && context.read<AuthService>().isDirectora) ...[
-            IconButton(
-              icon: const Icon(Icons.delete_forever),
-              tooltip: 'Eliminar seleccionados (sin abonos)',
-              onPressed: () =>
-                  _confirmarEliminarSeleccionados(context, firestoreService),
-            ),
+          if (_modoSeleccion &&
+              context.read<AuthService>().puedeGestionarPagos) ...[
+            if (_seleccionParaPdf)
+              IconButton(
+                icon: const Icon(Icons.picture_as_pdf),
+                tooltip: 'Enviar PDF de seleccionados',
+                onPressed: () => _compartirRecibosSeleccionados(
+                  context,
+                  firestoreService,
+                ),
+              )
+            else
+              IconButton(
+                icon: const Icon(Icons.delete_forever),
+                tooltip: 'Eliminar seleccionados (sin abonos)',
+                onPressed: () =>
+                    _confirmarEliminarSeleccionados(context, firestoreService),
+              ),
           ] else ...[
             if (_tabController.index < 2 &&
-                context.read<AuthService>().isDirectora)
+                context.read<AuthService>().puedeGestionarPagos)
+              IconButton(
+                icon: const Icon(Icons.event_available),
+                tooltip: 'Ya pagó todo el año',
+                onPressed: () => _mostrarDialogoPagoTodoElAnio(context),
+              ),
+            if (_tabController.index < 2 &&
+                context.read<AuthService>().puedeGestionarPagos)
+              IconButton(
+                icon: const Icon(Icons.picture_as_pdf_outlined),
+                tooltip: 'Seleccionar meses pagados → PDF',
+                onPressed: () {
+                  setState(() => _filtroEstado = 'pagados');
+                  _activarSeleccion(paraPdf: true);
+                },
+              ),
+            if (_tabController.index < 2 &&
+                context.read<AuthService>().puedeGestionarPagos)
               IconButton(
                 icon: const Icon(Icons.checklist),
                 tooltip: 'Seleccionar para borrar',
-                onPressed: () => setState(() {
-                  _modoSeleccion = true;
-                  _pagosSeleccionados.clear();
-                }),
+                onPressed: () => _activarSeleccion(paraPdf: false),
               ),
             if (_tabController.index < 2)
               IconButton(
@@ -433,20 +499,22 @@ class _PagosScreenState extends State<PagosScreen> with SingleTickerProviderStat
           ],
         ),
       ),
-      body: TabBarView(
-        controller: _tabController,
-        children: [
-          _buildPagosAlumnosTab(firestoreService),
-          _buildListaPagos(
-            firestoreService,
-            filtroTipo: 'extracurriculares',
-            filtroEstado: _filtroEstado,
-          ),
-          BitacoraGastosPanel(
-            embeddedInPagos: true,
-            listaRefreshToken: _bitacoraGastosListaRefreshToken,
-          ),
-        ],
+      body: KeyedSubtree(
+        // Solo la pestaña activa en el árbol: evita '_dependents.isEmpty'
+        // al desmontar TabBarView + context.watch de bitácora/auth.
+        key: ValueKey<int>(_tabController.index),
+        child: _tabController.index == 0
+            ? _buildPagosAlumnosTab(firestoreService)
+            : _tabController.index == 1
+                ? _buildListaPagos(
+                    firestoreService,
+                    filtroTipo: 'extracurriculares',
+                    filtroEstado: _filtroEstado,
+                  )
+                : BitacoraGastosPanel(
+                    embeddedInPagos: true,
+                    listaRefreshToken: _bitacoraGastosListaRefreshToken,
+                  ),
       ),
       floatingActionButton: _floatingActionButtonPagos(context),
     );
@@ -469,14 +537,31 @@ class _PagosScreenState extends State<PagosScreen> with SingleTickerProviderStat
 
   Set<String> _idsGradoFiltro(List<Grado> grados) {
     if (_filtroGradoId == null) return {};
-    final ids = {_filtroGradoId!};
-    for (final g in grados) {
-      if (g.id == _filtroGradoId && g.esMaternal) {
-        ids.addAll(grados.where((x) => x.esEstimulacion).map((x) => x.id));
-        break;
-      }
+    return {_filtroGradoId!};
+  }
+
+  /// Alumnos que sí entran al módulo de pagos (solo Kínder 1–3).
+  Set<String> _alumnoIdsModuloPagos(List<Alumno> alumnos, List<Grado> grados) {
+    final gradosOk = {
+      for (final g in grados)
+        if (g.muestraModuloPagos) g.id,
+    };
+    var list = alumnos.where(
+      (a) => a.gradoId != null && gradosOk.contains(a.gradoId),
+    );
+    if (_filtroGradoId != null) {
+      final ids = _idsGradoFiltro(grados);
+      list = list.where((a) => ids.contains(a.gradoId));
     }
-    return ids;
+    return list.map((a) => a.id).toSet();
+  }
+
+  List<Grado> _gradosModuloPagos(List<Grado> grados) =>
+      grados.where((g) => g.muestraModuloPagos).toList();
+
+  List<Alumno> _alumnosModuloPagos(List<Alumno> alumnos, List<Grado> grados) {
+    final ids = _alumnoIdsModuloPagos(alumnos, grados);
+    return alumnos.where((a) => ids.contains(a.id)).toList();
   }
 
   String _etiquetaEstadoFiltroCorto() {
@@ -498,7 +583,7 @@ class _PagosScreenState extends State<PagosScreen> with SingleTickerProviderStat
     List<Grado> grados,
     Map<String, String> mapaNombres,
   ) {
-    var gradoTxt = 'Todos los grados';
+    var gradoTxt = 'Todos (Kínder 1–3)';
     if (_filtroGradoId != null) {
       final idx = grados.indexWhere((g) => g.id == _filtroGradoId);
       if (idx >= 0) gradoTxt = grados[idx].nombre;
@@ -564,8 +649,14 @@ class _PagosScreenState extends State<PagosScreen> with SingleTickerProviderStat
 
   /// Pestaña "Pagos de Alumnos" con filtros por grado, alumno (con buscador) y tipo
   Widget _buildPagosAlumnosTab(SupabaseService service) {
+    // read (no watch) aquí: el rebuild por Auth lo hace el Scaffold padre si hace falta.
+    // Evita '_dependents.isEmpty' con FutureBuilder + Provider.
+    final usuario = context.read<AuthService>().currentUser;
+    final esCaja = usuario?.esCaja == true;
+    final puedeGestionarPagos = usuario?.puedeGestionarPagos == true;
+
     return FutureBuilder<List<dynamic>>(
-      future: Future.wait([service.obtenerAlumnos(), service.obtenerGrados()]),
+      future: _futureAlumnosGrados(service),
       builder: (context, snapshot) {
         final alumnos = snapshot.hasData && snapshot.data!.isNotEmpty
             ? (snapshot.data![0] as List<Alumno>)
@@ -574,9 +665,62 @@ class _PagosScreenState extends State<PagosScreen> with SingleTickerProviderStat
             ? (snapshot.data![1] as List<Grado>)
             : <Grado>[];
         final mapaNombres = {for (var a in alumnos) a.id: a.nombreCompleto};
+        final idsModulo = _alumnoIdsModuloPagos(alumnos, grados);
+        // Si RLS bloquea alumnos (o no hay Kínder), un set vacío ocultaba TODOS los pagos.
+        final filtrarPorAlumnosModulo = idsModulo.isNotEmpty;
 
         return Column(
           children: [
+            if (alumnos.isEmpty && puedeGestionarPagos)
+              Material(
+                color: Colors.orange.shade50,
+                child: Padding(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Icon(Icons.warning_amber_rounded,
+                          size: 22, color: Colors.orange.shade800),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'No se pueden cargar alumnos (permisos). '
+                          'Ejecuta FIX_CAJA_VER_ALUMNOS_Y_PAGOS.sql en Supabase '
+                          'y vuelve a entrar. Mientras, se muestran todos los cargos.',
+                          style: GoogleFonts.poppins(
+                            fontSize: 12.5,
+                            height: 1.3,
+                            color: Colors.orange.shade900,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            if (esCaja)
+              Material(
+                color: AppColors.azulOscuro.withOpacity(0.08),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.info_outline, size: 20, color: AppColors.azulOscuro),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Caja solo gestiona pagos de Kínder 1, 2 y 3 (no maternal ni estimulación).',
+                          style: GoogleFonts.poppins(
+                            fontSize: 12,
+                            color: AppColors.azulOscuro,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
             _buildBarraColapsarFiltrosAlumnos(grados, mapaNombres),
             AnimatedSize(
               duration: const Duration(milliseconds: 240),
@@ -623,24 +767,23 @@ class _PagosScreenState extends State<PagosScreen> with SingleTickerProviderStat
                               filled: true,
                               fillColor: Colors.white,
                             ),
-                            hint: Text('Todos los grados', style: GoogleFonts.poppins(fontSize: 14)),
+                            hint: Text('Todos (solo Kínder 1–3)',
+                                style: GoogleFonts.poppins(fontSize: 14)),
                             items: [
                               const DropdownMenuItem<String?>(
                                 value: null,
-                                child: Text('Todos los grados'),
+                                child: Text('Todos (Kínder 1–3)'),
                               ),
-                              ...grados
-                                  .where((g) =>
-                                      !g.esEstimulacion ||
-                                      g.id == _filtroGradoId)
-                                  .map((g) => DropdownMenuItem<String?>(
-                                    value: g.id,
-                                    child: Text(
-                                      g.nombre,
-                                      style: GoogleFonts.poppins(fontSize: 14),
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                  )),
+                              ..._gradosModuloPagos(grados).map(
+                                (g) => DropdownMenuItem<String?>(
+                                  value: g.id,
+                                  child: Text(
+                                    g.nombre,
+                                    style: GoogleFonts.poppins(fontSize: 14),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ),
                             ],
                             onChanged: (value) {
                               setState(() {
@@ -754,13 +897,13 @@ class _PagosScreenState extends State<PagosScreen> with SingleTickerProviderStat
                 filtroTipoPago: _filtroTipoPago,
                 filtroEstado: _filtroEstado,
                 mapaNombresAlumnos: mapaNombres,
-                alumnoIdsPermitidosPorGrado: _filtroGradoId != null &&
-                        _filtroAlumnoId == null
-                    ? alumnos
-                        .where((a) => _idsGradoFiltro(grados).contains(a.gradoId))
-                        .map((a) => a.id)
-                        .toSet()
-                    : null,
+                alumnoIdsPermitidosPorGrado: !filtrarPorAlumnosModulo
+                    ? null
+                    : (_filtroAlumnoId == null
+                        ? idsModulo
+                        : (idsModulo.contains(_filtroAlumnoId)
+                            ? {_filtroAlumnoId!}
+                            : <String>{})),
               ),
             ),
           ],
@@ -939,12 +1082,14 @@ class _PagosScreenState extends State<PagosScreen> with SingleTickerProviderStat
     List<Alumno> alumnos,
     List<Grado> grados,
   ) {
+    final base = _alumnosModuloPagos(alumnos, grados);
     List<Alumno> porGrado = _filtroGradoId == null
-        ? alumnos
-        : alumnos
+        ? base
+        : base
             .where((a) => _idsGradoFiltro(grados).contains(a.gradoId))
             .toList();
-    final mapaNombres = {for (var g in grados) g.id: g.nombre};
+    final gradosPago = _gradosModuloPagos(grados);
+    final mapaNombres = {for (var g in gradosPago) g.id: g.nombre};
 
     showModalBottomSheet<void>(
       context: context,
@@ -952,7 +1097,7 @@ class _PagosScreenState extends State<PagosScreen> with SingleTickerProviderStat
       backgroundColor: Colors.transparent,
       builder: (ctx) => _SelectorAlumnoSheet(
         alumnos: porGrado,
-        grados: grados,
+        grados: gradosPago,
         mapaGradoNombre: mapaNombres,
         alumnoSeleccionadoId: _filtroAlumnoId,
         onSeleccionar: (id) {
@@ -1029,6 +1174,7 @@ class _PagosScreenState extends State<PagosScreen> with SingleTickerProviderStat
             if (pago.tipoPago != 'extracurricular') return false;
           }
           if (alumnoIdsPermitidosPorGrado != null &&
+              alumnoIdsPermitidosPorGrado.isNotEmpty &&
               filtroAlumnoId == null &&
               !alumnoIdsPermitidosPorGrado.contains(pago.alumnoId)) {
             return false;
@@ -1287,7 +1433,7 @@ class _PagosScreenState extends State<PagosScreen> with SingleTickerProviderStat
       ),
       child: InkWell(
         borderRadius: BorderRadius.circular(16),
-        onTap: _modoSeleccion && pago.puedeEliminarse
+        onTap: _modoSeleccion && _pagoSePuedeSeleccionar(pago)
             ? () => setState(() {
                   if (_pagosSeleccionados.contains(pago.id)) {
                     _pagosSeleccionados.remove(pago.id);
@@ -1296,11 +1442,14 @@ class _PagosScreenState extends State<PagosScreen> with SingleTickerProviderStat
                   }
                 })
             : null,
-        onLongPress: context.read<AuthService>().isDirectora &&
-                pago.puedeEliminarse
+        onLongPress: context.read<AuthService>().puedeGestionarPagos &&
+                (pago.montoPagado > 0 || pago.puedeEliminarse)
             ? () => setState(() {
                   _modoSeleccion = true;
-                  _pagosSeleccionados.add(pago.id);
+                  _seleccionParaPdf = pago.montoPagado > 0;
+                  _pagosSeleccionados
+                    ..clear()
+                    ..add(pago.id);
                 })
             : null,
         child: Padding(
@@ -1313,7 +1462,7 @@ class _PagosScreenState extends State<PagosScreen> with SingleTickerProviderStat
                 children: [
                   Checkbox(
                     value: _pagosSeleccionados.contains(pago.id),
-                    onChanged: pago.puedeEliminarse
+                    onChanged: _pagoSePuedeSeleccionar(pago)
                         ? (v) => setState(() {
                               if (v == true) {
                                 _pagosSeleccionados.add(pago.id);
@@ -1495,12 +1644,13 @@ class _PagosScreenState extends State<PagosScreen> with SingleTickerProviderStat
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
-                    if (context.read<AuthService>().isDirectora &&
-                        !_modoSeleccion &&
-                        pago.puedeEliminarse)
+                    if (context.read<AuthService>().puedeGestionarPagos &&
+                        !_modoSeleccion)
                       IconButton(
                         visualDensity: VisualDensity.compact,
-                        tooltip: 'Eliminar pago',
+                        tooltip: pago.puedeEliminarse
+                            ? 'Eliminar pago'
+                            : 'Eliminar pago (también si tiene abonos)',
                         onPressed: () => _confirmarEliminarPago(
                           context,
                           service,
@@ -1670,18 +1820,7 @@ class _PagosScreenState extends State<PagosScreen> with SingleTickerProviderStat
     Pago pago,
     String? nombreAlumno,
   ) async {
-    if (!pago.puedeEliminarse) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Solo se pueden eliminar pagos sin abonos (pendientes).',
-          ),
-          backgroundColor: AppColors.rojo,
-        ),
-      );
-      return;
-    }
-
+    final tieneAbonos = !pago.puedeEliminarse;
     final confirmar = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
@@ -1689,7 +1828,9 @@ class _PagosScreenState extends State<PagosScreen> with SingleTickerProviderStat
         content: Text(
           'Se eliminará "${pago.descripcionCompleta}"'
           '${nombreAlumno == null ? '' : ' de $nombreAlumno'}.\n\n'
-          'Solo se borran cargos sin abonos. Esta acción no se puede deshacer.',
+          '${tieneAbonos ? 'Este cargo ya tiene abonos o está pagado. '
+              'Se borrarán también los abonos. Úsalo solo si fue un error.\n\n' : ''}'
+          'Esta acción no se puede deshacer.',
         ),
         actions: [
           TextButton(
@@ -1708,15 +1849,18 @@ class _PagosScreenState extends State<PagosScreen> with SingleTickerProviderStat
     if (confirmar != true || !mounted) return;
 
     try {
-      await service.eliminarPagoSinAbonos(pago.id);
+      if (tieneAbonos) {
+        await service.eliminarPagoForzado(pago.id);
+      } else {
+        await service.eliminarPagoSinAbonos(pago.id);
+      }
       if (!mounted) return;
-      setState(() => _pagosSeleccionados.remove(pago.id));
       await _refrescarPagosPendientes(service);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Pago eliminado'),
-          backgroundColor: AppColors.verde,
+          backgroundColor: Color(0xFF059669),
         ),
       );
     } catch (e) {
@@ -1765,10 +1909,7 @@ class _PagosScreenState extends State<PagosScreen> with SingleTickerProviderStat
     try {
       final result = await service.eliminarPagosSinAbonos(ids);
       if (!mounted) return;
-      setState(() {
-        _pagosSeleccionados.clear();
-        _modoSeleccion = false;
-      });
+      _salirSeleccion();
       await _refrescarPagosPendientes(service);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -1803,24 +1944,7 @@ class _PagosScreenState extends State<PagosScreen> with SingleTickerProviderStat
         throw Exception('No se encontró el alumno de este pago.');
       }
 
-      // Preferir abono real (folio REC-…). Si es un pago acreditado
-      // antes del sistema de recibos, armar uno con los datos del pago.
-      var abono = await service.obtenerUltimoAbono(pago.id);
-      abono ??= Abono(
-        id: 'legacy-${pago.id}',
-        pagoId: pago.id,
-        monto: pago.montoPagado > 0 ? pago.montoPagado : pago.monto,
-        fechaAbono: pago.fechaPago ?? pago.updatedAt,
-        formaPago: pago.formaPago,
-        referencia: pago.referencia,
-        notas: pago.notas,
-        recibidoPorNombre: pago.recibidoPorNombre,
-        reciboFolio: pago.referencia?.trim().isNotEmpty == true
-            ? pago.referencia!.trim()
-            : 'SIN-FOLIO-${pago.id.substring(0, 8).toUpperCase()}',
-        createdAt: pago.updatedAt,
-      );
-
+      final abono = await _abonoParaRecibo(service, pago);
       await ReciboPagoPdf.compartir(
         abono: abono,
         pago: pago,
@@ -1831,6 +1955,125 @@ class _PagosScreenState extends State<PagosScreen> with SingleTickerProviderStat
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('No se pudo abrir el recibo: $e'),
+          backgroundColor: AppColors.rojo,
+        ),
+      );
+    }
+  }
+
+  Future<Abono> _abonoParaRecibo(SupabaseService service, Pago pago) async {
+    var abono = await service.obtenerUltimoAbono(pago.id);
+    abono ??= Abono(
+      id: 'legacy-${pago.id}',
+      pagoId: pago.id,
+      monto: pago.montoPagado > 0 ? pago.montoPagado : pago.monto,
+      fechaAbono: pago.fechaPago ?? pago.updatedAt,
+      formaPago: pago.formaPago,
+      referencia: pago.referencia,
+      notas: pago.notas,
+      recibidoPorNombre: pago.recibidoPorNombre,
+      reciboFolio: pago.referencia?.trim().isNotEmpty == true
+          ? pago.referencia!.trim()
+          : 'SIN-FOLIO-${pago.id.substring(0, 8).toUpperCase()}',
+      createdAt: pago.updatedAt,
+    );
+    return abono;
+  }
+
+  /// PDF con varios meses pagados del mismo alumno.
+  Future<void> _compartirRecibosSeleccionados(
+    BuildContext context,
+    SupabaseService service,
+  ) async {
+    if (_pagosSeleccionados.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Selecciona al menos un mes pagado'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => const PopScope(
+        canPop: false,
+        child: Center(
+          child: Card(
+            child: Padding(
+              padding: EdgeInsets.all(28),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  CircularProgressIndicator(color: AppColors.morado),
+                  SizedBox(height: 16),
+                  Text('Generando PDF…'),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    try {
+      final todos = await service.obtenerTodosPagosList();
+      final pagos = todos
+          .where((p) => _pagosSeleccionados.contains(p.id) && p.montoPagado > 0)
+          .toList();
+      if (pagos.isEmpty) {
+        throw Exception('No hay pagos con abono en la selección.');
+      }
+      final alumnoIds = pagos.map((p) => p.alumnoId).toSet();
+      if (alumnoIds.length > 1) {
+        throw Exception(
+          'Selecciona pagos de un solo alumno. '
+          'Filtra por alumno o quita los de otros niños.',
+        );
+      }
+      final alumno = await service.obtenerAlumnoPorId(pagos.first.alumnoId);
+      if (alumno == null) {
+        throw Exception('No se encontró el alumno.');
+      }
+
+      final lineas = <ReciboPagoLinea>[];
+      for (final p in pagos) {
+        lineas.add(
+          ReciboPagoLinea(
+            pago: p,
+            abono: await _abonoParaRecibo(service, p),
+          ),
+        );
+      }
+
+      if (!context.mounted) return;
+      Navigator.of(context, rootNavigator: true).pop();
+
+      await ReciboPagoPdf.compartirMultiple(
+        alumno: alumno,
+        lineas: lineas,
+      );
+
+      if (!mounted) return;
+      _salirSeleccion();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'PDF listo: ${lineas.length} mes(es) de ${alumno.nombreCompleto}',
+          ),
+          backgroundColor: AppColors.verde,
+        ),
+      );
+    } catch (e) {
+      if (context.mounted) {
+        Navigator.of(context, rootNavigator: true).pop();
+      }
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('No se pudo generar el PDF: $e'),
           backgroundColor: AppColors.rojo,
         ),
       );
@@ -1879,6 +2122,17 @@ class _PagosScreenState extends State<PagosScreen> with SingleTickerProviderStat
               onTap: () {
                 Navigator.pop(context);
                 _mostrarDialogoCrearPagoManual(context);
+              },
+            ),
+            const SizedBox(height: 12),
+            _buildOpcionPago(
+              context: context,
+              titulo: 'Ya pagó todo el año',
+              icono: Icons.event_available,
+              color: AppColors.verde,
+              onTap: () {
+                Navigator.pop(context);
+                _mostrarDialogoPagoTodoElAnio(context);
               },
             ),
             const SizedBox(height: 12),
@@ -1968,15 +2222,14 @@ class _PagosScreenState extends State<PagosScreen> with SingleTickerProviderStat
     SupabaseService service,
     Pago pago,
   ) async {
-    final montoController = TextEditingController(
-      text: pago.montoBruto > 0
-          ? pago.montoBruto.toStringAsFixed(2)
-          : pago.monto.toStringAsFixed(2),
-    );
+    // Mensualidad de lista (antes de descuento). El recargo se suma aparte.
+    final mensualidadNormal =
+        pago.montoBruto > 0 ? pago.montoBruto : pago.monto;
+    final recargoController = TextEditingController();
     final descuentoController = TextEditingController(
-      text: pago.descuento.toStringAsFixed(2),
+      text: pago.descuento > 0 ? pago.descuento.toStringAsFixed(2) : '',
     );
-    final notasController = TextEditingController(text: pago.notas ?? '');
+    final notasController = TextEditingController();
 
     final confirmar = await showDialog<bool>(
       context: context,
@@ -2005,31 +2258,61 @@ class _PagosScreenState extends State<PagosScreen> with SingleTickerProviderStat
             child: SingleChildScrollView(
               child: StatefulBuilder(
                 builder: (context, setLocal) {
-                  final bruto = double.tryParse(
-                        montoController.text.replaceAll(',', '.'),
+                  final recargo = double.tryParse(
+                        recargoController.text.replaceAll(',', '.'),
                       ) ??
                       0;
                   final desc = double.tryParse(
                         descuentoController.text.replaceAll(',', '.'),
                       ) ??
                       0;
+                  final bruto = mensualidadNormal + (recargo > 0 ? recargo : 0);
                   double? neto;
                   String? aviso;
                   try {
-                    if (bruto > 0) {
+                    if (bruto > 0 && desc >= 0) {
                       neto = PagoHelpers.montoNeto(
                         montoBruto: bruto,
                         descuento: desc,
                       );
                       if (neto < pago.montoPagado) {
                         aviso =
-                            'El neto no puede ser menor a lo abonado '
+                            'El total no puede ser menor a lo abonado '
                             '(\$${_formatoMonto(pago.montoPagado)})';
                       }
                     }
                   } catch (e) {
                     neto = null;
-                    aviso = e.toString().replaceFirst('Invalid argument(s): ', '');
+                    aviso =
+                        e.toString().replaceFirst('Invalid argument(s): ', '');
+                  }
+
+                  Widget filaResumen(String label, String valor,
+                      {Color? color, FontWeight? weight}) {
+                    return Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 3),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              label,
+                              style: GoogleFonts.poppins(
+                                fontSize: 13.5,
+                                color: Colors.grey[800],
+                              ),
+                            ),
+                          ),
+                          Text(
+                            valor,
+                            style: GoogleFonts.poppins(
+                              fontSize: 14,
+                              fontWeight: weight ?? FontWeight.w600,
+                              color: color ?? Colors.black87,
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
                   }
 
                   return Column(
@@ -2043,27 +2326,44 @@ class _PagosScreenState extends State<PagosScreen> with SingleTickerProviderStat
                           fontSize: 14,
                         ),
                       ),
-                      const SizedBox(height: 4),
-                      Text(
-                        'Actual: \$${_formatoMonto(pago.monto)}'
-                        '${pago.montoPagado > 0 ? ' · Abonado \$${_formatoMonto(pago.montoPagado)}' : ''}',
-                        style: GoogleFonts.poppins(
-                          fontSize: 12,
-                          color: Colors.grey[700],
+                      if (pago.montoPagado > 0) ...[
+                        const SizedBox(height: 4),
+                        Text(
+                          'Ya abonado: \$${_formatoMonto(pago.montoPagado)}',
+                          style: GoogleFonts.poppins(
+                            fontSize: 12,
+                            color: Colors.grey[700],
+                          ),
+                        ),
+                      ],
+                      const SizedBox(height: 14),
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: AppColors.morado.withOpacity(0.06),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: AppColors.morado.withOpacity(0.2),
+                          ),
+                        ),
+                        child: filaResumen(
+                          'Mensualidad normal',
+                          '\$${_formatoMonto(mensualidadNormal)}',
+                          color: AppColors.morado,
                         ),
                       ),
                       const SizedBox(height: 12),
                       TextFormField(
-                        controller: montoController,
+                        controller: recargoController,
                         keyboardType: const TextInputType.numberWithOptions(
                           decimal: true,
                         ),
                         onChanged: (_) => setLocal(() {}),
                         decoration: InputDecoration(
-                          labelText: 'Monto bruto *',
+                          labelText: 'Recargo (si aplica)',
                           prefixText: '\$ ',
-                          helperText:
-                              'Puedes subir el monto (recargo) o bajarlo',
+                          hintText: '0',
+                          helperText: 'Se suma a la mensualidad',
                           border: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(12),
                           ),
@@ -2077,25 +2377,55 @@ class _PagosScreenState extends State<PagosScreen> with SingleTickerProviderStat
                         ),
                         onChanged: (_) => setLocal(() {}),
                         decoration: InputDecoration(
-                          labelText: 'Descuento',
+                          labelText: 'Descuento (si aplica)',
                           prefixText: '\$ ',
+                          hintText: '0',
+                          helperText: 'Se resta del total',
                           border: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(12),
                           ),
                         ),
                       ),
-                      if (neto != null) ...[
-                        const SizedBox(height: 8),
-                        Text(
-                          'A cobrar (neto): \$${_formatoMonto(neto)}',
-                          style: GoogleFonts.poppins(
-                            fontWeight: FontWeight.w700,
-                            color: AppColors.morado,
-                          ),
+                      const SizedBox(height: 14),
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.grey.shade50,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: Colors.grey.shade300),
                         ),
-                      ],
+                        child: Column(
+                          children: [
+                            filaResumen(
+                              'Mensualidad',
+                              '\$${_formatoMonto(mensualidadNormal)}',
+                            ),
+                            if (recargo > 0)
+                              filaResumen(
+                                '+ Recargo',
+                                '\$${_formatoMonto(recargo)}',
+                                color: Colors.orange.shade800,
+                              ),
+                            if (desc > 0)
+                              filaResumen(
+                                '− Descuento',
+                                '\$${_formatoMonto(desc)}',
+                                color: Colors.green.shade800,
+                              ),
+                            const Divider(height: 16),
+                            filaResumen(
+                              'Queda a cobrar',
+                              neto != null
+                                  ? '\$${_formatoMonto(neto)}'
+                                  : '—',
+                              color: AppColors.morado,
+                              weight: FontWeight.w800,
+                            ),
+                          ],
+                        ),
+                      ),
                       if (aviso != null) ...[
-                        const SizedBox(height: 6),
+                        const SizedBox(height: 8),
                         Text(
                           aviso,
                           style: GoogleFonts.poppins(
@@ -2109,13 +2439,36 @@ class _PagosScreenState extends State<PagosScreen> with SingleTickerProviderStat
                         controller: notasController,
                         maxLines: 2,
                         decoration: InputDecoration(
-                          labelText: 'Notas',
-                          hintText: 'Ej. ajuste por recargo / descuento',
+                          labelText: 'Notas (opcional)',
+                          hintText: 'Ej. beca, convenio, pago anticipado…',
+                          helperText:
+                              'Al guardar se anota solo: tenía X, descuento/recargo y cómo quedó.',
                           border: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(12),
                           ),
                         ),
                       ),
+                      if (pago.notas != null &&
+                          pago.notas!.trim().isNotEmpty) ...[
+                        const SizedBox(height: 10),
+                        Text(
+                          'Historial',
+                          style: GoogleFonts.poppins(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.grey[700],
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          pago.notas!,
+                          style: GoogleFonts.poppins(
+                            fontSize: 11.5,
+                            height: 1.35,
+                            color: Colors.grey[700],
+                          ),
+                        ),
+                      ],
                       SizedBox(height: bottomInset > 0 ? 8 : 0),
                     ],
                   );
@@ -2142,27 +2495,28 @@ class _PagosScreenState extends State<PagosScreen> with SingleTickerProviderStat
     );
 
     if (confirmar != true) {
-      montoController.dispose();
+      recargoController.dispose();
       descuentoController.dispose();
       notasController.dispose();
       return;
     }
 
-    final bruto =
-        double.tryParse(montoController.text.replaceAll(',', '.'));
+    final recargo =
+        double.tryParse(recargoController.text.replaceAll(',', '.')) ?? 0;
     final desc =
         double.tryParse(descuentoController.text.replaceAll(',', '.')) ?? 0;
     final notas = notasController.text.trim();
+    final bruto = mensualidadNormal + (recargo > 0 ? recargo : 0);
 
-    montoController.dispose();
+    recargoController.dispose();
     descuentoController.dispose();
     notasController.dispose();
 
-    if (bruto == null || bruto <= 0) {
+    if (bruto <= 0) {
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Indica un monto bruto válido'),
+          content: Text('La mensualidad debe ser mayor a cero'),
           backgroundColor: AppColors.rojo,
         ),
       );
@@ -2174,6 +2528,8 @@ class _PagosScreenState extends State<PagosScreen> with SingleTickerProviderStat
         pagoId: pago.id,
         montoBruto: bruto,
         descuento: desc,
+        recargo: recargo > 0 ? recargo : 0,
+        mensualidadBase: mensualidadNormal,
         notas: notas.isEmpty ? null : notas,
       );
       if (!context.mounted) return;
@@ -2193,6 +2549,337 @@ class _PagosScreenState extends State<PagosScreen> with SingleTickerProviderStat
     }
   }
 
+  Future<List<Alumno>> _alumnosParaCargos(SupabaseService service) async {
+    final alumnos = await service.obtenerAlumnos();
+    final grados = await service.obtenerGrados();
+    return _alumnosModuloPagos(alumnos, grados);
+  }
+
+  /// Registra que el papá ya pagó (o paga ahora) todas las colegiaturas pendientes.
+  Future<void> _mostrarDialogoPagoTodoElAnio(BuildContext context) async {
+    final supabaseService = context.read<SupabaseService>();
+    final alumnos = await _alumnosParaCargos(supabaseService);
+    if (!context.mounted) return;
+
+    if (alumnos.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'No hay alumnos de Kínder. Ejecuta FIX_CAJA_VER_ALUMNOS_Y_PAGOS.sql '
+            'en Supabase si eres caja.',
+          ),
+          backgroundColor: AppColors.rojo,
+        ),
+      );
+      return;
+    }
+
+    String? alumnoId = (_filtroAlumnoId != null &&
+            alumnos.any((a) => a.id == _filtroAlumnoId))
+        ? _filtroAlumnoId
+        : null;
+    String metodo = 'Efectivo';
+    final pagadoA = <String>{};
+    final refCtrl = TextEditingController();
+    List<Pago> pendientes = [];
+    var cargandoPendientes = alumnoId != null;
+    String? errorPendientes;
+
+    if (alumnoId != null) {
+      try {
+        pendientes =
+            await supabaseService.obtenerColegiaturasPendientesAlumno(alumnoId);
+      } catch (e) {
+        errorPendientes = '$e';
+      }
+      cargandoPendientes = false;
+    }
+
+    if (!context.mounted) {
+      refCtrl.dispose();
+      return;
+    }
+
+    final confirmar = await showDialog<bool>(
+      context: context,
+      builder: (ctx) {
+        final bottomInset = MediaQuery.viewPaddingOf(ctx).bottom;
+        return AlertDialog(
+          insetPadding:
+              const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
+          title: Row(
+            children: [
+              Icon(Icons.event_available, color: AppColors.verde, size: 26),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  'Ya pagó todo el año',
+                  style: GoogleFonts.fredoka(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          content: SizedBox(
+            width: 420,
+            child: SingleChildScrollView(
+              child: StatefulBuilder(
+                builder: (context, setLocal) {
+                  final total = pendientes.fold<double>(
+                    0,
+                    (s, p) => s + p.saldoPendiente,
+                  );
+                  Future<void> cargarPendientes(String id) async {
+                    setLocal(() {
+                      cargandoPendientes = true;
+                      errorPendientes = null;
+                      pendientes = [];
+                    });
+                    try {
+                      final list = await supabaseService
+                          .obtenerColegiaturasPendientesAlumno(id);
+                      setLocal(() {
+                        pendientes = list;
+                        cargandoPendientes = false;
+                      });
+                    } catch (e) {
+                      setLocal(() {
+                        errorPendientes = '$e';
+                        cargandoPendientes = false;
+                      });
+                    }
+                  }
+
+                  return Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Text(
+                        'Marca como pagadas todas las colegiaturas pendientes '
+                        'del alumno (el resto del ciclo). Úsalo si el papá ya '
+                        'pagó el año completo o lo paga ahora en una sola exhibición.\n'
+                        'No incluye libros ni uniforme.',
+                        style: GoogleFonts.poppins(
+                          fontSize: 13,
+                          color: Colors.grey[700],
+                          height: 1.35,
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+                      DropdownButtonFormField<String>(
+                        value: alumnoId,
+                        isExpanded: true,
+                        decoration: InputDecoration(
+                          labelText: 'Alumno *',
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        items: alumnos
+                            .map(
+                              (a) => DropdownMenuItem(
+                                value: a.id,
+                                child: Text(
+                                  a.nombreCompleto,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            )
+                            .toList(),
+                        onChanged: (v) {
+                          if (v == null) return;
+                          setLocal(() => alumnoId = v);
+                          cargarPendientes(v);
+                        },
+                      ),
+                      const SizedBox(height: 12),
+                      if (cargandoPendientes)
+                        const Padding(
+                          padding: EdgeInsets.symmetric(vertical: 12),
+                          child: Center(child: CircularProgressIndicator()),
+                        )
+                      else if (errorPendientes != null)
+                        Text(
+                          errorPendientes!,
+                          style: GoogleFonts.poppins(
+                            fontSize: 13,
+                            color: AppColors.rojo,
+                          ),
+                        )
+                      else if (alumnoId != null) ...[
+                        Text(
+                          pendientes.isEmpty
+                              ? 'No hay colegiaturas pendientes (ya está al corriente).'
+                              : 'Se marcarán ${pendientes.length} mes(es) como pagados · '
+                                  'Total: \$${_formatoMonto(total)}',
+                          style: GoogleFonts.poppins(
+                            fontWeight: FontWeight.w700,
+                            color: pendientes.isEmpty
+                                ? Colors.grey[700]
+                                : AppColors.morado,
+                          ),
+                        ),
+                        if (pendientes.isNotEmpty) ...[
+                          const SizedBox(height: 8),
+                          ...pendientes.take(12).map(
+                                (p) => Padding(
+                                  padding: const EdgeInsets.only(bottom: 4),
+                                  child: Text(
+                                    '· ${p.mes ?? p.concepto ?? 'Colegiatura'} — '
+                                    '\$${_formatoMonto(p.saldoPendiente)}',
+                                    style: GoogleFonts.poppins(fontSize: 12.5),
+                                  ),
+                                ),
+                              ),
+                          if (pendientes.length > 12)
+                            Text(
+                              '… y ${pendientes.length - 12} más',
+                              style: GoogleFonts.poppins(
+                                fontSize: 12,
+                                color: Colors.grey[600],
+                              ),
+                            ),
+                        ],
+                      ],
+                      const SizedBox(height: 12),
+                      DropdownButtonFormField<String>(
+                        value: metodo,
+                        decoration: InputDecoration(
+                          labelText: 'Forma de pago',
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        items: const [
+                          DropdownMenuItem(
+                            value: 'Efectivo',
+                            child: Text('Efectivo'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'Transferencia',
+                            child: Text('Transferencia'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'Tarjeta',
+                            child: Text('Tarjeta'),
+                          ),
+                        ],
+                        onChanged: (v) {
+                          if (v != null) setLocal(() => metodo = v);
+                        },
+                      ),
+                      const SizedBox(height: 12),
+                      Text(
+                        'Cuenta / recibido por *',
+                        style: GoogleFonts.poppins(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: Constantes.opcionesPagadoA.map((opcion) {
+                          final sel = pagadoA.contains(opcion);
+                          return FilterChip(
+                            label: Text(opcion),
+                            selected: sel,
+                            onSelected: (v) {
+                              setLocal(() {
+                                if (v) {
+                                  pagadoA.add(opcion);
+                                } else {
+                                  pagadoA.remove(opcion);
+                                }
+                              });
+                            },
+                          );
+                        }).toList(),
+                      ),
+                      const SizedBox(height: 12),
+                      TextFormField(
+                        controller: refCtrl,
+                        decoration: InputDecoration(
+                          labelText: 'Referencia (opcional)',
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                      ),
+                      SizedBox(height: bottomInset > 0 ? 8 : 0),
+                    ],
+                  );
+                },
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancelar'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.morado,
+                foregroundColor: Colors.white,
+              ),
+              child: const Text('Registrar pago anual'),
+            ),
+          ],
+        );
+      },
+    );
+
+    final recibido = pagadoA.join(', ');
+    final ref = refCtrl.text.trim();
+    refCtrl.dispose();
+
+    if (confirmar != true || alumnoId == null) return;
+
+    if (pagadoA.isEmpty) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Selecciona al menos una cuenta'),
+          backgroundColor: AppColors.rojo,
+        ),
+      );
+      return;
+    }
+
+    try {
+      final result = await supabaseService.liquidarColegiaturasPendientes(
+        alumnoId: alumnoId!,
+        metodoPago: metodo,
+        recibidoPorNombre: recibido,
+        referencia: ref.isEmpty ? null : ref,
+        notas: 'Registrado: pagó todo el año / colegiaturas pendientes',
+      );
+      if (!context.mounted) return;
+      await _refrescarPagosPendientes(supabaseService);
+      if (!context.mounted) return;
+      setState(() => _filtroEstado = 'pagados');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Registrado pago anual: ${result.liquidados} mes(es) · '
+            '\$${_formatoMonto(result.total)}',
+          ),
+          backgroundColor: AppColors.verde,
+        ),
+      );
+    } catch (e) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('$e'), backgroundColor: AppColors.rojo),
+      );
+    }
+  }
+
   Future<void> _mostrarDialogoCrearPagoManual(BuildContext context) async {
     final montoController = TextEditingController();
     final descuentoController = TextEditingController(text: '0');
@@ -2203,7 +2890,7 @@ class _PagosScreenState extends State<PagosScreen> with SingleTickerProviderStat
     DateTime fechaPeriodo = DateTime(DateTime.now().year, DateTime.now().month, 1);
 
     final supabaseService = context.read<SupabaseService>();
-    final alumnos = await supabaseService.obtenerAlumnos();
+    final alumnos = await _alumnosParaCargos(supabaseService);
     if (!context.mounted) return;
 
     final confirmar = await showDialog<bool>(
@@ -2497,7 +3184,7 @@ class _PagosScreenState extends State<PagosScreen> with SingleTickerProviderStat
     String? alumnoSeleccionado;
 
     final supabaseService = context.read<SupabaseService>();
-    final alumnos = await supabaseService.obtenerAlumnos();
+    final alumnos = await _alumnosParaCargos(supabaseService);
 
     if (!context.mounted) return;
 
@@ -2609,7 +3296,7 @@ class _PagosScreenState extends State<PagosScreen> with SingleTickerProviderStat
     String? alumnoSeleccionado;
 
     final supabaseService = context.read<SupabaseService>();
-    final alumnos = await supabaseService.obtenerAlumnos();
+    final alumnos = await _alumnosParaCargos(supabaseService);
 
     if (!context.mounted) return;
 
@@ -2741,7 +3428,7 @@ class _PagosScreenState extends State<PagosScreen> with SingleTickerProviderStat
     String? alumnoSeleccionado;
 
     final supabaseService = context.read<SupabaseService>();
-    final alumnos = await supabaseService.obtenerAlumnos();
+    final alumnos = await _alumnosParaCargos(supabaseService);
 
     if (!context.mounted) return;
 

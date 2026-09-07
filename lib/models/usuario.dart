@@ -52,6 +52,22 @@ class Usuario {
     return e == 'ingles' || e.contains('ingles');
   }
 
+  bool get esMaestraMusica {
+    final e = (especialidadProfesor ?? '')
+        .toLowerCase()
+        .replaceAll('é', 'e')
+        .replaceAll('í', 'i');
+    return e == 'musica' || e.contains('musica');
+  }
+
+  /// Titular de grupo (no inglés ni música).
+  bool get esMaestraTitular =>
+      esMaestraAula && !esMaestraIngles && !esMaestraMusica;
+
+  /// Indicadores de desarrollo: directora, supervisora o titular de aula.
+  bool get puedeVerPortage =>
+      esDirectora || esProfesorAdmin || esMaestraTitular;
+
   Usuario conPerfilProfesor({String? especialidad, String? gradoId}) {
     return Usuario(
       id: id,
@@ -76,6 +92,15 @@ class Usuario {
 
   /// Directora o caja: administrar cobros / acreditar pagos.
   bool get puedeGestionarPagos => esDirectora || esCaja;
+
+  /// Profesora de aula (titular / inglés / música), no admin ni directora.
+  bool get esMaestraAula => rol == 'profesor';
+
+  bool get puedeEditarGrados => esDirectora;
+  bool get puedeGestionarDocentes => esDirectora;
+  bool get puedeGestionarAccesoPadres => esDirectora;
+  bool get puedeAnunciarAGrupo =>
+      esDirectora || esProfesorAdmin || esMaestraAula;
 
   factory Usuario.fromJson(Map<String, dynamic> json) {
     return Usuario(

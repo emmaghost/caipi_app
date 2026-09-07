@@ -3,7 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../services/auth_service.dart';
-import '../../services/portage_service.dart';
+import '../../services/profesor_grupos_service.dart';
 import '../../services/supabase_service.dart';
 import '../../models/alumno.dart';
 import '../../models/grado.dart';
@@ -27,7 +27,10 @@ class _AlumnosScreenState extends State<AlumnosScreen> {
   String? _errorAlumnos;
   int _listaEpoch = 0;
 
-  /// Si la profesora de aula tiene grado fijo, no puede cambiar el filtro.
+  /// Grados permitidos para maestra (null = sin restricción).
+  Set<String>? _gradoIdsPermitidos;
+
+  /// Si la profesora de aula tiene grado(s) fijo(s), no puede ver "Todos".
   bool _gradoBloqueado = false;
 
   SupabaseService? _supabaseService;
@@ -93,13 +96,19 @@ class _AlumnosScreenState extends State<AlumnosScreen> {
       final user = context.read<AuthService>().currentUser;
       String filtro = 'Todos';
       var bloqueado = false;
+      Set<String>? permitidos;
       if (user != null &&
           user.esProfesor &&
           !user.esDirectora &&
           !user.esProfesorAdmin) {
-        final gid = await PortageService().obtenerGradoIdProfesor(user.id);
-        if (gid != null) {
-          filtro = gid;
+        final ids = await ProfesorGruposService().gradoIdsDeUsuario(user.id);
+        if (ids.isNotEmpty) {
+          permitidos = ids.toSet();
+          bloqueado = true;
+          filtro = ids.length == 1 ? ids.first : 'Todos';
+        } else {
+          // Sin grado: lista vacía (no mostrar los ~70 del colegio).
+          permitidos = <String>{};
           bloqueado = true;
         }
       }
@@ -108,6 +117,7 @@ class _AlumnosScreenState extends State<AlumnosScreen> {
         _grados = grados;
         _filtroGrado = filtro;
         _gradoBloqueado = bloqueado;
+        _gradoIdsPermitidos = permitidos;
         _cargandoGrados = false;
       });
     } catch (e) {
@@ -180,13 +190,23 @@ class _AlumnosScreenState extends State<AlumnosScreen> {
                           isSelected: _filtroGrado == 'Todos',
                           onTap: () => setState(() => _filtroGrado = 'Todos'),
                         ),
+                      if (_gradoBloqueado &&
+                          (_gradoIdsPermitidos?.length ?? 0) > 1)
+                        _FiltroChip(
+                          label: 'Mis grupos',
+                          isSelected: _filtroGrado == 'Todos',
+                          onTap: () => setState(() => _filtroGrado = 'Todos'),
+                        ),
                       ..._grados
                           .where((g) => !g.esEstimulacion)
-                          .where((g) => !_gradoBloqueado || g.id == _filtroGrado)
+                          .where((g) =>
+                              _gradoIdsPermitidos == null ||
+                              _gradoIdsPermitidos!.contains(g.id))
                           .map((grado) => _FiltroChip(
                                 label: grado.nombre,
                                 isSelected: _filtroGrado == grado.id,
-                                onTap: _gradoBloqueado
+                                onTap: _gradoBloqueado &&
+                                        (_gradoIdsPermitidos?.length ?? 0) <= 1
                                     ? () {}
                                     : () =>
                                         setState(() => _filtroGrado = grado.id),
@@ -207,7 +227,8 @@ class _AlumnosScreenState extends State<AlumnosScreen> {
     final esSecretaria =
         context.watch<AuthService>().currentUser?.esSecretaria == true;
 
-    if (_cargandoAlumnos && _alumnos.isEmpty) {
+    // Evita flash de "todos los alumnos" mientras carga el filtro de la maestra.
+    if (_cargandoGrados || (_cargandoAlumnos && _alumnos.isEmpty)) {
       return const Center(child: CircularProgressIndicator());
     }
 
@@ -271,6 +292,13 @@ class _AlumnosScreenState extends State<AlumnosScreen> {
     }
 
     var alumnos = List<Alumno>.from(_alumnos);
+
+    // Maestra: nunca mostrar fuera de sus grados (aunque el chip diga "Mis grupos").
+    if (_gradoIdsPermitidos != null) {
+      alumnos = alumnos
+          .where((a) => _gradoIdsPermitidos!.contains(a.gradoId))
+          .toList();
+    }
 
     if (_filtroGrado != 'Todos') {
       final ids = <String>{_filtroGrado};

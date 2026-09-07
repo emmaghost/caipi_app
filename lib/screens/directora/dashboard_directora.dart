@@ -8,10 +8,10 @@ import 'package:intl/intl.dart';
 import '../../models/solicitud_recogida.dart';
 import '../../models/pago.dart';
 import '../../services/auth_service.dart';
+import '../../services/profesor_grupos_service.dart';
 import '../../services/solicitud_recogida_service.dart';
 import '../../config/app_colors.dart';
 import '../../widgets/app_drawer.dart';
-import '../../widgets/panel_solicitudes_recogida_escuela.dart';
 
 class DashboardDirectora extends StatefulWidget {
   const DashboardDirectora({super.key});
@@ -21,89 +21,43 @@ class DashboardDirectora extends StatefulWidget {
 }
 
 class _DashboardDirectoraState extends State<DashboardDirectora> {
-  String? _gradoIdProfesor; // null = directora (ve todo)
+  /// Grados de la maestra (vacío = sin asignación / aún cargando).
+  List<String> _gradoIdsProfesor = const [];
+  bool _gradosProfesorListos = false;
   final _solicitudService = SolicitudRecogidaService();
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _cargarGrado());
+    WidgetsBinding.instance.addPostFrameCallback((_) => _cargarGradosProfesor());
   }
 
-  Future<void> _cargarGrado() async {
+  Future<void> _cargarGradosProfesor() async {
     final auth = context.read<AuthService>();
     final user = auth.currentUser;
-    if (user == null || user.esDirectora) return;
+    if (user == null || user.esDirectora || user.esProfesorAdmin) {
+      if (mounted) setState(() => _gradosProfesorListos = true);
+      return;
+    }
+    if (!user.esMaestraAula) {
+      if (mounted) setState(() => _gradosProfesorListos = true);
+      return;
+    }
     try {
-      final rows = await Supabase.instance.client
-          .from('profesores')
-          .select('grado_id')
-          .eq('usuario_id', user.id)
-          .eq('activo', true)
-          .limit(1);
-      final list = List<Map<String, dynamic>>.from(rows as List);
+      final ids = await ProfesorGruposService().gradoIdsDeUsuario(user.id);
       if (mounted) {
-        setState(() => _gradoIdProfesor =
-            list.isEmpty ? null : list.first['grado_id'] as String?);
+        setState(() {
+          _gradoIdsProfesor = ids;
+          _gradosProfesorListos = true;
+        });
       }
-    } catch (_) {}
+    } catch (_) {
+      if (mounted) setState(() => _gradosProfesorListos = true);
+    }
   }
 
   void _mostrarSolicitudes(BuildContext context) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (_) => DraggableScrollableSheet(
-        initialChildSize: 0.5,
-        minChildSize: 0.3,
-        maxChildSize: 0.85,
-        builder: (_, controller) => Container(
-          decoration: const BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-          ),
-          child: Column(
-            children: [
-              const SizedBox(height: 8),
-              Container(
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: Colors.grey[300],
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-                child: Row(
-                  children: [
-                    Icon(Icons.door_front_door, color: Colors.orange.shade800),
-                    const SizedBox(width: 8),
-                    Text(
-                      'Padres en la entrada',
-                      style: GoogleFonts.fredoka(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w600,
-                        color: Colors.orange.shade900,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              Expanded(
-                child: SingleChildScrollView(
-                  controller: controller,
-                  child: PanelSolicitudesRecogidaEscuela(
-                    gradoIdFiltro: _gradoIdProfesor,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
+    context.go('/directora/entrega-afuera');
   }
 
   @override
@@ -111,9 +65,8 @@ class _DashboardDirectoraState extends State<DashboardDirectora> {
     final authService = context.watch<AuthService>();
     final usuario = authService.currentUser;
     final menuCompleto = usuario != null &&
-        !usuario.esSecretaria &&
-        !usuario.esCaja &&
-        !usuario.esMaestraIngles;
+        (usuario.esDirectora || usuario.esProfesorAdmin);
+    final menuMaestra = usuario?.esMaestraAula == true;
 
     // Si no hay usuario, mostrar loading
     if (usuario == null) {
@@ -169,11 +122,7 @@ class _DashboardDirectoraState extends State<DashboardDirectora> {
             StreamBuilder<List<SolicitudRecogida>>(
             stream: _solicitudService.streamPendientes(),
             builder: (context, snapshot) {
-              final pendientes = (snapshot.data ?? []).where((s) {
-                if (_gradoIdProfesor == null) return true;
-                // El filtro real lo hace el panel; aquí solo el badge aproximado
-                return true;
-              }).length;
+              final pendientes = (snapshot.data ?? []).length;
 
               return Stack(
                 alignment: Alignment.center,
@@ -292,9 +241,11 @@ class _DashboardDirectoraState extends State<DashboardDirectora> {
                           usuario.esSecretaria
                               ? 'Alta de alumnos (junta)'
                               : usuario.esCaja
-                                  ? 'Caja / Pagos'
-                                  : usuario.esMaestraIngles
-                                      ? 'Inglés — tu grupo'
+                                  ? 'Caja / Pagos (solo Kínder)'
+                                  : usuario.esMaestraAula
+                                      ? (usuario.esMaestraIngles
+                                          ? 'Inglés — tus grupos'
+                                          : 'Tu grupo')
                                       : 'Panel de Directora',
                           style: GoogleFonts.poppins(
                             fontSize: 14,
@@ -446,6 +397,64 @@ class _DashboardDirectoraState extends State<DashboardDirectora> {
             const SizedBox(height: 24),
             ],
 
+            if (menuMaestra) ...[
+              Text(
+                _gradoIdsProfesor.length > 1
+                    ? 'Resumen de tus grupos'
+                    : 'Resumen de tu grupo',
+                style: GoogleFonts.poppins(
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                  color: AppColors.negro,
+                ),
+              ),
+              const SizedBox(height: 16),
+              if (!_gradosProfesorListos)
+                const Padding(
+                  padding: EdgeInsets.only(bottom: 24),
+                  child: Center(child: CircularProgressIndicator()),
+                )
+              else if (_gradoIdsProfesor.isEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 24),
+                  child: Text(
+                    'No tienes un grupo asignado. Pide a la directora que te vincule a un grado.',
+                    style: GoogleFonts.poppins(
+                      fontSize: 14,
+                      color: AppColors.gris,
+                    ),
+                  ),
+                )
+              else
+                StreamBuilder<List<Map<String, dynamic>>>(
+                  stream: Supabase.instance.client
+                      .from('alumnos')
+                      .stream(primaryKey: ['id']),
+                  builder: (context, alumnosSnapshot) {
+                    final gradoSet = _gradoIdsProfesor.toSet();
+                    final totalAlumnos = (alumnosSnapshot.data ?? [])
+                        .where((a) =>
+                            a['activo'] == true &&
+                            gradoSet.contains(a['grado_id'] as String?))
+                        .length;
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 24),
+                      child: _buildStatCard(
+                        context: context,
+                        title: 'Mis alumnos',
+                        value: totalAlumnos,
+                        icon: Icons.school,
+                        color: AppColors.azulCielo,
+                        gradient: const LinearGradient(
+                          colors: [AppColors.azulCielo, AppColors.azul],
+                        ),
+                        onTap: () => context.go('/directora/alumnos'),
+                      ),
+                    );
+                  },
+                ),
+            ],
+
             if (usuario.esCaja) ...[
               Text(
                 'Resumen de pagos',
@@ -569,17 +578,6 @@ class _DashboardDirectoraState extends State<DashboardDirectora> {
                   titleSize: accionesFont,
                   onTap: () => context.go('/directora/alumnos'),
                 ),
-                if (usuario.esMaestraIngles)
-                  _buildActionCard(
-                    context: context,
-                    title: 'Calificaciones de Inglés',
-                    icon: Icons.grade,
-                    color: AppColors.azulOscuro,
-                    iconSize: accionesIcon,
-                    iconPadding: accionesPad,
-                    titleSize: accionesFont,
-                    onTap: () => context.go('/directora/calificaciones'),
-                  ),
                 if (usuario.puedeGestionarPagos)
                   _buildActionCard(
                     context: context,
@@ -594,7 +592,7 @@ class _DashboardDirectoraState extends State<DashboardDirectora> {
                 if (menuCompleto)
                   _buildActionCard(
                   context: context,
-                  title: 'Profesoras',
+                  title: 'Personal',
                   icon: Icons.person,
                   color: AppColors.purpura,
                   iconSize: accionesIcon,
@@ -613,10 +611,10 @@ class _DashboardDirectoraState extends State<DashboardDirectora> {
                   titleSize: accionesFont,
                   onTap: () => context.go('/directora/padres'),
                 ),
-                if (menuCompleto)
+                if (menuCompleto || menuMaestra)
                   _buildActionCard(
                   context: context,
-                  title: 'Nuevo Anuncio',
+                  title: menuMaestra ? 'Anuncios a mi grupo' : 'Nuevo Anuncio',
                   icon: Icons.campaign,
                   color: AppColors.morado,
                   iconSize: accionesIcon,
@@ -624,7 +622,8 @@ class _DashboardDirectoraState extends State<DashboardDirectora> {
                   titleSize: accionesFont,
                   onTap: () => context.go('/directora/anuncios'),
                 ),
-                if (menuCompleto)
+                if (menuCompleto ||
+                    (menuMaestra && usuario.puedeVerPortage))
                   _buildActionCard(
                   context: context,
                   title: 'Indicadores de desarrollo',
@@ -635,6 +634,28 @@ class _DashboardDirectoraState extends State<DashboardDirectora> {
                   titleSize: accionesFont,
                   onTap: () => context.go('/directora/portage'),
                 ),
+                if (menuMaestra)
+                  _buildActionCard(
+                    context: context,
+                    title: 'Control Entrada/Salida',
+                    icon: Icons.access_time,
+                    color: AppColors.turquesa,
+                    iconSize: accionesIcon,
+                    iconPadding: accionesPad,
+                    titleSize: accionesFont,
+                    onTap: () => context.go('/directora/control-salidas'),
+                  ),
+                if (menuMaestra)
+                  _buildActionCard(
+                    context: context,
+                    title: 'Bitácora',
+                    icon: Icons.assignment,
+                    color: AppColors.naranja,
+                    iconSize: accionesIcon,
+                    iconPadding: accionesPad,
+                    titleSize: accionesFont,
+                    onTap: () => context.go('/directora/bitacoras'),
+                  ),
                 if (usuario.puedeEditarAlumnos)
                 _buildActionCard(
                   context: context,
@@ -665,7 +686,7 @@ class _DashboardDirectoraState extends State<DashboardDirectora> {
                 ),
                 if (usuario.esSecretaria ||
                     usuario.esCaja ||
-                    usuario.esMaestraIngles)
+                    usuario.esMaestraAula)
                   _buildActionCard(
                     context: context,
                     title: 'Cambiar contraseña',

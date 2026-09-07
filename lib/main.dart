@@ -18,6 +18,7 @@ import 'services/push_notification_service.dart';
 import 'services/app_realtime_notifications.dart';
 import 'services/acceso_padre_service.dart';
 import 'routes/app_router.dart';
+import 'utils/push_payload_routes.dart';
 
 /// Arranque a prueba de pantalla blanca:
 /// 1) Muestra UI de inmediato
@@ -37,6 +38,8 @@ void main() {
   };
 
   ErrorWidget.builder = (details) {
+    final raw = details.exceptionAsString();
+    final esDependents = raw.contains('_dependents.isEmpty');
     return Material(
       color: Colors.white,
       child: SafeArea(
@@ -44,9 +47,16 @@ void main() {
           child: Padding(
             padding: const EdgeInsets.all(24),
             child: Text(
-              'Error de interfaz:\n${details.exception}',
+              esDependents
+                  ? 'Hubo un fallo al cambiar de pantalla.\n'
+                      'Cierra esta vista y vuelve a abrirla desde el menú.\n'
+                      '(Si sigue, reinicia la app.)'
+                  : 'Error de interfaz:\n${details.exception}',
               textAlign: TextAlign.center,
-              style: const TextStyle(color: Colors.red, fontSize: 14),
+              style: TextStyle(
+                color: esDependents ? const Color(0xFF6B5B95) : Colors.red,
+                fontSize: 14,
+              ),
             ),
           ),
         ),
@@ -98,7 +108,8 @@ class _BootstrapAppState extends State<_BootstrapApp> {
 
       PushNotificationService.instance.onOpenRuta = (ruta) {
         try {
-          appRouter.go(ruta);
+          final destino = rutaDesdePayloadPush(ruta);
+          appRouter.go(destino);
         } catch (e) {
           debugPrint('Navegación push: $e');
         }

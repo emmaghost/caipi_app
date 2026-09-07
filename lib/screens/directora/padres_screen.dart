@@ -8,6 +8,7 @@ import '../../config/app_colors.dart';
 import '../../models/grado.dart';
 import '../../services/auth_service.dart';
 import '../../services/chat_service.dart';
+import '../../utils/constantes.dart';
 import '../../widgets/app_drawer.dart';
 
 class PadresScreen extends StatefulWidget {
@@ -400,6 +401,66 @@ class _PadresScreenState extends State<PadresScreen> {
                     ),
                   ],
                 ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.lock_reset, color: AppColors.azulOscuro),
+                tooltip: 'Reiniciar pass a Caipi2026',
+                onPressed: () async {
+                  final user = context.read<AuthService>().currentUser;
+                  if (user?.esDirectora != true) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Solo la directora puede reiniciar contraseñas'),
+                      ),
+                    );
+                    return;
+                  }
+                  final ok = await showDialog<bool>(
+                    context: context,
+                    builder: (ctx) => AlertDialog(
+                      title: const Text('¿Reiniciar contraseña?'),
+                      content: Text(
+                        'La contraseña de ${nombre.isEmpty ? 'este padre' : nombre} '
+                        'volverá a ser ${Constantes.passwordInicial}.',
+                      ),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.pop(ctx, false),
+                          child: const Text('Cancelar'),
+                        ),
+                        FilledButton(
+                          onPressed: () => Navigator.pop(ctx, true),
+                          child: const Text('Reiniciar'),
+                        ),
+                      ],
+                    ),
+                  );
+                  if (ok != true || !context.mounted) return;
+                  try {
+                    await context.read<AuthService>().reiniciarPasswordUsuario(
+                          usuarioId: padre['id'] as String,
+                        );
+                    if (!context.mounted) return;
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(
+                          'Listo. Nueva pass: ${Constantes.passwordInicial}',
+                        ),
+                        backgroundColor: AppColors.verde,
+                      ),
+                    );
+                  } catch (e) {
+                    if (!context.mounted) return;
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(
+                          'Error. ¿Ejecutaste ADD_PROFESOR_MULTI_GRUPO_Y_RESET_PASS.sql?\n$e',
+                        ),
+                        backgroundColor: AppColors.rojo,
+                      ),
+                    );
+                  }
+                },
               ),
               IconButton(
                 icon: const Icon(Icons.chat_bubble_rounded,

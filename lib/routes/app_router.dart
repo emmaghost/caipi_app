@@ -11,6 +11,7 @@ import '../screens/directora/crear_alumno_screen.dart';
 import '../screens/directora/pagos_screen.dart';
 import '../screens/directora/acreditar_pago_screen.dart';
 import '../screens/directora/configuracion_costos_screen.dart';
+import '../screens/directora/pago_avisos_screen.dart';
 import '../screens/directora/test_whatsapp_screen.dart';
 import '../screens/directora/profesores_screen.dart';
 import '../screens/directora/crear_profesor_screen.dart';
@@ -33,6 +34,7 @@ import '../screens/directora/bitacora_gastos_screen.dart';
 import '../screens/directora/crear_bitacora_screen.dart';
 import '../screens/directora/crear_bitacora_gasto_screen.dart';
 import '../screens/directora/control_salidas_screen.dart';
+import '../screens/directora/entrega_afuera_screen.dart';
 import '../screens/directora/registrar_salida_screen.dart';
 import '../screens/directora/calificaciones_screen.dart';
 import '../screens/directora/calificaciones_alumno_screen.dart';
@@ -157,18 +159,43 @@ GoRouter createRouter({
         final permitida = loc == '/directora' ||
             loc == '/directora/pagos' ||
             loc.startsWith('/directora/pagos/') ||
+            loc == '/directora/configuracion-costos' ||
+            loc == '/directora/avisos-pago' ||
             loc.startsWith('/acreditar-pago') ||
             loc == '/cambiar-contrasena';
         if (!permitida) return '/directora';
       }
 
-      final esIngles = authService.currentUser?.esMaestraIngles == true;
-      if (isLoggedIn && esIngles && isRutaStaff) {
-        final permitida = loc == '/directora' ||
-            loc == '/directora/alumnos' ||
-            loc.startsWith('/directora/calificaciones') ||
-            loc == '/cambiar-contrasena';
-        if (!permitida) return '/directora';
+      // Maestra de aula: sin grados, docentes, padres/adeudo, pagos ni config admin.
+      final esMaestraAula = authService.currentUser?.esMaestraAula == true;
+      if (isLoggedIn && esMaestraAula && isRutaStaff) {
+        final bloqueadas = [
+          '/directora/grados',
+          '/directora/profesores',
+          '/directora/padres',
+          '/directora/pagos',
+          '/directora/avisos-pago',
+          '/directora/configuracion-costos',
+          '/directora/config-chat-horario',
+          '/directora/config-chat-canales',
+          '/directora/tipos-incidentes',
+          '/directora/reportes-pdf',
+          '/directora/bitacora-gastos',
+          '/directora/clases-extracurriculares',
+          '/directora/ligas',
+          '/directora/entrevistas',
+        ];
+        final bloqueada = bloqueadas.any(
+          (r) => loc == r || loc.startsWith('$r/'),
+        );
+        final portageBloqueado = (loc == '/directora/portage' ||
+                loc.startsWith('/directora/portage/')) &&
+            authService.currentUser?.puedeVerPortage != true;
+        if (bloqueada ||
+            portageBloqueado ||
+            loc.startsWith('/acreditar-pago')) {
+          return '/directora';
+        }
       }
 
       return null;
@@ -300,6 +327,10 @@ GoRouter createRouter({
       builder: (context, state) => const ConfiguracionCostosScreen(),
     ),
     GoRoute(
+      path: '/directora/avisos-pago',
+      builder: (context, state) => const PagoAvisosScreen(),
+    ),
+    GoRoute(
       path: '/directora/test-whatsapp',
       builder: (context, state) => const TestWhatsAppScreen(),
     ),
@@ -314,7 +345,8 @@ GoRouter createRouter({
     GoRoute(
       path: '/directora/profesores/editar/:id',
       builder: (context, state) {
-        final profesorId = state.pathParameters['id']!;
+        final profesorId =
+            Uri.decodeComponent(state.pathParameters['id']!);
         return CrearProfesorScreen(profesorId: profesorId);
       },
     ),
@@ -448,6 +480,10 @@ GoRouter createRouter({
         final id = state.pathParameters['id']!;
         return CrearBitacoraGastoScreen(gastoId: id);
       },
+    ),
+    GoRoute(
+      path: '/directora/entrega-afuera',
+      builder: (context, state) => const EntregaAfueraScreen(),
     ),
     GoRoute(
       path: '/directora/control-salidas',

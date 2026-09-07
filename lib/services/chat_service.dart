@@ -211,21 +211,71 @@ class ChatService {
     if (gradoIds.isEmpty) return contactos;
 
     try {
+      // Sin !inner: si RLS aún no deja leer perfiles, igual listamos contactos.
       final profesores = await _supabase
           .from('profesores')
-          .select('usuario_id, grado_id, especialidad, usuarios!inner(nombre, apellidos, activo)')
-          .inFilter('grado_id', gradoIds.toList())
+          .select('id, usuario_id, grado_id, especialidad')
           .eq('activo', true);
+
+      Set<String> profesorIdsEnGrados = {};
+      try {
+        final junc = await _supabase
+            .from('profesores_grados')
+            .select('profesor_id')
+            .inFilter('grado_id', gradoIds.toList());
+        profesorIdsEnGrados = {
+          for (final r in junc as List)
+            if (r['profesor_id'] != null) r['profesor_id'] as String,
+        };
+      } catch (_) {}
+
+      final usuarioIds = <String>{};
+      for (final row in profesores as List) {
+        final map = Map<String, dynamic>.from(row as Map);
+        final profesorId = map['id'] as String?;
+        final gid = map['grado_id'] as String?;
+        final enGrado = (gid != null && gradoIds.contains(gid)) ||
+            (profesorId != null && profesorIdsEnGrados.contains(profesorId));
+        if (!enGrado) continue;
+        final usuarioId = map['usuario_id'] as String?;
+        if (usuarioId != null) usuarioIds.add(usuarioId);
+      }
+
+      final nombresPorId = <String, String>{};
+      final activosPorId = <String, bool>{};
+      if (usuarioIds.isNotEmpty) {
+        try {
+          final usuarios = await _supabase
+              .from('usuarios')
+              .select('id, nombre, apellidos, activo')
+              .inFilter('id', usuarioIds.toList());
+          for (final u in usuarios as List) {
+            final id = u['id'] as String?;
+            if (id == null) continue;
+            activosPorId[id] = u['activo'] != false;
+            final n = u['nombre'] as String? ?? '';
+            final a = u['apellidos'] as String? ?? '';
+            final full = '$n $a'.trim();
+            if (full.isNotEmpty) nombresPorId[id] = full;
+          }
+        } catch (_) {}
+      }
 
       final vistosGrupo = <String>{};
       final vistosIngles = <String>{};
+      final vistosMusica = <String>{};
 
       for (final row in profesores as List) {
         final map = Map<String, dynamic>.from(row as Map);
+        final profesorId = map['id'] as String?;
+        final gid = map['grado_id'] as String?;
+        final enGrado = (gid != null && gradoIds.contains(gid)) ||
+            (profesorId != null && profesorIdsEnGrados.contains(profesorId));
+        if (!enGrado) continue;
+
         final usuarioId = map['usuario_id'] as String?;
         if (usuarioId == null) continue;
-        final usuario = map['usuarios'];
-        if (usuario is Map && usuario['activo'] == false) continue;
+        if (activosPorId[usuarioId] == false) continue;
 
         final esp = ((map['especialidad'] as String?) ?? '')
             .toLowerCase()
@@ -233,14 +283,10 @@ class ChatService {
             .replaceAll('í', 'i');
         final esIngles =
             esp == Constantes.especialidadIngles || esp.contains('ingles');
+        final esMusica =
+            esp == Constantes.especialidadMusica || esp.contains('musica');
 
-        String nombreStaff = 'Maestra';
-        if (usuario is Map) {
-          final n = usuario['nombre'] as String? ?? '';
-          final a = usuario['apellidos'] as String? ?? '';
-          final full = '$n $a'.trim();
-          if (full.isNotEmpty) nombreStaff = full;
-        }
+        final nombreStaff = nombresPorId[usuarioId] ?? 'Maestra';
 
         if (esIngles) {
           if (!config.padrePuedeMaestraIngles) continue;
@@ -250,6 +296,15 @@ class ChatService {
             'canal': 'profesor',
             'staffId': usuarioId,
             'titulo': 'Maestra de inglés · $nombreStaff',
+          });
+        } else if (esMusica) {
+          if (!config.padrePuedeMaestraGrupo) continue;
+          if (vistosMusica.contains(usuarioId)) continue;
+          vistosMusica.add(usuarioId);
+          contactos.add({
+            'canal': 'profesor',
+            'staffId': usuarioId,
+            'titulo': 'Maestra de música · $nombreStaff',
           });
         } else {
           if (!config.padrePuedeMaestraGrupo) continue;

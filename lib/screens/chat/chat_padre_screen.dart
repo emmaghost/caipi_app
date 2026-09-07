@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 
@@ -91,6 +92,14 @@ class _ChatPadreScreenState extends State<ChatPadreScreen> {
         ),
         backgroundColor: const Color(0xFFEC407A),
         foregroundColor: Colors.white,
+        iconTheme: const IconThemeData(color: Colors.white),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.home, color: Colors.white),
+            onPressed: () => context.go('/padre'),
+            tooltip: 'Ir al inicio',
+          ),
+        ],
       ),
       body: FutureBuilder<List<Map<String, dynamic>>>(
         future: _contactosFuture,

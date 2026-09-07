@@ -58,15 +58,33 @@ class Grado {
   bool get esMaternalOBebes => esMaternal || esEstimulacion;
 
   bool get esKinder {
-    final n = nombre.toLowerCase();
-    return n.contains('kinder') || n.contains('kínder') || n.contains('kinder');
+    final n = nombre.toLowerCase().replaceAll('í', 'i');
+    return n.contains('kinder');
   }
 
-  /// Colegiatura automática 10/11/12 solo para kínder.
-  bool get generaColegiaturaAutomatica => esKinder;
+  /// Solo Kínder 1, 2 y 3 entran al módulo de pagos / colegiaturas.
+  /// Estimulación, maternal y otros no aparecen en Pagos.
+  bool get muestraModuloPagos {
+    final n = nombre
+        .toLowerCase()
+        .replaceAll('í', 'i')
+        .replaceAll('á', 'a')
+        .replaceAll('é', 'e');
+    if (!n.contains('kinder')) return false;
+    final m = RegExp(r'kinder\s*([0-9]+)').firstMatch(n);
+    if (m != null) {
+      final num = int.tryParse(m.group(1)!);
+      return num == 1 || num == 2 || num == 3;
+    }
+    // Nombre tipo "Kinder" sin número: se trata como colegiado.
+    return true;
+  }
+
+  /// Colegiatura automática 10/11/12 solo para kínder 1–3.
+  bool get generaColegiaturaAutomatica => muestraModuloPagos;
 
   /// Por clase / sin plan fijo: maternal (incluye estimulación) o sin clasificar.
-  bool get cobroPorClase => !esKinder;
+  bool get cobroPorClase => !muestraModuloPagos;
 
   Map<String, dynamic> toJson() {
     return {

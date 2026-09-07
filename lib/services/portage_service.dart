@@ -1,6 +1,7 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../models/portage.dart';
+import 'profesor_grupos_service.dart';
 
 class PortageService {
   final SupabaseClient _supabase = Supabase.instance.client;
@@ -353,14 +354,6 @@ class PortageService {
   }
 
   Future<String?> obtenerGradoIdProfesor(String usuarioId) async {
-    final rows = await _supabase
-        .from('profesores')
-        .select('grado_id')
-        .eq('usuario_id', usuarioId)
-        .eq('activo', true)
-        .limit(1);
-    final list = List<Map<String, dynamic>>.from(rows as List);
-    if (list.isEmpty) return null;
-    return list.first['grado_id'] as String?;
+    return ProfesorGruposService(client: _supabase).primerGradoId(usuarioId);
   }
 }

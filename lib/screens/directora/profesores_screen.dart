@@ -1,11 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../config/app_colors.dart';
-import '../../services/auth_service.dart';
+import '../../services/profesor_grupos_service.dart';
 import '../../widgets/app_drawer.dart';
 
 class ProfesoresScreen extends StatefulWidget {
@@ -15,32 +14,160 @@ class ProfesoresScreen extends StatefulWidget {
   State<ProfesoresScreen> createState() => _ProfesoresScreenState();
 }
 
+class _StaffRow {
+  final String editId; // profesor uuid OR "usuario:<id>"
+  final String? usuarioId;
+  final String nombre;
+  final String? email;
+  final String rol;
+  final String? especialidad;
+  final bool activo;
+  final List<String> gradoNombres;
+
+  _StaffRow({
+    required this.editId,
+    required this.usuarioId,
+    required this.nombre,
+    required this.email,
+    required this.rol,
+    this.especialidad,
+    required this.activo,
+    required this.gradoNombres,
+  });
+}
+
 class _ProfesoresScreenState extends State<ProfesoresScreen> {
-  /// Al volver de crear/editar, el stream a veces no emite al instante; forzamos nueva suscripción.
-  int _streamEpoch = 0;
+  late Future<List<_StaffRow>> _future;
+  final _grupos = ProfesorGruposService();
+  /// todos | activos
+  String _filtro = 'activos';
+
+  @override
+  void initState() {
+    super.initState();
+    _future = _cargar();
+  }
+
+  Future<void> _refrescar() async {
+    final f = _cargar();
+    setState(() => _future = f);
+    await f;
+  }
+
+  Future<List<_StaffRow>> _cargar() async {
+    final client = Supabase.instance.client;
+    final gradosRaw =
+        await client.from('grados').select('id, nombre').eq('activo', true);
+    final gradoNombre = {
+      for (final g in gradosRaw as List)
+        g['id'] as String: g['nombre'] as String? ?? '',
+    };
+
+    // Mapa profesor_id / grado por usuario_id
+    final profByUsuario = <String, Map<String, dynamic>>{};
+    try {
+      final profesores =
+          await client.from('profesores').select('id, usuario_id, grado_id, especialidad, activo');
+      for (final p in profesores as List) {
+        final map = Map<String, dynamic>.from(p as Map);
+        final uid = map['usuario_id'] as String?;
+        if (uid != null) profByUsuario[uid] = map;
+      }
+    } catch (_) {}
+
+    // Fuente de verdad: todos los perfiles de escuela (no padres).
+    const rolesStaff = [
+      'profesor',
+      'profesor_admin',
+      'caja',
+      'secretaria',
+    ];
+    List<dynamic> staffUsuarios = [];
+    try {
+      staffUsuarios = await client
+          .from('usuarios')
+          .select()
+          .inFilter('rol', rolesStaff);
+    } catch (_) {
+      // Si RLS bloquea usuarios, al menos mostrar docentes con fila en profesores.
+      staffUsuarios = [
+        for (final entry in profByUsuario.entries)
+          {
+            'id': entry.key,
+            'nombre': 'Docente',
+            'email': null,
+            'rol': 'profesor',
+            'activo': entry.value['activo'] ?? true,
+          },
+      ];
+    }
+
+    final rows = <_StaffRow>[];
+    for (final u in staffUsuarios) {
+      final map = Map<String, dynamic>.from(u as Map);
+      final id = map['id'] as String;
+      final rol = map['rol'] as String? ?? '';
+      final prof = profByUsuario[id];
+
+      List<String> gradoNombres = const [];
+      String? especialidad;
+      String editId = 'usuario:$id';
+
+      if (prof != null) {
+        final profesorId = prof['id'] as String;
+        editId = profesorId;
+        especialidad = prof['especialidad'] as String?;
+        final gradoIds = await _grupos.gradoIdsDeProfesorRow(profesorId);
+        if (gradoIds.isEmpty && prof['grado_id'] != null) {
+          gradoIds.add(prof['grado_id'] as String);
+        }
+        gradoNombres = [
+          for (final gid in gradoIds) gradoNombre[gid] ?? 'Grupo',
+        ];
+      }
+
+      rows.add(_StaffRow(
+        editId: editId,
+        usuarioId: id,
+        nombre: map['nombre'] as String? ?? 'Sin nombre',
+        email: map['email'] as String?,
+        rol: rol,
+        especialidad: especialidad,
+        activo: map['activo'] as bool? ?? true,
+        gradoNombres: gradoNombres,
+      ));
+    }
+
+    rows.sort((a, b) {
+      final aa = a.activo ? 0 : 1;
+      final bb = b.activo ? 0 : 1;
+      if (aa != bb) return aa.compareTo(bb);
+      return a.nombre.toLowerCase().compareTo(b.nombre.toLowerCase());
+    });
+    return rows;
+  }
 
   Future<void> _abrirCrear() async {
     final ok = await context.push<bool>('/directora/profesores/crear');
-    if (ok == true && mounted) setState(() => _streamEpoch++);
+    if (ok == true && mounted) await _refrescar();
   }
 
-  Future<void> _abrirEditar(String id) async {
-    final ok = await context.push<bool>('/directora/profesores/editar/$id');
-    if (ok == true && mounted) setState(() => _streamEpoch++);
+  Future<void> _abrirEditar(String editId) async {
+    final ok = await context.push<bool>(
+      '/directora/profesores/editar/${Uri.encodeComponent(editId)}',
+    );
+    if (ok == true && mounted) await _refrescar();
   }
 
-  Future<void> _eliminarProfesora(
-    Map<String, dynamic> profesorData,
-    String? nombre,
-  ) async {
+  Future<void> _quitarAcceso(_StaffRow row) async {
     final confirmar = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('¿Eliminar profesora?'),
+        title: const Text('¿Quitar acceso?'),
         content: Text(
-          'Se desactivará el acceso de ${nombre ?? 'esta profesora'} '
-          'y ya no aparecerá como activa.\n\n'
-          'No se borra el historial; solo se quita el acceso.',
+          'Se desactivará a ${row.nombre}.\n'
+          'El correo se modifica con “_” para poder reutilizarlo.\n'
+          'No se borra el historial.',
         ),
         actions: [
           TextButton(
@@ -50,7 +177,7 @@ class _ProfesoresScreenState extends State<ProfesoresScreen> {
           FilledButton(
             onPressed: () => Navigator.pop(ctx, true),
             style: FilledButton.styleFrom(backgroundColor: AppColors.rojo),
-            child: const Text('Eliminar acceso'),
+            child: const Text('Quitar acceso'),
           ),
         ],
       ),
@@ -58,30 +185,35 @@ class _ProfesoresScreenState extends State<ProfesoresScreen> {
     if (confirmar != true || !mounted) return;
 
     try {
-      final client = Supabase.instance.client;
-      final profesorId = profesorData['id'] as String;
-      final usuarioId = profesorData['usuario_id'] as String?;
+      final uid = row.usuarioId;
+      if (uid == null) throw Exception('Sin usuario vinculado');
 
-      await client
-          .from('profesores')
-          .update({
-            'activo': false,
-            'updated_at': DateTime.now().toIso8601String(),
-          })
-          .eq('id', profesorId);
-
-      if (usuarioId != null && usuarioId.isNotEmpty) {
-        await client
-            .from('usuarios')
+      try {
+        await Supabase.instance.client.rpc(
+          'desactivar_usuario_escuela',
+          params: {'p_usuario_id': uid},
+        );
+      } catch (_) {
+        final email = row.email ?? '';
+        final parts = email.split('@');
+        final nuevo = parts.length == 2
+            ? '${parts[0]}_x${DateTime.now().millisecondsSinceEpoch}@${parts[1]}'
+            : '${email}_x';
+        await Supabase.instance.client.from('usuarios').update({
+          'activo': false,
+          'email': nuevo,
+        }).eq('id', uid);
+        await Supabase.instance.client
+            .from('profesores')
             .update({'activo': false})
-            .eq('id', usuarioId);
+            .eq('usuario_id', uid);
       }
 
       if (!mounted) return;
-      setState(() => _streamEpoch++);
+      await _refrescar();
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Profesora desactivada'),
+          content: Text('Acceso desactivado'),
           backgroundColor: AppColors.verde,
         ),
       );
@@ -89,10 +221,26 @@ class _ProfesoresScreenState extends State<ProfesoresScreen> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('No se pudo eliminar: $e'),
+          content: Text('No se pudo desactivar: $e'),
           backgroundColor: AppColors.rojo,
         ),
       );
+    }
+  }
+
+  String _rolLabel(_StaffRow r) {
+    switch (r.rol) {
+      case 'caja':
+        return 'Caja / Pagos';
+      case 'secretaria':
+        return 'Secretaria';
+      case 'profesor_admin':
+        return 'Docente admin';
+      default:
+        final esp = (r.especialidad ?? '').toLowerCase();
+        if (esp.contains('ingles')) return 'Inglés';
+        if (esp.contains('musica')) return 'Música';
+        return 'Docente';
     }
   }
 
@@ -103,12 +251,17 @@ class _ProfesoresScreenState extends State<ProfesoresScreen> {
       drawer: const AppDrawer(),
       appBar: AppBar(
         title: Text(
-          'Profesoras',
+          'Personal',
           style: GoogleFonts.poppins(fontWeight: FontWeight.bold),
         ),
         backgroundColor: Colors.white,
         elevation: 0,
         actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            onPressed: _refrescar,
+            tooltip: 'Actualizar',
+          ),
           IconButton(
             icon: const Icon(Icons.home),
             onPressed: () => context.go('/directora'),
@@ -116,306 +269,120 @@ class _ProfesoresScreenState extends State<ProfesoresScreen> {
           ),
         ],
       ),
-      body: StreamBuilder<List<Map<String, dynamic>>>(
-        key: ValueKey(_streamEpoch),
-        stream: Supabase.instance.client
-            .from('profesores')
-            .stream(primaryKey: ['id']),
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
-
-          if (snapshot.hasError) {
-            return Center(
-              child: Text('Error: ${snapshot.error}'),
-            );
-          }
-
-          final profesoresData = List<Map<String, dynamic>>.from(
-            snapshot.data ?? [],
-          );
-          profesoresData.sort((a, b) {
-            final aActivo = a['activo'] == true ? 0 : 1;
-            final bActivo = b['activo'] == true ? 0 : 1;
-            return aActivo.compareTo(bActivo);
-          });
-
-          if (profesoresData.isEmpty) {
-            return Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(
-                    Icons.person_add_outlined,
-                    size: 80,
-                    color: AppColors.gris.withOpacity(0.5),
-                  ),
-                  const SizedBox(height: 16),
-                  Text(
-                    'No hay profesores registrados',
-                    style: GoogleFonts.poppins(
-                      fontSize: 18,
-                      color: AppColors.gris,
+      body: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+            child: Row(
+              children: [
+                FilterChip(
+                  label: const Text('Todos'),
+                  selected: _filtro == 'todos',
+                  onSelected: (_) => setState(() => _filtro = 'todos'),
+                  selectedColor: AppColors.purpura.withValues(alpha: 0.25),
+                  checkmarkColor: AppColors.purpura,
+                ),
+                const SizedBox(width: 8),
+                FilterChip(
+                  label: const Text('Solo activos'),
+                  selected: _filtro == 'activos',
+                  onSelected: (_) => setState(() => _filtro = 'activos'),
+                  selectedColor: AppColors.purpura.withValues(alpha: 0.25),
+                  checkmarkColor: AppColors.purpura,
+                ),
+              ],
+            ),
+          ),
+          Expanded(
+            child: FutureBuilder<List<_StaffRow>>(
+              future: _future,
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+                if (snapshot.hasError) {
+                  return Center(child: Text('Error: ${snapshot.error}'));
+                }
+                var lista = snapshot.data ?? [];
+                if (_filtro == 'activos') {
+                  lista = lista.where((r) => r.activo).toList();
+                }
+                if (lista.isEmpty) {
+                  return Center(
+                    child: Text(
+                      _filtro == 'activos'
+                          ? 'No hay personal activo.'
+                          : 'No hay personal. Presiona + para agregar.',
+                      style: GoogleFonts.poppins(color: AppColors.gris),
+                      textAlign: TextAlign.center,
                     ),
+                  );
+                }
+                return RefreshIndicator(
+                  onRefresh: _refrescar,
+                  child: ListView.builder(
+                    padding: const EdgeInsets.all(20),
+                    itemCount: lista.length,
+                    itemBuilder: (context, i) {
+                      final row = lista[i];
+                      return Card(
+                        margin: const EdgeInsets.only(bottom: 12),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        child: ListTile(
+                          onTap: () => _abrirEditar(row.editId),
+                          leading: CircleAvatar(
+                            backgroundColor:
+                                row.activo ? AppColors.purpura : AppColors.gris,
+                            child: Icon(
+                              row.rol == 'caja'
+                                  ? Icons.point_of_sale
+                                  : row.rol == 'secretaria'
+                                      ? Icons.badge_outlined
+                                      : Icons.person,
+                              color: Colors.white,
+                            ),
+                          ),
+                          title: Text(
+                            row.nombre,
+                            style: GoogleFonts.poppins(
+                                fontWeight: FontWeight.w600),
+                          ),
+                          subtitle: Text(
+                            [
+                              _rolLabel(row),
+                              if (row.gradoNombres.isNotEmpty)
+                                row.gradoNombres.join(', '),
+                              if (row.email != null) row.email!,
+                              if (!row.activo) 'SIN ACCESO',
+                            ].join(' · '),
+                            style: GoogleFonts.poppins(fontSize: 12),
+                          ),
+                          trailing: row.activo
+                              ? IconButton(
+                                  icon: const Icon(Icons.person_off_outlined,
+                                      color: AppColors.rojo),
+                                  tooltip: 'Quitar acceso',
+                                  onPressed: () => _quitarAcceso(row),
+                                )
+                              : null,
+                        ),
+                      );
+                    },
                   ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Presiona + para agregar uno',
-                    style: GoogleFonts.poppins(
-                      fontSize: 14,
-                      color: AppColors.gris,
-                    ),
-                  ),
-                ],
-              ),
-            );
-          }
-
-          return ListView.builder(
-            padding: const EdgeInsets.all(20),
-            itemCount: profesoresData.length,
-            itemBuilder: (context, index) {
-              final profesorData = profesoresData[index];
-              return _buildProfesorCard(
-                context,
-                profesorData,
-                _abrirEditar,
-                onEliminar: _eliminarProfesora,
-              );
-            },
-          );
-        },
+                );
+              },
+            ),
+          ),
+        ],
       ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _abrirCrear,
         heroTag: 'crear_profesor',
         backgroundColor: AppColors.purpura,
         icon: const Icon(Icons.person_add),
-        label: const Text('Agregar Profesora'),
-      ),
-    );
-  }
-
-  Widget _buildProfesorCard(
-    BuildContext context,
-    Map<String, dynamic> profesorData,
-    Future<void> Function(String id) abrirEditar, {
-    required Future<void> Function(Map<String, dynamic> data, String? nombre)
-        onEliminar,
-  }) {
-    return Card(
-      margin: const EdgeInsets.only(bottom: 16),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: InkWell(
-        onTap: () => abrirEditar(profesorData['id'] as String),
-        borderRadius: BorderRadius.circular(16),
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: StreamBuilder<List<Map<String, dynamic>>>(
-            stream: Supabase.instance.client
-                .from('usuarios')
-                .stream(primaryKey: ['id'])
-                .map((data) => data
-                    .where((u) => u['id'] == profesorData['usuario_id'])
-                    .toList()),
-            builder: (context, usuarioSnapshot) {
-              final usuario = usuarioSnapshot.data?.firstOrNull;
-              
-              return StreamBuilder<List<Map<String, dynamic>>>(
-                stream: Supabase.instance.client
-                    .from('grados')
-                    .stream(primaryKey: ['id'])
-                    .map((data) => data
-                        .where((g) => g['id'] == (profesorData['grado_id'] ?? ''))
-                        .toList()),
-                builder: (context, gradoSnapshot) {
-                  final grado = gradoSnapshot.data?.firstOrNull;
-                  
-                  return Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          gradient: const LinearGradient(
-                            colors: [AppColors.purpura, AppColors.rosa],
-                          ),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: const Icon(
-                          Icons.person,
-                          color: Colors.white,
-                          size: 32,
-                        ),
-                      ),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: Text(
-                                    usuario?['nombre'] ?? 'Cargando...',
-                                    style: GoogleFonts.poppins(
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                ),
-                                if (usuario?['rol'] == 'profesor_admin')
-                                  Container(
-                                    margin: const EdgeInsets.only(left: 6),
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 8,
-                                      vertical: 2,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: AppColors.purpura.withOpacity(0.12),
-                                      borderRadius: BorderRadius.circular(8),
-                                    ),
-                                    child: Text(
-                                      'Admin',
-                                      style: GoogleFonts.poppins(
-                                        fontSize: 10,
-                                        fontWeight: FontWeight.w600,
-                                        color: AppColors.purpura,
-                                      ),
-                                    ),
-                                  ),
-                                if ((profesorData['especialidad'] as String? ?? '')
-                                    .toLowerCase()
-                                    .contains('ingles') ||
-                                    (profesorData['especialidad'] as String? ?? '')
-                                        .toLowerCase()
-                                        .contains('inglés'))
-                                  Container(
-                                    margin: const EdgeInsets.only(left: 6),
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 8,
-                                      vertical: 2,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: AppColors.azul.withOpacity(0.12),
-                                      borderRadius: BorderRadius.circular(8),
-                                    ),
-                                    child: Text(
-                                      'Inglés',
-                                      style: GoogleFonts.poppins(
-                                        fontSize: 10,
-                                        fontWeight: FontWeight.w600,
-                                        color: AppColors.azul,
-                                      ),
-                                    ),
-                                  ),
-                                if (profesorData['activo'] != true ||
-                                    usuario?['activo'] == false)
-                                  Container(
-                                    margin: const EdgeInsets.only(left: 6),
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 8,
-                                      vertical: 2,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: AppColors.rojo.withOpacity(0.12),
-                                      borderRadius: BorderRadius.circular(8),
-                                    ),
-                                    child: Text(
-                                      'Sin acceso',
-                                      style: GoogleFonts.poppins(
-                                        fontSize: 10,
-                                        fontWeight: FontWeight.w600,
-                                        color: AppColors.rojo,
-                                      ),
-                                    ),
-                                  ),
-                              ],
-                            ),
-                            const SizedBox(height: 4),
-                            Row(
-                              children: [
-                                const Icon(Icons.email, size: 14, color: AppColors.gris),
-                                const SizedBox(width: 4),
-                                Expanded(
-                                  child: Text(
-                                    usuario?['email'] ?? '',
-                                    style: GoogleFonts.poppins(
-                                      fontSize: 12,
-                                      color: AppColors.gris,
-                                    ),
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ),
-                              ],
-                            ),
-                            if (grado != null) ...[
-                              const SizedBox(height: 4),
-                              Row(
-                                children: [
-                                  const Icon(Icons.school, size: 14, color: AppColors.azul),
-                                  const SizedBox(width: 4),
-                                  Text(
-                                    'Grupo: ${grado['nombre']}',
-                                    style: GoogleFonts.poppins(
-                                      fontSize: 12,
-                                      color: AppColors.azul,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ] else ...[
-                              const SizedBox(height: 4),
-                              Text(
-                                'Sin grupo asignado',
-                                style: GoogleFonts.poppins(
-                                  fontSize: 12,
-                                  color: AppColors.naranja,
-                                  fontStyle: FontStyle.italic,
-                                ),
-                              ),
-                            ],
-                          ],
-                        ),
-                      ),
-                      Column(
-                        children: [
-                          IconButton(
-                            icon: const Icon(Icons.edit, color: AppColors.azulOscuro),
-                            onPressed: () => abrirEditar(profesorData['id'] as String),
-                            tooltip: 'Editar',
-                          ),
-                          IconButton(
-                            icon: const Icon(Icons.key, color: AppColors.naranja),
-                            onPressed: () => context.push(
-                              '/directora/profesores/${profesorData['id']}/permisos?nombre=${Uri.encodeComponent(usuario?['nombre'] ?? '')}',
-                            ),
-                            tooltip: 'Permisos',
-                          ),
-                          if ((context.read<AuthService>().currentUser?.esDirectora ??
-                                  false) &&
-                              profesorData['activo'] == true &&
-                              usuario?['activo'] != false)
-                            IconButton(
-                              icon: const Icon(Icons.delete_outline, color: AppColors.rojo),
-                              onPressed: () => onEliminar(
-                                profesorData,
-                                usuario?['nombre'] as String?,
-                              ),
-                              tooltip: 'Eliminar (desactivar)',
-                            ),
-                        ],
-                      ),
-                    ],
-                  );
-                },
-              );
-            },
-          ),
-        ),
+        label: const Text('Agregar'),
       ),
     );
   }

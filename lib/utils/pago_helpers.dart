@@ -80,6 +80,49 @@ class PagoHelpers {
     return partes.join(' · ');
   }
 
+  /// Resumen legible de un ajuste de colegiatura (para historial en notas).
+  static String lineaAjusteMonto({
+    required double montoAnterior,
+    required double mensualidad,
+    required double recargo,
+    required double descuento,
+    required double neto,
+    DateTime? cuando,
+  }) {
+    final d = cuando ?? DateTime.now();
+    final fecha =
+        '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year} '
+        '${d.hour.toString().padLeft(2, '0')}:${d.minute.toString().padLeft(2, '0')}';
+    final buf = StringBuffer(
+      '[$fecha] Tenía \$${montoAnterior.toStringAsFixed(2)}. '
+      'Mensualidad \$${mensualidad.toStringAsFixed(2)}',
+    );
+    if (recargo > 0) {
+      buf.write(' + recargo \$${recargo.toStringAsFixed(2)}');
+    }
+    if (descuento > 0) {
+      buf.write(' − descuento \$${descuento.toStringAsFixed(2)}');
+    }
+    buf.write(' = \$${neto.toStringAsFixed(2)} a cobrar.');
+    return buf.toString();
+  }
+
+  /// Une historial previo + línea de ajuste + nota libre del usuario.
+  static String? notasTrasAjuste({
+    String? notasAnteriores,
+    required String lineaAjuste,
+    String? notasUsuario,
+  }) {
+    final partes = <String>[];
+    final prev = notasAnteriores?.trim();
+    if (prev != null && prev.isNotEmpty) partes.add(prev);
+    partes.add(lineaAjuste);
+    final extra = notasUsuario?.trim();
+    if (extra != null && extra.isNotEmpty) partes.add(extra);
+    if (partes.isEmpty) return null;
+    return partes.join('\n');
+  }
+
   /// Año de inicio del ciclo escolar (agosto–julio). Ago–Dic → ese año; Ene–Jul → año anterior.
   static int anioInicioCiclo(DateTime fecha) {
     return fecha.month >= 8 ? fecha.year : fecha.year - 1;
@@ -158,6 +201,14 @@ class PagoHelpers {
       return c.contains('estimul');
     }
     return true;
+  }
+
+  /// Colegiatura mensual (para liquidar “todo el año”).
+  static bool esColegiaturaMensual(Pago pago) {
+    final t = (pago.tipoPago ?? '').toLowerCase();
+    if (t == 'mensualidad') return true;
+    final c = (pago.concepto ?? '').toLowerCase();
+    return c.contains('colegiatura');
   }
 
   /// Fechas de vencimiento (día 5) del plan 10/11/12.

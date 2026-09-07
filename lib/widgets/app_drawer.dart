@@ -46,11 +46,11 @@ class _AppDrawerState extends State<AppDrawer> {
       final auth = Provider.of<AuthService>(context, listen: false);
       final user = auth.currentUser;
 
-      // Padres / secretaria / caja / inglés: menú fijo, sin RPC.
+      // Padres / secretaria / caja / maestra: menú fijo, sin RPC.
       if (user?.esPadre == true ||
           user?.esSecretaria == true ||
           user?.esCaja == true ||
-          user?.esMaestraIngles == true) {
+          user?.esMaestraAula == true) {
         if (mounted) {
           setState(() {
             _permisos = {};
@@ -100,7 +100,8 @@ class _AppDrawerState extends State<AppDrawer> {
   Widget build(BuildContext context) {
     final authService = Provider.of<AuthService>(context, listen: false);
     final usuario = authService.currentUser;
-    final accesoPadre = Provider.of<AccesoPadreService>(context);
+    final accesoPadre =
+        Provider.of<AccesoPadreService>(context, listen: false);
     final padreRestringido =
         usuario?.esPadre == true && accesoPadre.restringido;
 
@@ -194,7 +195,6 @@ class _AppDrawerState extends State<AppDrawer> {
                           if (usuario?.esStaff == true &&
                               usuario?.esSecretaria != true &&
                               usuario?.esCaja != true &&
-                              usuario?.esMaestraIngles != true &&
                               usuario?.esPadre != true) ...[
                             _buildMenuItem(
                               context: context,
@@ -210,7 +210,7 @@ class _AppDrawerState extends State<AppDrawer> {
                               usuario?.esPadre != true &&
                               usuario?.esSecretaria != true &&
                               usuario?.esCaja != true &&
-                              usuario?.esMaestraIngles != true)
+                              usuario?.esMaestraAula != true)
                             const Padding(
                               padding: EdgeInsets.symmetric(vertical: 24),
                               child: Center(
@@ -266,35 +266,8 @@ class _AppDrawerState extends State<AppDrawer> {
                             ],
                           ],
 
-                          // ===== MAESTRA DE INGLÉS: grupo + calificaciones de Inglés =====
-                          if (usuario?.esMaestraIngles == true) ...[
-                            _buildSectionHeader('INGLÉS'),
-                            _buildMenuItem(
-                              context: context,
-                              icon: Icons.child_care,
-                              title: 'Alumnos del grupo',
-                              ruta: '/directora/alumnos',
-                              tienePermiso: true,
-                            ),
-                            _buildMenuItem(
-                              context: context,
-                              icon: Icons.grade,
-                              title: 'Calificaciones de Inglés',
-                              ruta: '/directora/calificaciones',
-                              tienePermiso: true,
-                            ),
-                            _buildSectionHeader('CUENTA'),
-                            _buildMenuItem(
-                              context: context,
-                              icon: Icons.lock_outline,
-                              title: 'Cambiar contraseña',
-                              ruta: '/cambiar-contrasena',
-                              tienePermiso: true,
-                            ),
-                          ]
-
                           // ===== SECRETARIA: solo altas (alumnos / papás) =====
-                          else if (usuario?.esSecretaria == true) ...[
+                          if (usuario?.esSecretaria == true) ...[
                             _buildSectionHeader('ALTAS'),
                             _buildMenuItem(
                               context: context,
@@ -313,14 +286,28 @@ class _AppDrawerState extends State<AppDrawer> {
                             ),
                           ]
 
-                          // ===== CAJA: solo pagos =====
+                          // ===== CAJA: solo pagos de Kínder =====
                           else if (usuario?.esCaja == true) ...[
-                            _buildSectionHeader('PAGOS'),
+                            _buildSectionHeader('PAGOS (KÍNDER)'),
                             _buildMenuItem(
                               context: context,
                               icon: Icons.attach_money,
                               title: 'Pagos',
                               ruta: '/directora/pagos',
+                              tienePermiso: true,
+                            ),
+                            _buildMenuItem(
+                              context: context,
+                              icon: Icons.campaign_outlined,
+                              title: 'Avisos de pago',
+                              ruta: '/directora/avisos-pago',
+                              tienePermiso: true,
+                            ),
+                            _buildMenuItem(
+                              context: context,
+                              icon: Icons.settings,
+                              title: 'Configuración / promociones',
+                              ruta: '/directora/configuracion-costos',
                               tienePermiso: true,
                             ),
                             _buildSectionHeader('CUENTA'),
@@ -333,7 +320,72 @@ class _AppDrawerState extends State<AppDrawer> {
                             ),
                           ]
 
-                          // ===== MENÚ STAFF (directora / profesoras) =====
+                          // ===== MAESTRA DE AULA (titular / inglés / música) =====
+                          else if (usuario?.esMaestraAula == true) ...[
+                            _buildSectionHeader('MI GRUPO'),
+                            _buildMenuItem(
+                              context: context,
+                              icon: Icons.child_care,
+                              title: 'Alumnos',
+                              ruta: '/directora/alumnos',
+                              tienePermiso: true,
+                            ),
+                            if (usuario?.puedeVerPortage == true)
+                              _buildMenuItem(
+                                context: context,
+                                icon: Icons.psychology_outlined,
+                                title: 'Indicadores de desarrollo',
+                                ruta: '/directora/portage',
+                                tienePermiso: true,
+                              ),
+                            _buildSectionHeader('COMUNICACIÓN'),
+                            _buildMenuItem(
+                              context: context,
+                              icon: Icons.campaign,
+                              title: 'Anuncios a mi grupo',
+                              ruta: '/directora/anuncios',
+                              tienePermiso: true,
+                            ),
+                            _buildSectionHeader('DÍA A DÍA'),
+                            _buildMenuItem(
+                              context: context,
+                              icon: Icons.assignment,
+                              title: 'Bitácora Diaria',
+                              ruta: '/directora/bitacoras',
+                              tienePermiso: true,
+                            ),
+                            _buildMenuItem(
+                              context: context,
+                              icon: Icons.access_time,
+                              title: 'Control Entrada/Salida',
+                              ruta: '/directora/control-salidas',
+                              tienePermiso: true,
+                            ),
+                            _buildMenuItem(
+                              context: context,
+                              icon: Icons.door_front_door,
+                              title: 'Niños afuera (entrega)',
+                              ruta: '/directora/entrega-afuera',
+                              tienePermiso: true,
+                            ),
+                            _buildMenuItem(
+                              context: context,
+                              icon: Icons.warning_amber_rounded,
+                              title: 'Incidentes',
+                              ruta: '/directora/incidentes',
+                              tienePermiso: true,
+                            ),
+                            _buildSectionHeader('CUENTA'),
+                            _buildMenuItem(
+                              context: context,
+                              icon: Icons.lock_outline,
+                              title: 'Cambiar contraseña',
+                              ruta: '/cambiar-contrasena',
+                              tienePermiso: true,
+                            ),
+                          ]
+
+                          // ===== MENÚ STAFF (directora / supervisora) =====
                           else if (usuario?.esStaff == true) ...[
                           const SizedBox(height: 4),
                           if (_permisos['ver_alumnos'] == true) ...[
@@ -343,13 +395,6 @@ class _AppDrawerState extends State<AppDrawer> {
                               icon: Icons.child_care,
                               title: 'Alumnos',
                               ruta: '/directora/alumnos',
-                              tienePermiso: true,
-                            ),
-                            _buildMenuItem(
-                              context: context,
-                              icon: Icons.grade,
-                              title: 'Calificaciones',
-                              ruta: '/directora/calificaciones',
                               tienePermiso: true,
                             ),
                             _buildMenuItem(
@@ -375,13 +420,14 @@ class _AppDrawerState extends State<AppDrawer> {
                                 ruta: '/directora/ligas',
                                 tienePermiso: true,
                               ),
-                            _buildMenuItem(
-                              context: context,
-                              icon: Icons.school_outlined,
-                              title: 'Grados',
-                              ruta: '/directora/grados',
-                              tienePermiso: true,
-                            ),
+                            if (usuario?.puedeEditarGrados == true)
+                              _buildMenuItem(
+                                context: context,
+                                icon: Icons.school_outlined,
+                                title: 'Grados',
+                                ruta: '/directora/grados',
+                                tienePermiso: true,
+                              ),
                           ],
 
                           // SECCIÓN: PAGOS (directora; caja tiene menú propio)
@@ -397,6 +443,13 @@ class _AppDrawerState extends State<AppDrawer> {
                             ),
                             _buildMenuItem(
                               context: context,
+                              icon: Icons.campaign_outlined,
+                              title: 'Avisos de pago',
+                              ruta: '/directora/avisos-pago',
+                              tienePermiso: true,
+                            ),
+                            _buildMenuItem(
+                              context: context,
                               icon: Icons.settings,
                               title: 'Configuración de Costos',
                               ruta: '/directora/configuracion-costos',
@@ -404,15 +457,16 @@ class _AppDrawerState extends State<AppDrawer> {
                             ),
                           ],
 
-                          // SECCIÓN: PERSONAL
-                          if (_permisos['ver_profesores'] == true ||
-                              _permisos['ver_padres'] == true) ...[
+                          // SECCIÓN: PERSONAL (solo directora)
+                          if (usuario?.esDirectora == true &&
+                              (_permisos['ver_profesores'] == true ||
+                                  _permisos['ver_padres'] == true)) ...[
                             _buildSectionHeader('PERSONAL'),
                             if (_permisos['ver_profesores'] == true)
                               _buildMenuItem(
                                 context: context,
                                 icon: Icons.school,
-                                title: 'Profesoras',
+                                title: 'Personal',
                                 ruta: '/directora/profesores',
                                 tienePermiso: true,
                               ),
@@ -446,7 +500,8 @@ class _AppDrawerState extends State<AppDrawer> {
                                 ruta: '/directora/incidentes',
                                 tienePermiso: true,
                               ),
-                            if (_permisos['ver_tipos_incidentes'] == true)
+                            if (usuario?.esDirectora == true &&
+                                _permisos['ver_tipos_incidentes'] == true)
                               _buildMenuItem(
                                 context: context,
                                 icon: Icons.category,
@@ -466,13 +521,14 @@ class _AppDrawerState extends State<AppDrawer> {
                               ruta: '/directora/anuncios',
                               tienePermiso: true,
                             ),
-                            _buildMenuItem(
-                              context: context,
-                              icon: Icons.sports_soccer,
-                              title: 'Clases Extracurriculares',
-                              ruta: '/directora/clases-extracurriculares',
-                              tienePermiso: true,
-                            ),
+                            if (usuario?.esDirectora == true)
+                              _buildMenuItem(
+                                context: context,
+                                icon: Icons.sports_soccer,
+                                title: 'Clases Extracurriculares',
+                                ruta: '/directora/clases-extracurriculares',
+                                tienePermiso: true,
+                              ),
                           ],
 
                           // SECCIÓN: BITÁCORA
@@ -493,6 +549,13 @@ class _AppDrawerState extends State<AppDrawer> {
                                 ruta: '/directora/bitacora-gastos',
                                 tienePermiso: true,
                               ),
+                            _buildMenuItem(
+                              context: context,
+                              icon: Icons.door_front_door,
+                              title: 'Niños afuera (entrega)',
+                              ruta: '/directora/entrega-afuera',
+                              tienePermiso: true,
+                            ),
                             _buildMenuItem(
                               context: context,
                               icon: Icons.access_time,

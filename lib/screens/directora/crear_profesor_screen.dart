@@ -6,6 +6,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../services/auth_service.dart';
+import '../../services/profesor_grupos_service.dart';
 import '../../models/grado.dart';
 import '../../config/app_colors.dart';
 import '../../utils/constantes.dart';
@@ -30,15 +31,19 @@ class _CrearProfesorScreenState extends State<CrearProfesorScreen> {
   final _nombreController = TextEditingController();
   final _emailController = TextEditingController();
   final _telefonoController = TextEditingController();
-  
-  String? _grupoSeleccionado;
+  final _gruposService = ProfesorGruposService();
+
+  /// Multi-grupo (inglés / música / titular en varios).
+  final Set<String> _gruposSeleccionados = {};
   /// 'profesor' | 'profesor_admin' | 'secretaria' | 'caja'
   String _rol = 'profesor';
-  /// 'titular' | 'ingles' — solo aplica si _rol es profesor.
+  /// titular | ingles | musica
   String _especialidad = Constantes.especialidadTitular;
   bool _accesoActivo = true;
   bool _isLoading = false;
   List<Grado> _grados = [];
+  /// Si editamos un usuario caja/secretaria sin fila en profesores.
+  String? _usuarioIdSoloStaff;
 
   @override
   void initState() {
@@ -77,19 +82,44 @@ class _CrearProfesorScreenState extends State<CrearProfesorScreen> {
 
   Future<void> _cargarProfesor(String profesorId) async {
     try {
+      // Edición de caja/secretaria (sin fila profesores): id "usuario:<uuid>"
+      if (profesorId.startsWith('usuario:')) {
+        final uid = profesorId.substring('usuario:'.length);
+        final u = await Supabase.instance.client
+            .from('usuarios')
+            .select()
+            .eq('id', uid)
+            .single();
+        setState(() {
+          _usuarioIdSoloStaff = uid;
+          _nombreController.text = u['nombre'] ?? '';
+          _emailController.text = u['email'] ?? '';
+          _telefonoController.text = u['telefono'] ?? '';
+          _rol = (u['rol'] as String?) ?? 'caja';
+          _accesoActivo = (u['activo'] as bool?) ?? true;
+        });
+        return;
+      }
+
       final response = await Supabase.instance.client
           .from('profesores')
           .select('*, usuarios!inner(*)')
           .eq('id', profesorId)
           .single();
-      
+
       final usuarioData = response['usuarios'];
-      
+      final gradoIds = await _gruposService.gradoIdsDeProfesorRow(profesorId);
+
       setState(() {
         _nombreController.text = usuarioData['nombre'] ?? '';
         _emailController.text = usuarioData['email'] ?? '';
         _telefonoController.text = usuarioData['telefono'] ?? '';
-        _grupoSeleccionado = response['grado_id'];
+        _gruposSeleccionados
+          ..clear()
+          ..addAll(gradoIds);
+        if (_gruposSeleccionados.isEmpty && response['grado_id'] != null) {
+          _gruposSeleccionados.add(response['grado_id'] as String);
+        }
         final rol = usuarioData['rol'] as String? ?? 'profesor';
         if (rol == 'secretaria') {
           _rol = 'secretaria';
@@ -101,9 +131,13 @@ class _CrearProfesorScreenState extends State<CrearProfesorScreen> {
           _rol = 'profesor';
         }
         final esp = (response['especialidad'] as String? ?? '').toLowerCase();
-        _especialidad = (esp.contains('ingles') || esp.contains('inglés'))
-            ? Constantes.especialidadIngles
-            : Constantes.especialidadTitular;
+        if (esp.contains('ingles') || esp.contains('inglés')) {
+          _especialidad = Constantes.especialidadIngles;
+        } else if (esp.contains('musica') || esp.contains('música')) {
+          _especialidad = Constantes.especialidadMusica;
+        } else {
+          _especialidad = Constantes.especialidadTitular;
+        }
         _accesoActivo = (usuarioData['activo'] as bool?) ??
             (response['activo'] as bool? ?? true);
       });
@@ -112,7 +146,7 @@ class _CrearProfesorScreenState extends State<CrearProfesorScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error al cargar profesor: $e'),
+            content: Text('Error al cargar: $e'),
             backgroundColor: Colors.red,
           ),
         );
@@ -135,62 +169,78 @@ class _CrearProfesorScreenState extends State<CrearProfesorScreen> {
 
     try {
       final esEdicion = widget.profesorId != null;
+      final client = Supabase.instance.client;
+      final gradoIds = _gruposSeleccionados.toList();
+      final gradoPrincipal = gradoIds.isEmpty ? null : gradoIds.first;
+
+      if (esEdicion && _usuarioIdSoloStaff != null) {
+        await client.from('usuarios').update({
+          'nombre': _nombreController.text.trim(),
+          'telefono': _telefonoController.text.trim().isEmpty
+              ? null
+              : _telefonoController.text.trim(),
+          'rol': _rol,
+          'activo': _accesoActivo,
+        }).eq('id', _usuarioIdSoloStaff!);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Usuario actualizado'),
+              backgroundColor: AppColors.verde,
+            ),
+          );
+          context.pop(true);
+        }
+        return;
+      }
 
       if (esEdicion) {
-        // EDITAR profesor existente
-        
-        // 1. Obtener usuario_id del profesor
-        final profesorResponse = await Supabase.instance.client
+        final profesorResponse = await client
             .from('profesores')
             .select('usuario_id')
             .eq('id', widget.profesorId!)
             .single();
-        
         final usuarioId = profesorResponse['usuario_id'] as String;
 
-        // 2. Actualizar usuario (rol + acceso)
-        await Supabase.instance.client
-            .from('usuarios')
-            .update({
-              'nombre': _nombreController.text.trim(),
-              'telefono': _telefonoController.text.trim().isEmpty 
-                  ? null 
-                  : _telefonoController.text.trim(),
-              'rol': _rol,
-              'activo': _accesoActivo,
-            })
-            .eq('id', usuarioId);
+        await client.from('usuarios').update({
+          'nombre': _nombreController.text.trim(),
+          'telefono': _telefonoController.text.trim().isEmpty
+              ? null
+              : _telefonoController.text.trim(),
+          'rol': _rol,
+          'activo': _accesoActivo,
+        }).eq('id', usuarioId);
 
-        // 3. Actualizar profesor
-        await Supabase.instance.client
-            .from('profesores')
-            .update({
-              'grado_id': _grupoSeleccionado,
-              'especialidad': _rol == 'profesor'
-                  ? _especialidad
-                  : Constantes.especialidadTitular,
-              'activo': _accesoActivo,
-              'updated_at': DateTime.now().toIso8601String(),
-            })
-            .eq('id', widget.profesorId!);
+        await client.from('profesores').update({
+          'grado_id': gradoPrincipal,
+          'especialidad': _rol == 'profesor'
+              ? _especialidad
+              : Constantes.especialidadTitular,
+          'activo': _accesoActivo,
+          'updated_at': DateTime.now().toIso8601String(),
+        }).eq('id', widget.profesorId!);
+
+        try {
+          await _gruposService.guardarGrados(
+            profesorId: widget.profesorId!,
+            gradoIds: gradoIds,
+          );
+        } catch (_) {}
 
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text('✅ Profesora actualizada exitosamente!'),
+              content: Text('Docente actualizado'),
               backgroundColor: AppColors.verde,
             ),
           );
           context.pop(true);
         }
       } else {
-        // CREAR profesor nuevo (sin perder sesión del staff)
         final auth = Provider.of<AuthService>(context, listen: false);
-        final client = Supabase.instance.client;
-
         final newUserId = await auth.crearUsuarioAuthComoStaff(
           email: _emailController.text.trim(),
-          password: 'Caipi2026',
+          password: Constantes.passwordInicial,
           rol: _rol,
           nombre: _nombreController.text.trim(),
           telefono: _telefonoController.text.trim().isEmpty
@@ -209,10 +259,8 @@ class _CrearProfesorScreenState extends State<CrearProfesorScreen> {
               SnackBar(
                 content: Text(
                   _rol == 'caja'
-                      ? '✅ Usuario de caja creado. Contraseña inicial: Caipi2026\n'
-                          'Solo administración de pagos.'
-                      : '✅ Secretaria creada. Contraseña inicial: Caipi2026\n'
-                          'En el iPad entra con este correo. Solo altas, sin beca.',
+                      ? 'Usuario de caja creado. Pass: ${Constantes.passwordInicial}\nVe todos los grupos y pagos.'
+                      : 'Secretaria creada. Pass: ${Constantes.passwordInicial}',
                   style: GoogleFonts.poppins(fontSize: 13),
                 ),
                 backgroundColor: AppColors.verde,
@@ -224,21 +272,19 @@ class _CrearProfesorScreenState extends State<CrearProfesorScreen> {
           return;
         }
 
-                try {
-          await client
-              .from('profesores')
-              .insert({
-                'id': const Uuid().v4(),
-                'usuario_id': newUserId,
-                'grado_id': _grupoSeleccionado,
-                'especialidad': _rol == 'profesor'
-                    ? _especialidad
-                    : Constantes.especialidadTitular,
-                'activo': _accesoActivo,
-                'created_at': DateTime.now().toIso8601String(),
-                'updated_at': DateTime.now().toIso8601String(),
-              })
-              .setHeader('Prefer', 'return=minimal');
+        final profesorId = const Uuid().v4();
+        try {
+          await client.from('profesores').insert({
+            'id': profesorId,
+            'usuario_id': newUserId,
+            'grado_id': gradoPrincipal,
+            'especialidad': _rol == 'profesor'
+                ? _especialidad
+                : Constantes.especialidadTitular,
+            'activo': _accesoActivo,
+            'created_at': DateTime.now().toIso8601String(),
+            'updated_at': DateTime.now().toIso8601String(),
+          }).setHeader('Prefer', 'return=minimal');
         } catch (e) {
           if (_esErrorRlsProfesores(e)) {
             final existe = await client
@@ -247,16 +293,17 @@ class _CrearProfesorScreenState extends State<CrearProfesorScreen> {
                 .eq('usuario_id', newUserId)
                 .maybeSingle();
             if (existe != null) {
+              try {
+                await _gruposService.guardarGrados(
+                  profesorId: existe['id'] as String,
+                  gradoIds: gradoIds,
+                );
+              } catch (_) {}
               if (mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text(
-                      '✅ Profesora registrada correctamente.\n'
-                      '(La app mostró un aviso de permisos pero el alta quedó guardada.)',
-                      style: GoogleFonts.poppins(fontSize: 13),
-                    ),
+                  const SnackBar(
+                    content: Text('Docente registrado'),
                     backgroundColor: AppColors.verde,
-                    duration: const Duration(seconds: 6),
                   ),
                 );
                 context.pop(true);
@@ -267,79 +314,50 @@ class _CrearProfesorScreenState extends State<CrearProfesorScreen> {
           rethrow;
         }
 
+        try {
+          await _gruposService.guardarGrados(
+            profesorId: profesorId,
+            gradoIds: gradoIds,
+          );
+        } catch (_) {}
+
         if (mounted) {
+          final extra = gradoIds.length > 1
+              ? 'Asignada a ${gradoIds.length} grupos.\n'
+              : '';
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text(
-                '✅ Profesora creada. Contraseña inicial: Caipi2026\n'
-                '${_especialidad == Constantes.especialidadIngles ? 'Entra y verá su grupo, solo calificaciones de Inglés.\n' : ''}'
-                'Puede cambiarla en el menú → Cambiar contraseña.',
+                'Docente creado. Pass: ${Constantes.passwordInicial}\n$extra',
                 style: GoogleFonts.poppins(fontSize: 13),
               ),
               backgroundColor: AppColors.verde,
-              duration: const Duration(seconds: 7),
+              duration: const Duration(seconds: 6),
             ),
           );
           context.pop(true);
         }
       }
     } on AuthException catch (e) {
-      // Manejo específico de errores de autenticación
       if (mounted) {
-        String mensaje = '❌ Error al crear usuario';
-        
-        if (e.message.contains('already registered') || e.statusCode == '422') {
-          mensaje = '❌ Este email ya está registrado.\nUsa otro email o elimina el usuario existente.';
-        } else if (e.message.contains('invalid email')) {
-          mensaje = '❌ El email no es válido';
-        } else if (e.message.contains('password')) {
-          mensaje = '❌ Error con la contraseña: ${e.message}';
-        } else {
-          mensaje = '❌ Error: ${e.message}';
-        }
-        
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(mensaje),
+            content: Text('Error: ${e.message}'),
             backgroundColor: AppColors.rojo,
-            duration: const Duration(seconds: 5),
           ),
         );
       }
     } catch (e) {
       if (mounted) {
-        final t = e.toString().toLowerCase();
-        String msg = '❌ $e';
-        if (t.contains('duplicate') ||
-            t.contains('unique') ||
-            t.contains('23505')) {
-          msg =
-              '❌ Ese correo o usuario ya existe. Usa otro email o revisa en Supabase.';
-        } else if (t.contains('profesores') &&
-            (t.contains('row-level') || t.contains('42501'))) {
-          msg =
-              '❌ La base de datos no permite dar de alta profesoras (RLS).\n'
-              'En Supabase → SQL Editor ejecuta el archivo:\n'
-              'FIX_PROFESORES_RLS_INSERT.sql';
-        } else if (t.contains('permission') ||
-            t.contains('row-level') ||
-            t.contains('rls') ||
-            t.contains('42501')) {
-          msg =
-              '❌ Sin permiso (RLS). Si es tabla profesores, ejecuta FIX_PROFESORES_RLS_INSERT.sql en Supabase.';
-        }
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(msg),
+            content: Text('Error: $e'),
             backgroundColor: AppColors.rojo,
-            duration: const Duration(seconds: 7),
           ),
         );
       }
     } finally {
-      if (mounted) {
-        setState(() => _isLoading = false);
-      }
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
@@ -349,7 +367,7 @@ class _CrearProfesorScreenState extends State<CrearProfesorScreen> {
       backgroundColor: AppColors.grisClaro,
       appBar: AppBar(
         title: Text(
-          widget.profesorId == null ? 'Nueva Profesora' : 'Editar Profesora',
+          widget.profesorId == null ? 'Nuevo docente' : 'Editar docente',
           style: GoogleFonts.poppins(fontWeight: FontWeight.bold),
         ),
         backgroundColor: Colors.white,
@@ -436,9 +454,9 @@ class _CrearProfesorScreenState extends State<CrearProfesorScreen> {
               const SizedBox(height: 4),
               RadioListTile<String>(
                 contentPadding: EdgeInsets.zero,
-                title: const Text('Profesora'),
+                title: const Text('Docente'),
                 subtitle: const Text(
-                  'Titular del grupo o maestra de inglés (elige abajo)',
+                  'Titular del grupo o maestra de inglés/música (elige abajo)',
                 ),
                 value: 'profesor',
                 groupValue: _rol,
@@ -456,7 +474,7 @@ class _CrearProfesorScreenState extends State<CrearProfesorScreen> {
                         dense: true,
                         title: const Text('Grupo (titular)'),
                         subtitle: const Text(
-                          'Puede haber otra maestra de inglés en el mismo grupo',
+                          'Puede haber otra de inglés/música en el mismo grupo',
                         ),
                         value: Constantes.especialidadTitular,
                         groupValue: _especialidad,
@@ -466,11 +484,23 @@ class _CrearProfesorScreenState extends State<CrearProfesorScreen> {
                       RadioListTile<String>(
                         contentPadding: EdgeInsets.zero,
                         dense: true,
-                        title: const Text('Maestra de inglés'),
+                        title: const Text('Inglés / especial'),
                         subtitle: const Text(
-                          'Otro usuario, mismo grupo. Solo ve calificaciones de Inglés',
+                          'Puede tener varios grupos; ve chats y alumnos de esos grupos',
                         ),
                         value: Constantes.especialidadIngles,
+                        groupValue: _especialidad,
+                        onChanged: (v) =>
+                            setState(() => _especialidad = v!),
+                      ),
+                      RadioListTile<String>(
+                        contentPadding: EdgeInsets.zero,
+                        dense: true,
+                        title: const Text('Música'),
+                        subtitle: const Text(
+                          'Igual: varios grupos, mismos menús que docente',
+                        ),
+                        value: Constantes.especialidadMusica,
                         groupValue: _especialidad,
                         onChanged: (v) =>
                             setState(() => _especialidad = v!),
@@ -480,7 +510,7 @@ class _CrearProfesorScreenState extends State<CrearProfesorScreen> {
                 ),
               RadioListTile<String>(
                 contentPadding: EdgeInsets.zero,
-                title: const Text('Profesora admin'),
+                title: const Text('Docente admin'),
                 subtitle: const Text(
                   'Como directora en casi todo, excepto pagos',
                 ),
@@ -540,40 +570,44 @@ class _CrearProfesorScreenState extends State<CrearProfesorScreen> {
               const SizedBox(height: 16),
 
               if (_rol != 'secretaria' && _rol != 'caja') ...[
-              // Grupo asignado
-              DropdownButtonFormField<String>(
-                value: _grupoSeleccionado,
-                decoration: InputDecoration(
-                  labelText: 'Grupo a asignar',
-                  prefixIcon: const Icon(Icons.school, color: AppColors.naranja),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  filled: true,
-                  fillColor: Colors.white,
-                  helperText: _rol == 'profesor_admin'
-                      ? 'Opcional: admin puede ver todos los grupos'
-                      : _especialidad == Constantes.especialidadIngles
-                          ? 'Mismo grupo que la titular. Si da inglés a varios grupos, déjalo sin grupo.'
-                          : 'Puedes dejarlo sin grupo y asignarlo después',
+                Text(
+                  'Grupos asignados (puede ser más de uno)',
+                  style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
                 ),
-                items: [
-                  const DropdownMenuItem(
-                    value: null,
-                    child: Text('Sin grupo asignado'),
-                  ),
-                  ..._grados.map((grado) {
-                    return DropdownMenuItem(
-                      value: grado.id,
-                      child: Text(grado.nombre),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: _grados.map((g) {
+                    final sel = _gruposSeleccionados.contains(g.id);
+                    return FilterChip(
+                      label: Text(g.nombre),
+                      selected: sel,
+                      onSelected: (v) {
+                        setState(() {
+                          if (v) {
+                            _gruposSeleccionados.add(g.id);
+                          } else {
+                            _gruposSeleccionados.remove(g.id);
+                          }
+                        });
+                      },
                     );
-                  }),
-                ],
-                onChanged: (value) {
-                  setState(() => _grupoSeleccionado = value);
-                },
-              ),
-              const SizedBox(height: 32),
+                  }).toList(),
+                ),
+                if (_gruposSeleccionados.isEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 6),
+                    child: Text(
+                      'Sin grupo aún: puedes asignarlos después. '
+                      'Inglés/música suele marcar varios.',
+                      style: GoogleFonts.poppins(
+                        fontSize: 12,
+                        color: AppColors.gris,
+                      ),
+                    ),
+                  ),
+                const SizedBox(height: 32),
               ],
 
               // Botón guardar
@@ -611,7 +645,7 @@ class _CrearProfesorScreenState extends State<CrearProfesorScreen> {
                           ),
                         )
                       : Text(
-                          'Guardar Profesora',
+                          'Guardar docente',
                           style: GoogleFonts.poppins(
                             fontSize: 18,
                             fontWeight: FontWeight.bold,

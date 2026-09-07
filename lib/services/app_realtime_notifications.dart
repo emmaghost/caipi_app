@@ -110,7 +110,6 @@ class _AppRealtimeNotificationsState extends State<AppRealtimeNotifications> {
     _solicitudSub = Supabase.instance.client
         .from('solicitudes_recogida')
         .stream(primaryKey: ['id'])
-        .eq('estado', 'pendiente')
         .order('created_at', ascending: false)
         .listen(_onSolicitudes);
   }
@@ -135,6 +134,7 @@ class _AppRealtimeNotificationsState extends State<AppRealtimeNotifications> {
       await widget.notificationService.notificarNuevoMensajeChat(
         remitenteEsPadre: _esEscuela,
         preview: preview,
+        ruta: _esEscuela ? '/directora/chat' : '/padre/chat',
       );
     }
     _chatPrimeraCarga = false;
@@ -149,6 +149,9 @@ class _AppRealtimeNotificationsState extends State<AppRealtimeNotifications> {
       _solicitudesConocidas.add(id);
 
       if (_solicitudPrimeraCarga) continue;
+
+      // Solo avisar de solicitudes nuevas pendientes
+      if (row['estado']?.toString() != 'pendiente') continue;
 
       final alumnoId = row['alumno_id']?.toString();
       if (alumnoId == null) continue;

@@ -9,6 +9,7 @@ import '../../config/app_colors.dart';
 import '../../models/alumno.dart';
 import '../../models/control_salida.dart';
 import '../../models/persona_autorizada.dart';
+import '../../services/solicitud_recogida_service.dart';
 import '../../widgets/app_drawer.dart';
 
 class RegistrarSalidaScreen extends StatefulWidget {
@@ -692,6 +693,28 @@ class _RegistrarSalidaScreenState extends State<RegistrarSalidaScreen> {
         controlData['created_at'] = DateTime.now().toIso8601String();
 
         await Supabase.instance.client.from('control_salidas').insert(controlData);
+      }
+
+      // Si hay salida, cierra solicitudes pendientes de "Niños afuera".
+      if (!_ausente &&
+          _alumnoSeleccionadoId != null &&
+          _quienRecogioController.text.trim().isNotEmpty) {
+        try {
+          final uid = Supabase.instance.client.auth.currentUser?.id;
+          if (uid != null) {
+            final modalidad =
+                widget.personaAutorizadaIdInicial != null ||
+                        widget.prellenarHoraSalida
+                    ? 'qr'
+                    : 'padre';
+            await SolicitudRecogidaService().cerrarPendientesDeAlumno(
+              alumnoId: _alumnoSeleccionadoId!,
+              atendidaPorId: uid,
+              modalidadEntrega: modalidad,
+              quienRecibio: _quienRecogioController.text.trim(),
+            );
+          }
+        } catch (_) {}
       }
 
       if (mounted) {

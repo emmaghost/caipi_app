@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/usuario.dart';
+import '../utils/constantes.dart';
 import 'push_notification_service.dart';
 
 class AuthService extends ChangeNotifier {
@@ -310,6 +311,19 @@ class AuthService extends ChangeNotifier {
     await _loadUserData(prevId);
     notifyListeners();
     return response.user!.id;
+  }
+
+  Future<void> reiniciarPasswordUsuario({
+    required String usuarioId,
+    String password = Constantes.passwordInicial,
+  }) async {
+    await _supabase.rpc(
+      'reiniciar_password_usuario',
+      params: {
+        'p_usuario_id': usuarioId,
+        'p_password': password,
+      },
+    );
   }
 
   // Cerrar sesión

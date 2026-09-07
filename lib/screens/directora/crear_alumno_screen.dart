@@ -62,7 +62,8 @@ class _CrearAlumnoScreenState extends State<CrearAlumnoScreen> {
     return null;
   }
 
-  bool get _esKinderSeleccionado => _gradoSeleccionadoObj?.esKinder ?? false;
+  bool get _esKinderSeleccionado =>
+      _gradoSeleccionadoObj?.muestraModuloPagos ?? false;
 
   /// Sin grado o no-kínder (maternal / estimulación): cobro por clase.
   bool get _esCobroPorClase =>

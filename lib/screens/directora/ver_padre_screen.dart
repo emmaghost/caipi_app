@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../config/app_colors.dart';
+import '../../services/auth_service.dart';
 import '../../widgets/app_drawer.dart';
 
 class VerPadreScreen extends StatefulWidget {
@@ -293,6 +295,8 @@ class _VerPadreScreenState extends State<VerPadreScreen> {
             _buildInfoRow(Icons.phone, 'Teléfono', _padre!['telefono'] ?? 'No registrado'),
             const SizedBox(height: 12),
             _buildInfoRow(Icons.phone_android, 'WhatsApp', _padre!['whatsapp'] ?? 'No registrado'),
+            if (context.watch<AuthService>().currentUser?.puedeGestionarAccesoPadres ==
+                true) ...[
             const SizedBox(height: 8),
             SwitchListTile(
               contentPadding: EdgeInsets.zero,
@@ -366,6 +370,7 @@ class _VerPadreScreenState extends State<VerPadreScreen> {
               icon: const Icon(Icons.note_alt_outlined, size: 18),
               label: const Text('Nota interna'),
             ),
+            ], // fin puedeGestionarAccesoPadres
           ],
         ),
       ),
