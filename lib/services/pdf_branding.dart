@@ -1,8 +1,9 @@
 import 'package:flutter/services.dart';
-import 'package:intl/intl.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
+
+import '../utils/mexico_time.dart';
 
 /// Encabezado y tipografía compartidos para todos los PDF de CAIPI.
 class PdfBranding {
@@ -96,7 +97,7 @@ class PdfBranding {
   }
 
   static pw.Widget pie() {
-    final ahora = DateFormat('dd/MM/yyyy HH:mm').format(DateTime.now());
+    final ahora = MexicoTime.fechaHora(MexicoTime.now());
     return pw.Column(
       children: [
         pw.Divider(color: PdfColors.grey400),
@@ -110,8 +111,7 @@ class PdfBranding {
   }
 
   static String rangoFechas(DateTime desde, DateTime hasta) {
-    final f = DateFormat('dd/MM/yyyy');
-    return '${f.format(desde)} — ${f.format(hasta)}';
+    return '${MexicoTime.fecha(desde)} — ${MexicoTime.fecha(hasta)}';
   }
 
   static Future<Uint8List> documentoSimple({

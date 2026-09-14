@@ -1,3 +1,5 @@
+import '../utils/mexico_time.dart';
+
 class SolicitudRecogida {
   final String id;
   final String alumnoId;
@@ -33,9 +35,9 @@ class SolicitudRecogida {
       padreId: json['padre_id'] as String,
       estado: json['estado'] as String? ?? 'pendiente',
       mensaje: json['mensaje'] as String?,
-      createdAt: DateTime.parse(json['created_at'] as String),
+      createdAt: MexicoTime.parse(json['created_at'] as String),
       atendidaAt: json['atendida_at'] != null
-          ? DateTime.parse(json['atendida_at'] as String)
+          ? MexicoTime.parse(json['atendida_at'] as String)
           : null,
       atendidaPor: json['atendida_por'] as String?,
       modalidadEntrega: json['modalidad_entrega'] as String?,

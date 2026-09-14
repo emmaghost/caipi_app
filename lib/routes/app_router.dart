@@ -32,6 +32,7 @@ import '../screens/directora/crear_grado_screen.dart';
 import '../screens/directora/bitacoras_screen.dart';
 import '../screens/directora/bitacora_gastos_screen.dart';
 import '../screens/directora/crear_bitacora_screen.dart';
+import '../screens/directora/bitacora_rapida_grupo_screen.dart';
 import '../screens/directora/crear_bitacora_gasto_screen.dart';
 import '../screens/directora/control_salidas_screen.dart';
 import '../screens/directora/entrega_afuera_screen.dart';
@@ -44,11 +45,14 @@ import '../screens/directora/crear_menu_screen.dart';
 // import '../screens/directora/galeria_screen.dart';
 // import '../screens/directora/subir_foto_screen.dart';
 import '../screens/directora/clases_extracurriculares_screen.dart';
+import '../screens/directora/clase_extracurricular_detalle_screen.dart';
 import '../screens/directora/crear_clase_extracurricular_screen.dart';
 import '../screens/directora/entrevista_padres_screen.dart';
 import '../screens/directora/entrevistas_lista_screen.dart';
 import '../screens/directora/portage_home_screen.dart';
+import '../screens/directora/hitos_catalogo_screen.dart';
 import '../screens/directora/portage_lista_editor_screen.dart';
+import '../screens/directora/portage_listas_admin_screen.dart';
 import '../screens/directora/portage_evaluacion_screen.dart';
 import '../screens/directora/portage_alumno_hub_screen.dart';
 import '../screens/directora/ligas_drive_screen.dart';
@@ -189,7 +193,8 @@ GoRouter createRouter({
           (r) => loc == r || loc.startsWith('$r/'),
         );
         final portageBloqueado = (loc == '/directora/portage' ||
-                loc.startsWith('/directora/portage/')) &&
+                loc.startsWith('/directora/portage/') ||
+                loc == '/directora/hitos') &&
             authService.currentUser?.puedeVerPortage != true;
         if (bloqueada ||
             portageBloqueado ||
@@ -241,6 +246,16 @@ GoRouter createRouter({
     GoRoute(
       path: '/directora/portage',
       builder: (context, state) => const PortageHomeScreen(),
+    ),
+    GoRoute(
+      path: '/directora/hitos',
+      builder: (context, state) => const HitosCatalogoScreen(),
+    ),
+    GoRoute(
+      path: '/directora/portage/listas',
+      builder: (context, state) => PortageListasAdminScreen(
+        gradoIdInicial: state.uri.queryParameters['grado'],
+      ),
     ),
     GoRoute(
       path: '/directora/portage/alumno/:id',
@@ -460,6 +475,17 @@ GoRouter createRouter({
       },
     ),
     GoRoute(
+      path: '/directora/bitacoras/rapida',
+      builder: (context, state) {
+        DateTime? fecha;
+        final ex = state.extra;
+        if (ex is Map<String, dynamic>) {
+          fecha = ex['fecha'] as DateTime?;
+        }
+        return BitacoraRapidaGrupoScreen(fechaInicial: fecha);
+      },
+    ),
+    GoRoute(
       path: '/directora/bitacoras/editar/:id',
       builder: (context, state) {
         final bitacoraId = state.pathParameters['id']!;
@@ -558,6 +584,13 @@ GoRouter createRouter({
     GoRoute(
       path: '/directora/clases-extracurriculares/crear',
       builder: (context, state) => const CrearClaseExtracurricularScreen(),
+    ),
+    GoRoute(
+      path: '/directora/clases-extracurriculares/detalle/:id',
+      builder: (context, state) {
+        final claseId = state.pathParameters['id']!;
+        return ClaseExtracurricularDetalleScreen(claseId: claseId);
+      },
     ),
     GoRoute(
       path: '/directora/clases-extracurriculares/editar/:id',

@@ -50,6 +50,9 @@ Deno.serve(async (req) => {
       tipo?: string;
       alumno_id?: string;
       quien_recibio?: string;
+      fecha?: string;
+      notificar_padres?: boolean;
+      padre_solicitante_id?: string;
     };
 
     // Modo entrega: papá(s) + maestra(s) del grupo
@@ -57,6 +60,9 @@ Deno.serve(async (req) => {
       const result = await handleEntregaCompletada(admin, sa, {
         alumno_id: body.alumno_id,
         quien_recibio: body.quien_recibio,
+        fecha: body.fecha,
+        notificar_padres: body.notificar_padres !== false,
+        padre_solicitante_id: body.padre_solicitante_id,
       });
       return json({ ok: true, ...result });
     }
@@ -124,7 +130,7 @@ async function handleChatMessage(
 
   const { data: conv } = await admin
     .from("conversaciones")
-    .select("padre_id")
+    .select("padre_id, canal, staff_id")
     .eq("id", conversacionId)
     .maybeSingle();
 
@@ -138,22 +144,47 @@ async function handleChatMessage(
 
   const nombre = remitente?.nombre ?? "CAIPI";
   const esPadre = remitente?.rol === "padre";
+  const canal = (conv.canal as string | null) ?? "directora";
+  const staffId = (conv.staff_id as string | null) ?? null;
 
+  // Destinatarios = solo el otro lado del hilo (no broadcast a todo el staff).
   let destinos: string[] = [];
   if (esPadre) {
-    const { data: staff } = await admin
-      .from("usuarios")
-      .select("id")
-      .in("rol", ["directora", "profesor", "profesor_admin"])
-      .eq("activo", true);
-    destinos = (staff ?? []).map((u) => u.id as string);
+    if (staffId) {
+      // Papá → miss (o staff concreto del hilo)
+      destinos = [staffId];
+    } else if (canal === "profesor") {
+      // Hilo profe sin staff_id (dato incompleto): no avisar a directora
+      return { sent: 0, reason: "hilo profesor sin staff_id" };
+    } else {
+      // Papá → directora(s) del canal escuela
+      const { data: directoras } = await admin
+        .from("usuarios")
+        .select("id")
+        .eq("rol", "directora")
+        .eq("activo", true);
+      destinos = (directoras ?? []).map((u) => u.id as string);
+    }
   } else {
+    // Staff → solo el papá de esa conversación
     destinos = [conv.padre_id as string];
   }
 
   destinos = destinos.filter((id) => id !== remitenteId);
+  if (destinos.length === 0) {
+    return { sent: 0, reason: "sin destinos", canal, staff_id: staffId };
+  }
+
   const tokens = await tokensDeUsuarios(admin, destinos);
-  if (tokens.length === 0) return { sent: 0, reason: "sin tokens", destinos };
+  if (tokens.length === 0) {
+    return {
+      sent: 0,
+      reason: "sin tokens",
+      destinos: destinos.length,
+      canal,
+      staff_id: staffId,
+    };
+  }
 
   const title = esPadre ? `Chat: ${nombre}` : `Escuela: ${nombre}`;
   const sent = await sendFcm(sa, tokens, title, contenido || "Nuevo mensaje", {
@@ -161,13 +192,25 @@ async function handleChatMessage(
     conversacion_id: conversacionId,
     ruta: esPadre ? "/directora/chat" : "/padre/chat",
   });
-  return { sent, destinos: destinos.length, tokens: tokens.length };
+  return {
+    sent,
+    destinos: destinos.length,
+    tokens: tokens.length,
+    canal,
+    staff_id: staffId,
+  };
 }
 
 async function handleEntregaCompletada(
   admin: ReturnType<typeof createClient>,
   sa: ServiceAccount,
-  args: { alumno_id: string; quien_recibio?: string },
+  args: {
+    alumno_id: string;
+    quien_recibio?: string;
+    fecha?: string;
+    notificar_padres?: boolean;
+    padre_solicitante_id?: string;
+  },
 ) {
   const alumnoId = args.alumno_id?.trim();
   if (!alumnoId) return { sent: 0, reason: "sin alumno_id" };
@@ -182,23 +225,61 @@ async function handleEntregaCompletada(
 
   const nombreAlumno =
     `${alumno.nombre ?? ""} ${alumno.apellidos ?? ""}`.trim() || "el niño/a";
-  const quien = (args.quien_recibio ?? "").trim();
-  const quienTxt = quien ? ` Lo recogió: ${quien}.` : "";
+  const notificarPadres = args.notificar_padres !== false;
 
   const destinos = new Set<string>();
+  const padresIds = new Set<string>();
 
-  if (alumno.padre_id) destinos.add(alumno.padre_id as string);
-
+  if (alumno.padre_id) padresIds.add(alumno.padre_id as string);
   try {
     const { data: ap } = await admin
       .from("alumnos_padres")
       .select("padre_id")
       .eq("alumno_id", alumnoId);
     for (const row of ap ?? []) {
-      if (row.padre_id) destinos.add(row.padre_id as string);
+      if (row.padre_id) padresIds.add(row.padre_id as string);
     }
   } catch (_) {
     // tabla opcional
+  }
+
+  const solicitante = (args.padre_solicitante_id ?? "").trim();
+  // Solo el papá de ESTA solicitud, si realmente es tutor de este niño.
+  const solicitanteEsTutor = solicitante.length > 0 && padresIds.has(solicitante);
+
+  let quien = "";
+  if (solicitanteEsTutor) {
+    const { data: u } = await admin
+      .from("usuarios")
+      .select("nombre, apellidos")
+      .eq("id", solicitante)
+      .maybeSingle();
+    quien = `${u?.nombre ?? ""} ${u?.apellidos ?? ""}`.trim();
+  }
+  if (!quien) {
+    const raw = (args.quien_recibio ?? "").trim();
+    if (raw && padresIds.size > 0) {
+      const { data: tutores } = await admin
+        .from("usuarios")
+        .select("nombre, apellidos")
+        .in("id", [...padresIds]);
+      const nombres = new Set(
+        (tutores ?? []).map((u) =>
+          `${u.nombre ?? ""} ${u.apellidos ?? ""}`.trim().toLowerCase()
+        ),
+      );
+      if (nombres.has(raw.toLowerCase())) quien = raw;
+    } else if (raw && !raw.toLowerCase().startsWith("padre de ")) {
+      quien = raw;
+    }
+  }
+  const quienTxt = quien ? ` Lo recogió: ${quien}.` : "";
+  const { etiquetaCorta, etiquetaLarga, esHoy } = etiquetaFechaSalida(
+    args.fecha,
+  );
+
+  if (notificarPadres) {
+    for (const id of padresIds) destinos.add(id);
   }
 
   const gradoId = alumno.grado_id as string | null;
@@ -231,25 +312,98 @@ async function handleEntregaCompletada(
   }
 
   const ids = [...destinos];
-  if (ids.length === 0) return { sent: 0, reason: "sin destinatarios" };
+  if (ids.length === 0) {
+    return {
+      sent: 0,
+      reason: notificarPadres ? "sin destinatarios" : "sin maestras (padres omitidos)",
+      padres: padresIds.size,
+    };
+  }
 
   const tokens = await tokensDeUsuarios(admin, ids);
   if (tokens.length === 0) {
-    return { sent: 0, reason: "sin tokens", destinos: ids.length };
+    return {
+      sent: 0,
+      reason: "sin tokens",
+      destinos: ids.length,
+      padres: padresIds.size,
+    };
   }
+
+  const nPadres = padresIds.size;
+  const padresTxt = notificarPadres
+    ? (nPadres >= 2 ? " (ambos tutores)" : nPadres === 1 ? " (tutor)" : "")
+    : "";
+
+  const title = esHoy
+    ? `Niño recogido · hoy ${etiquetaCorta}`
+    : `Salida del ${etiquetaCorta} (no es de ahora)`;
+  const body = esHoy
+    ? `${nombreAlumno} ya fue entregado hoy (${etiquetaLarga}).${quienTxt}${padresTxt}`
+    : `${nombreAlumno}: registro de salida del ${etiquetaLarga} (día anterior, no es entrega de este momento).${quienTxt}`;
 
   const sent = await sendFcm(
     sa,
     tokens,
-    "Niño recogido",
-    `${nombreAlumno} ya fue entregado.${quienTxt}`,
+    title,
+    body,
     {
       tipo: "entrega",
       alumno_id: alumnoId,
+      fecha: args.fecha ?? "",
+      notificar_padres: notificarPadres ? "1" : "0",
       ruta: "/directora/entrega-afuera",
     },
   );
-  return { sent, destinos: ids.length, tokens: tokens.length };
+  return {
+    sent,
+    destinos: ids.length,
+    tokens: tokens.length,
+    padres_notificados: notificarPadres ? nPadres : 0,
+  };
+}
+
+/** Fecha de la salida en español (México). */
+function etiquetaFechaSalida(fechaYmd?: string): {
+  etiquetaCorta: string;
+  etiquetaLarga: string;
+  esHoy: boolean;
+} {
+  const now = new Date();
+  // Comparar en zona México (UTC-6 aprox.; sin DST en la mayoría del país desde 2022)
+  const fmt = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Mexico_City",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
+  const hoyYmd = fmt.format(now); // YYYY-MM-DD
+  const ymd = (fechaYmd && /^\d{4}-\d{2}-\d{2}/.test(fechaYmd))
+    ? fechaYmd.slice(0, 10)
+    : hoyYmd;
+  const esHoy = ymd === hoyYmd;
+
+  // Fecha local mediodía para evitar desfases de zona
+  const [y, m, d] = ymd.split("-").map(Number);
+  const ref = new Date(Date.UTC(y, m - 1, d, 18, 0, 0));
+
+  const corta = new Intl.DateTimeFormat("es-MX", {
+    timeZone: "America/Mexico_City",
+    day: "numeric",
+    month: "short",
+  }).format(ref);
+  const larga = new Intl.DateTimeFormat("es-MX", {
+    timeZone: "America/Mexico_City",
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+  }).format(ref);
+
+  return {
+    etiquetaCorta: corta,
+    etiquetaLarga: larga,
+    esHoy,
+  };
 }
 
 async function handleSolicitud(

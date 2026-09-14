@@ -9,6 +9,7 @@ import '../../models/mensaje_chat.dart';
 import '../../services/auth_service.dart';
 import '../../services/chat_horario_service.dart';
 import '../../services/chat_service.dart';
+import '../../utils/mexico_time.dart';
 
 class ChatConversacionScreen extends StatefulWidget {
   final String conversacionId;
@@ -477,28 +478,28 @@ class _ChatConversacionScreenState extends State<ChatConversacionScreen> {
 }
 
 String _formatearFechaMensaje(DateTime fecha) {
-  final local = fecha.toLocal();
-  final hoy = DateTime.now();
+  final local = MexicoTime.toMexico(fecha);
+  final hoy = MexicoTime.now();
   final hoySolo = DateTime(hoy.year, hoy.month, hoy.day);
   final ayer = hoySolo.subtract(const Duration(days: 1));
   final fechaSolo = DateTime(local.year, local.month, local.day);
-  final hora = DateFormat('HH:mm').format(local);
+  final hora = MexicoTime.hora(fecha);
 
   if (fechaSolo == hoySolo) return 'Hoy · $hora';
   if (fechaSolo == ayer) return 'Ayer · $hora';
-  return '${DateFormat('dd/MM/yyyy').format(local)} · $hora';
+  return '${MexicoTime.fecha(fecha)} · $hora';
 }
 
 String _formatearEtiquetaDia(DateTime fecha) {
-  final local = fecha.toLocal();
-  final hoy = DateTime.now();
+  final local = MexicoTime.toMexico(fecha);
+  final hoy = MexicoTime.now();
   final hoySolo = DateTime(hoy.year, hoy.month, hoy.day);
   final ayer = hoySolo.subtract(const Duration(days: 1));
   final fechaSolo = DateTime(local.year, local.month, local.day);
 
   if (fechaSolo == hoySolo) return 'Hoy';
   if (fechaSolo == ayer) return 'Ayer';
-  return DateFormat('EEEE d MMM yyyy', 'es_MX').format(local);
+  return MexicoTime.format(fecha, 'EEEE d MMM yyyy');
 }
 
 class _SeparadorFecha extends StatelessWidget {

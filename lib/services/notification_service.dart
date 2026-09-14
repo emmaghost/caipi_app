@@ -203,14 +203,25 @@ class NotificationService {
   Future<void> notificarNinoRecogido({
     required String nombreAlumno,
     String? quienRecibio,
+    DateTime? fechaSalida,
   }) async {
     final quien = (quienRecibio ?? '').trim();
+    final f = fechaSalida ?? DateTime.now();
+    final hoy = DateTime.now();
+    final esHoy =
+        f.year == hoy.year && f.month == hoy.month && f.day == hoy.day;
+    final dia =
+        '${f.day.toString().padLeft(2, '0')}/${f.month.toString().padLeft(2, '0')}';
+    final title = esHoy
+        ? 'Niño recogido · hoy $dia'
+        : 'Salida del $dia (no es de ahora)';
+    final base = esHoy
+        ? '$nombreAlumno ya fue entregado hoy ($dia)'
+        : '$nombreAlumno: registro de salida del $dia (día anterior, no es entrega de este momento)';
     await showNotification(
       id: DateTime.now().millisecondsSinceEpoch.remainder(100000) + 2,
-      title: 'Niño recogido',
-      body: quien.isEmpty
-          ? '$nombreAlumno ya fue entregado'
-          : '$nombreAlumno ya fue entregado. Lo recogió: $quien',
+      title: title,
+      body: quien.isEmpty ? base : '$base. Lo recogió: $quien',
       payload: '/directora/entrega-afuera',
     );
   }

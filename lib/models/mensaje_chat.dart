@@ -1,3 +1,5 @@
+import '../utils/mexico_time.dart';
+
 class MensajeChat {
   final String id;
   final String conversacionId;
@@ -22,7 +24,7 @@ class MensajeChat {
       remitenteId: json['remitente_id'] as String,
       contenido: json['contenido'] as String,
       leido: json['leido'] as bool? ?? false,
-      createdAt: DateTime.parse(json['created_at'] as String),
+      createdAt: MexicoTime.parse(json['created_at'] as String),
     );
   }
 }

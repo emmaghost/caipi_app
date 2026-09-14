@@ -19,12 +19,14 @@ import 'services/app_realtime_notifications.dart';
 import 'services/acceso_padre_service.dart';
 import 'routes/app_router.dart';
 import 'utils/push_payload_routes.dart';
+import 'utils/mexico_time.dart';
 
 /// Arranque a prueba de pantalla blanca:
 /// 1) Muestra UI de inmediato
 /// 2) Inicializa Supabase / notificaciones / FCM después
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
+  MexicoTime.init();
 
   // Fuentes: se permiten en red; si falla, el ErrorWidget / fallback del
   // paquete evita pantalla blanca. En release físico suele haber caché.

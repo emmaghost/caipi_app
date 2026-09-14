@@ -13,6 +13,7 @@ import '../models/solicitud_recogida.dart';
 import '../services/auth_service.dart';
 import '../services/notificacion_entrega_service.dart';
 import '../services/solicitud_recogida_service.dart';
+import '../utils/mexico_time.dart';
 
 class PanelSolicitudesRecogidaEscuela extends StatefulWidget {
   /// Cuando se pasa, solo muestra solicitudes de alumnos de ese grado.
@@ -173,7 +174,11 @@ class _PanelSolicitudesRecogidaEscuelaState
                   ),
                   const SizedBox(height: 10),
                   ...lista.map(
-                    (s) => _FilaSolicitud(solicitud: s, service: _service),
+                    (s) => _FilaSolicitud(
+                      key: ValueKey(s.id),
+                      solicitud: s,
+                      service: _service,
+                    ),
                   ),
                 ],
               ),
@@ -189,7 +194,11 @@ class _FilaSolicitud extends StatefulWidget {
   final SolicitudRecogida solicitud;
   final SolicitudRecogidaService service;
 
-  const _FilaSolicitud({required this.solicitud, required this.service});
+  const _FilaSolicitud({
+    super.key,
+    required this.solicitud,
+    required this.service,
+  });
 
   @override
   State<_FilaSolicitud> createState() => _FilaSolicitudState();
@@ -197,6 +206,23 @@ class _FilaSolicitud extends StatefulWidget {
 
 class _FilaSolicitudState extends State<_FilaSolicitud> {
   bool _procesando = false;
+  late Future<Map<String, String>> _nombresFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _nombresFuture = _nombres();
+  }
+
+  @override
+  void didUpdateWidget(_FilaSolicitud old) {
+    super.didUpdateWidget(old);
+    if (old.solicitud.id != widget.solicitud.id ||
+        old.solicitud.alumnoId != widget.solicitud.alumnoId ||
+        old.solicitud.padreId != widget.solicitud.padreId) {
+      _nombresFuture = _nombres();
+    }
+  }
 
   Future<Map<String, String>> _nombres() async {
     final client = Supabase.instance.client;
@@ -226,60 +252,102 @@ class _FilaSolicitudState extends State<_FilaSolicitud> {
 
   Future<void> _mostrarOpcionesEntrega(String nombrePadre) async {
     if (_procesando) return;
+    var notificarPadres = true;
+    final nPadres = await NotificacionEntregaService()
+        .contarPadresDeAlumno(widget.solicitud.alumnoId);
+    if (!mounted) return;
+    final labelPadres = nPadres >= 2
+        ? 'Notificar a los 2 padres/tutores'
+        : nPadres == 1
+            ? 'Notificar al padre/tutor'
+            : 'Notificar a padres (si hay vinculados)';
+
     final opcion = await showModalBottomSheet<String>(
       context: context,
       showDragHandle: true,
-      builder: (ctx) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Text(
-                '¿Cómo se entrega?',
-                style: GoogleFonts.fredoka(fontSize: 18),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'Elige si lo recogió el papá/mamá o alguien con código QR.',
-                style: GoogleFonts.poppins(fontSize: 13, color: AppColors.gris),
-              ),
-              const SizedBox(height: 16),
-              ListTile(
-                leading: const Icon(Icons.family_restroom, color: AppColors.verde),
-                title: const Text('Entregado al papá / mamá'),
-                subtitle: Text(nombrePadre),
-                onTap: () => Navigator.pop(ctx, 'padre'),
-              ),
-              ListTile(
-                leading: const Icon(Icons.qr_code_2, color: AppColors.azulOscuro),
-                title: const Text('Entregado con QR'),
-                subtitle: const Text('Validar código de 8 caracteres'),
-                onTap: () => Navigator.pop(ctx, 'qr'),
-              ),
-              ListTile(
-                leading: Icon(Icons.delete_outline, color: Colors.red.shade700),
-                title: const Text('Equivocación: quitar solicitud'),
-                subtitle: const Text('Borra este aviso (sin histórico)'),
-                onTap: () => Navigator.pop(ctx, 'borrar'),
-              ),
-            ],
+      isScrollControlled: true,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setModal) => SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  '¿Cómo se entrega?',
+                  style: GoogleFonts.fredoka(fontSize: 18),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Elige si lo recogió el papá/mamá o alguien con código QR.',
+                  style: GoogleFonts.poppins(fontSize: 13, color: AppColors.gris),
+                ),
+                const SizedBox(height: 12),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  secondary: Icon(
+                    notificarPadres
+                        ? Icons.notifications_active
+                        : Icons.notifications_off_outlined,
+                    color: notificarPadres ? AppColors.verde : AppColors.gris,
+                  ),
+                  title: Text(
+                    labelPadres,
+                    style: GoogleFonts.poppins(
+                      fontWeight: FontWeight.w600,
+                      fontSize: 14,
+                    ),
+                  ),
+                  subtitle: Text(
+                    notificarPadres
+                        ? 'Se enviará push a ${nPadres >= 2 ? 'ambos tutores' : 'el tutor'} con la fecha del día'
+                        : 'No se avisará a los padres (sí a maestra del grupo)',
+                    style: GoogleFonts.poppins(fontSize: 12),
+                  ),
+                  value: notificarPadres,
+                  activeColor: AppColors.verde,
+                  onChanged: (v) => setModal(() => notificarPadres = v),
+                ),
+                const Divider(),
+                ListTile(
+                  leading: const Icon(Icons.family_restroom, color: AppColors.verde),
+                  title: const Text('Entregado al papá / mamá'),
+                  subtitle: Text(nombrePadre),
+                  onTap: () => Navigator.pop(ctx, 'padre'),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.qr_code_2, color: AppColors.azulOscuro),
+                  title: const Text('Entregado con QR'),
+                  subtitle: const Text('Validar código de 8 caracteres'),
+                  onTap: () => Navigator.pop(ctx, 'qr'),
+                ),
+                ListTile(
+                  leading: Icon(Icons.delete_outline, color: Colors.red.shade700),
+                  title: const Text('Equivocación: quitar solicitud'),
+                  subtitle: const Text('Borra este aviso (sin histórico)'),
+                  onTap: () => Navigator.pop(ctx, 'borrar'),
+                ),
+              ],
+            ),
           ),
         ),
       ),
     );
     if (opcion == null || !mounted) return;
     if (opcion == 'padre') {
-      await _entregarAlPadre(nombrePadre);
+      await _entregarAlPadre(nombrePadre, notificarPadres: notificarPadres);
     } else if (opcion == 'qr') {
-      await _entregarConQr();
+      await _entregarConQr(notificarPadres: notificarPadres);
     } else if (opcion == 'borrar') {
       await _borrarSolicitud();
     }
   }
 
-  Future<void> _entregarAlPadre(String nombrePadre) async {
+  Future<void> _entregarAlPadre(
+    String nombrePadre, {
+    required bool notificarPadres,
+  }) async {
     final user = context.read<AuthService>().currentUser;
     if (user == null) return;
     setState(() => _procesando = true);
@@ -296,12 +364,19 @@ class _FilaSolicitudState extends State<_FilaSolicitud> {
       );
       await NotificacionEntregaService().avisarNinoRecogido(
         alumnoId: widget.solicitud.alumnoId,
+        padreSolicitanteId: widget.solicitud.padreId,
         quienRecibio: nombrePadre,
+        fechaSalida: DateTime.now(),
+        notificarPadres: notificarPadres,
       );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Entregado al papá/mamá · salida registrada'),
+        SnackBar(
+          content: Text(
+            notificarPadres
+                ? 'Entregado · salida registrada · padres notificados'
+                : 'Entregado · salida registrada · sin aviso a padres',
+          ),
           backgroundColor: Colors.green,
         ),
       );
@@ -316,7 +391,7 @@ class _FilaSolicitudState extends State<_FilaSolicitud> {
     }
   }
 
-  Future<void> _entregarConQr() async {
+  Future<void> _entregarConQr({required bool notificarPadres}) async {
     final user = context.read<AuthService>().currentUser;
     if (user == null) return;
 
@@ -430,11 +505,17 @@ class _FilaSolicitudState extends State<_FilaSolicitud> {
       await NotificacionEntregaService().avisarNinoRecogido(
         alumnoId: widget.solicitud.alumnoId,
         quienRecibio: nombrePersona,
+        fechaSalida: DateTime.now(),
+        notificarPadres: notificarPadres,
       );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Listo · entregado a $nombrePersona'),
+          content: Text(
+            notificarPadres
+                ? 'Listo · entregado a $nombrePersona · padres notificados'
+                : 'Listo · entregado a $nombrePersona · sin aviso a padres',
+          ),
           backgroundColor: Colors.green,
         ),
       );
@@ -496,8 +577,8 @@ class _FilaSolicitudState extends State<_FilaSolicitud> {
     String? nota,
   }) async {
     final client = Supabase.instance.client;
-    final hoy = DateFormat('yyyy-MM-dd').format(DateTime.now());
-    final ahora = DateFormat('HH:mm:ss').format(DateTime.now());
+    final hoy = MexicoTime.ymd(MexicoTime.now());
+    final ahora = MexicoTime.hms(MexicoTime.now());
     final existente = await client
         .from('control_salidas')
         .select('id, hora_entrada, quien_trajo')
@@ -533,11 +614,10 @@ class _FilaSolicitudState extends State<_FilaSolicitud> {
 
   @override
   Widget build(BuildContext context) {
-    final hora =
-        DateFormat('dd/MM/yyyy HH:mm').format(widget.solicitud.createdAt.toLocal());
+    final hora = MexicoTime.fechaHora(widget.solicitud.createdAt);
 
     return FutureBuilder<Map<String, String>>(
-      future: _nombres(),
+      future: _nombresFuture,
       builder: (context, snap) {
         final alumno = snap.data?['alumno'] ?? '…';
         final padre = snap.data?['padre'] ?? '…';
@@ -573,8 +653,14 @@ class _FilaSolicitudState extends State<_FilaSolicitud> {
                 ),
               ),
               FilledButton(
-                onPressed:
-                    _procesando ? null : () => _mostrarOpcionesEntrega(padre),
+                onPressed: _procesando
+                    ? null
+                    : () async {
+                        // Nombre fresco del papá de ESTA solicitud (no de otra fila).
+                        final nombres = await _nombres();
+                        if (!mounted) return;
+                        await _mostrarOpcionesEntrega(nombres['padre'] ?? 'Tutor');
+                      },
                 style: FilledButton.styleFrom(
                   backgroundColor: AppColors.verde,
                   padding:

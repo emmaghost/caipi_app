@@ -374,25 +374,151 @@ class SupabaseService {
     }
   }
 
-  /// Tras editar grado/plan: genera pagos solo si aún no hay ninguno.
-  /// Devuelve aviso si ya había pagos (no se tocan).
+  /// Tras editar plan/beca: recalcula colegiaturas pendientes sin abono.
+  /// No toca pagos parciales ni pagados.
   Future<String?> sincronizarPagosTrasEditarAlumno(Alumno alumno) async {
     final existentes = await _supabase
         .from('pagos')
         .select('id')
         .eq('alumno_id', alumno.id)
         .limit(1);
-    if ((existentes as List).isNotEmpty) {
-      return 'Grado/plan actualizado. Los pagos ya existentes no se modifican; '
-          'ajusta cargos en Pagos si hace falta.';
+
+    if ((existentes as List).isEmpty) {
+      try {
+        await _generarPagosIniciales(alumno);
+      } catch (e) {
+        // ignore: avoid_print
+        print('sincronizarPagosTrasEditarAlumno: $e');
+      }
+      return null;
     }
+
     try {
-      await _generarPagosIniciales(alumno);
+      final n = await recalcularColegiaturasPendientesPorBecaYPlan(alumno);
+      if (n == 0) {
+        return 'Plan/beca guardados. No había colegiaturas pendientes sin abono para actualizar.';
+      }
+      return 'Plan/beca aplicados: $n colegiatura(s) pendiente(s) actualizada(s).';
     } catch (e) {
       // ignore: avoid_print
-      print('sincronizarPagosTrasEditarAlumno: $e');
+      print('recalcularColegiaturas: $e');
+      return 'Plan/beca guardados, pero no se pudieron actualizar pagos: $e';
     }
-    return null;
+  }
+
+  /// Actualiza monto (con beca) de mensualidades sin abono; ajusta meses del plan.
+  Future<int> recalcularColegiaturasPendientesPorBecaYPlan(Alumno alumno) async {
+    if (alumno.esPlanEstimulacion) return 0;
+    if (alumno.gradoId == null || alumno.gradoId!.isEmpty) return 0;
+
+    final gradoRow = await _supabase
+        .from('grados')
+        .select('nombre')
+        .eq('id', alumno.gradoId!)
+        .maybeSingle();
+    if (gradoRow == null) return 0;
+    final g = Grado.fromJson({
+      ...gradoRow,
+      'id': alumno.gradoId,
+      'cupo_maximo': 20,
+      'activo': true,
+      'created_at': DateTime.now().toIso8601String(),
+      'updated_at': DateTime.now().toIso8601String(),
+    });
+    if (!g.muestraModuloPagos) return 0;
+
+    final plan = PagoHelpers.normalizarPlan(alumno.planPagos);
+    final descuentoFactor = (100 - alumno.becaPorcentaje.clamp(0, 100)) / 100.0;
+    final anioCiclo = PagoHelpers.anioInicioCiclo(alumno.fechaIngreso);
+
+    var costoMensualidad = plan == 10
+        ? 2400.0
+        : plan == 11
+            ? 2200.0
+            : 1500.0;
+    try {
+      final cfg = await _supabase
+          .from('configuracion_costos')
+          .select()
+          .eq('vigente', true)
+          .order('vigencia_desde', ascending: false)
+          .limit(1)
+          .maybeSingle();
+      if (cfg != null) {
+        final m12 = (cfg['costo_mensualidad_12'] as num).toDouble();
+        final m10 = (cfg['costo_mensualidad_10'] as num).toDouble();
+        final m11Raw = cfg['costo_mensualidad_11'];
+        final m11 = m11Raw is num ? m11Raw.toDouble() : ((m12 + m10) / 2);
+        costoMensualidad = plan == 10 ? m10 : plan == 11 ? m11 : m12;
+      }
+    } catch (_) {}
+
+    final neto = double.parse(
+      (costoMensualidad * descuentoFactor).toStringAsFixed(2),
+    );
+    final fechasPlan = PagoHelpers.fechasMensualidadesPlan(
+      planPagos: plan,
+      fechaIngreso: alumno.fechaIngreso,
+    );
+    final clavesPlan = {
+      for (final f in fechasPlan) PagoHelpers.etiquetaPeriodo(f),
+    };
+
+    final rows = await _supabase
+        .from('pagos')
+        .select()
+        .eq('alumno_id', alumno.id)
+        .eq('tipo_pago', 'mensualidad');
+
+    var actualizados = 0;
+    final clavesConPago = <String>{};
+
+    for (final raw in rows as List) {
+      final p = Pago.fromJson(Map<String, dynamic>.from(raw as Map));
+      final claveMes = (p.mes ?? '').trim();
+      if (claveMes.isNotEmpty) clavesConPago.add(claveMes);
+
+      final sinAbono = p.montoPagado <= 0 && !p.estaPagado && !p.estaParcial;
+      if (!sinAbono) continue;
+
+      final fueraDePlan =
+          claveMes.isNotEmpty && !clavesPlan.contains(claveMes);
+      if (fueraDePlan) {
+        await _supabase.from('pagos').delete().eq('id', p.id);
+        actualizados++;
+        continue;
+      }
+
+      if ((p.monto - neto).abs() > 0.009) {
+        await _supabase.from('pagos').update({
+          'monto': neto,
+          'updated_at': DateTime.now().toIso8601String(),
+        }).eq('id', p.id);
+        actualizados++;
+      }
+    }
+
+    // Meses del plan que faltan → crear
+    final totalMeses = fechasPlan.length;
+    for (var i = 0; i < fechasPlan.length; i++) {
+      final f = fechasPlan[i];
+      final etiqueta = PagoHelpers.etiquetaPeriodo(f);
+      if (clavesConPago.contains(etiqueta)) continue;
+      await _supabase.from('pagos').insert({
+        'alumno_id': alumno.id,
+        'mes': etiqueta,
+        'concepto': 'Colegiatura (${i + 1}/$totalMeses)',
+        'monto': neto,
+        'monto_pagado': 0.0,
+        'fecha_vencimiento': f.toIso8601String().split('T')[0],
+        'estatus': 'pendiente',
+        'tipo_pago': 'mensualidad',
+        'anio_escolar': anioCiclo,
+      });
+      actualizados++;
+    }
+
+    return actualizados;
   }
 
   Future<void> _generarPagosEstimulacion(Alumno alumno) async {
@@ -548,17 +674,63 @@ class SupabaseService {
     if (nombre.isEmpty) throw ArgumentError('El nombre del gasto es obligatorio');
     if (monto <= 0) throw ArgumentError('El monto debe ser mayor a cero');
 
+    // Vence hoy para que aparezca en «Pendientes» (no como futuro).
+    final vence = DateTime(now.year, now.month, now.day);
+
     await _supabase.from('pagos').insert({
       'alumno_id': alumnoId,
       'mes': nombre,
       'concepto': nombre,
       'monto': monto,
       'monto_pagado': 0.0,
-      'fecha_vencimiento': DateTime(now.year, now.month, 15).toIso8601String().split('T')[0],
+      'fecha_vencimiento': vence.toIso8601String().split('T')[0],
       'estatus': 'pendiente',
       'tipo_pago': 'otro',
       'anio_escolar': now.year,
     });
+  }
+
+  /// Cargo mensual de clase extracurricular (pestaña Extracurriculares).
+  /// Si [omitirSiExisteMes] y ya hay un pendiente/parcial del mismo mes+clase, no inserta.
+  /// Returns true si creó el pago.
+  Future<bool> agregarPagoExtracurricular({
+    required String alumnoId,
+    required String nombreClase,
+    required double monto,
+    bool omitirSiExisteMes = false,
+  }) async {
+    if (monto <= 0) throw ArgumentError('El monto debe ser mayor a cero');
+    final now = DateTime.now();
+    final periodo = PagoHelpers.etiquetaPeriodo(now);
+    final concepto = nombreClase.trim();
+    final mesLabel = '$concepto · $periodo';
+
+    if (omitirSiExisteMes) {
+      final existentes = await _supabase
+          .from('pagos')
+          .select('id')
+          .eq('alumno_id', alumnoId)
+          .eq('tipo_pago', 'extracurricular')
+          .ilike('concepto', concepto)
+          .ilike('mes', '%$periodo%')
+          .neq('estatus', 'cancelado')
+          .limit(1);
+      if ((existentes as List).isNotEmpty) return false;
+    }
+
+    final vence = DateTime(now.year, now.month, now.day);
+    await _supabase.from('pagos').insert({
+      'alumno_id': alumnoId,
+      'mes': mesLabel,
+      'concepto': concepto,
+      'monto': monto,
+      'monto_pagado': 0.0,
+      'fecha_vencimiento': vence.toIso8601String().split('T')[0],
+      'estatus': 'pendiente',
+      'tipo_pago': 'extracurricular',
+      'anio_escolar': now.year,
+    });
+    return true;
   }
 
   /// Alta manual de cargo (colegiatura u otro) con periodo, descuento y notas.

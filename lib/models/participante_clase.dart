@@ -45,7 +45,9 @@ class ParticipanteClase {
       apellidosExterno: json['apellidos_externo'] as String?,
       telefonoExterno: json['telefono_externo'] as String?,
       emailExterno: json['email_externo'] as String?,
-      fechaInscripcion: DateTime.parse(json['fecha_inscripcion']),
+      fechaInscripcion: DateTime.parse(
+        (json['fecha_inscripcion'] as String).split('T').first,
+      ),
       activo: json['activo'] as bool? ?? true,
       createdAt: DateTime.parse(json['created_at']),
     );

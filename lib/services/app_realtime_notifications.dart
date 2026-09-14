@@ -70,7 +70,8 @@ class _AppRealtimeNotificationsState extends State<AppRealtimeNotifications> {
         user.esProfesorAdmin ||
         (user.esProfesor && !user.esMaestraIngles);
 
-    if (!user.esMaestraIngles && !user.esSecretaria) {
+    // Chat: directora, maestras (incl. inglés/música) y padres. No secretaria/caja.
+    if (!user.esSecretaria && !user.esCaja) {
       _chatSub = Supabase.instance.client
           .from('mensajes_chat')
           .stream(primaryKey: ['id'])
@@ -117,6 +118,7 @@ class _AppRealtimeNotificationsState extends State<AppRealtimeNotifications> {
   Future<void> _onMensajesChat(List<Map<String, dynamic>> rows) async {
     final userId = _usuarioId;
     if (userId == null) return;
+    final user = widget.authService.currentUser;
 
     for (final row in rows) {
       final id = row['id']?.toString();
@@ -128,13 +130,50 @@ class _AppRealtimeNotificationsState extends State<AppRealtimeNotifications> {
       final remitenteId = row['remitente_id']?.toString();
       if (remitenteId == null || remitenteId == userId) continue;
 
-      final contenido = (row['contenido'] as String?) ?? 'Nuevo mensaje';
-      final preview = contenido.length > 80 ? '${contenido.substring(0, 80)}…' : contenido;
+      final conversacionId = row['conversacion_id']?.toString();
+      if (conversacionId == null) continue;
 
+      // Solo notificar si este usuario es el destinatario del hilo.
+      try {
+        final conv = await Supabase.instance.client
+            .from('conversaciones')
+            .select('padre_id, canal, staff_id')
+            .eq('id', conversacionId)
+            .maybeSingle();
+        if (conv == null) continue;
+
+        final padreId = conv['padre_id']?.toString();
+        final staffId = conv['staff_id']?.toString();
+        final canal = (conv['canal'] as String?) ?? 'directora';
+
+        if (_esEscuela || user?.esProfesor == true) {
+          if (staffId != null && staffId.isNotEmpty) {
+            // Hilo con la miss: solo esa miss (no la directora).
+            if (staffId != userId) continue;
+          } else if (canal == 'profesor') {
+            continue;
+          } else {
+            // Canal directora: solo rol directora.
+            if (user?.esDirectora != true) continue;
+          }
+        } else {
+          // Padre: solo su conversación.
+          if (padreId != userId) continue;
+        }
+      } catch (_) {
+        continue;
+      }
+
+      final contenido = (row['contenido'] as String?) ?? 'Nuevo mensaje';
+      final preview =
+          contenido.length > 80 ? '${contenido.substring(0, 80)}…' : contenido;
+
+      final soyEscuela =
+          user?.esDirectora == true || user?.esProfesor == true;
       await widget.notificationService.notificarNuevoMensajeChat(
-        remitenteEsPadre: _esEscuela,
+        remitenteEsPadre: soyEscuela,
         preview: preview,
-        ruta: _esEscuela ? '/directora/chat' : '/padre/chat',
+        ruta: soyEscuela ? '/directora/chat' : '/padre/chat',
       );
     }
     _chatPrimeraCarga = false;

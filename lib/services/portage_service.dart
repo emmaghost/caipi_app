@@ -38,6 +38,7 @@ class PortageService {
     required String createdBy,
     bool activa = true,
     String tipo = 'habilidades',
+    int? mesesEdad,
   }) async {
     final response = await _supabase
         .from('portage_listas')
@@ -47,6 +48,7 @@ class PortageService {
           'activa': activa,
           'tipo': tipo,
           'created_by': createdBy,
+          if (mesesEdad != null) 'meses_edad': mesesEdad,
         })
         .select()
         .single();
@@ -151,8 +153,9 @@ class PortageService {
   /// Reemplaza todos los indicadores de la lista por [nombres] (orden = índice).
   Future<List<PortageIndicador>> guardarIndicadores(
     String listaId,
-    List<String> nombres,
-  ) async {
+    List<String> nombres, {
+    List<String?>? areas,
+  }) async {
     await _supabase
         .from('portage_indicadores')
         .delete()
@@ -162,10 +165,12 @@ class PortageService {
     for (var i = 0; i < nombres.length; i++) {
       final nombre = nombres[i].trim();
       if (nombre.isEmpty) continue;
+      final area = (areas != null && i < areas.length) ? areas[i] : null;
       rows.add({
         'lista_id': listaId,
         'nombre': nombre,
         'orden': rows.length,
+        if (area != null && area.trim().isNotEmpty) 'area': area.trim(),
       });
     }
 
@@ -179,6 +184,103 @@ class PortageService {
     return (response as List)
         .map((json) => PortageIndicador.fromJson(json as Map<String, dynamic>))
         .toList();
+  }
+
+  /// Carga un tramo de hitos (por meses) en un grado. No asigna a niños.
+  /// Si ya existe lista con mismo grado + meses, no duplica.
+  Future<PortageLista?> cargarHitosTramo({
+    required String gradoId,
+    required int meses,
+    required String createdBy,
+    required List<({String area, List<String> items})> areas,
+  }) async {
+    final existentes = await listarListasPorGrado(gradoId);
+    final ya = existentes.where((l) => l.mesesEdad == meses).toList();
+    if (ya.isNotEmpty) return ya.first;
+
+    final lista = await crearLista(
+      gradoId: gradoId,
+      nombre: 'Hitos $meses meses',
+      createdBy: createdBy,
+      tipo: 'habilidades',
+      mesesEdad: meses,
+    );
+
+    final nombres = <String>[];
+    final areasFlat = <String?>[];
+    for (final a in areas) {
+      for (final item in a.items) {
+        nombres.add(item);
+        areasFlat.add(a.area);
+      }
+    }
+    await guardarIndicadores(lista.id, nombres, areas: areasFlat);
+    return lista;
+  }
+
+  Future<List<String>> listarListaIdsAsignadasAlumno(String alumnoId) async {
+    final rows = await _supabase
+        .from('portage_alumno_listas')
+        .select('lista_id')
+        .eq('alumno_id', alumnoId);
+    return (rows as List)
+        .map((r) => r['lista_id'] as String?)
+        .whereType<String>()
+        .toList();
+  }
+
+  Future<List<PortageLista>> listarListasAsignadasAlumno(String alumnoId) async {
+    final ids = await listarListaIdsAsignadasAlumno(alumnoId);
+    if (ids.isEmpty) return [];
+    final rows = await _supabase
+        .from('portage_listas')
+        .select()
+        .inFilter('id', ids)
+        .order('meses_edad');
+    return (rows as List)
+        .map((j) => PortageLista.fromJson(Map<String, dynamic>.from(j as Map)))
+        .toList();
+  }
+
+  Future<void> asignarListaAlumno({
+    required String alumnoId,
+    required String listaId,
+    String? assignedBy,
+  }) async {
+    await _supabase.from('portage_alumno_listas').upsert({
+      'alumno_id': alumnoId,
+      'lista_id': listaId,
+      if (assignedBy != null) 'assigned_by': assignedBy,
+    });
+  }
+
+  Future<void> quitarListaAlumno({
+    required String alumnoId,
+    required String listaId,
+  }) async {
+    await _supabase
+        .from('portage_alumno_listas')
+        .delete()
+        .eq('alumno_id', alumnoId)
+        .eq('lista_id', listaId);
+  }
+
+  Future<void> sincronizarAsignacionesAlumno({
+    required String alumnoId,
+    required Set<String> listaIds,
+    String? assignedBy,
+  }) async {
+    final actuales = (await listarListaIdsAsignadasAlumno(alumnoId)).toSet();
+    for (final id in actuales.difference(listaIds)) {
+      await quitarListaAlumno(alumnoId: alumnoId, listaId: id);
+    }
+    for (final id in listaIds.difference(actuales)) {
+      await asignarListaAlumno(
+        alumnoId: alumnoId,
+        listaId: id,
+        assignedBy: assignedBy,
+      );
+    }
   }
 
   // --- Evaluaciones ---

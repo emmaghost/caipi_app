@@ -6,9 +6,8 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../services/auth_service.dart';
 import '../../services/supabase_service.dart';
 import '../../models/alumno.dart';
-import '../../models/anuncio.dart';
 import '../../widgets/hijo_card.dart';
-import '../../widgets/anuncio_card.dart';
+import '../../widgets/anuncios_padre_section.dart';
 import '../../widgets/app_drawer.dart';
 import '../../config/app_colors.dart';
 
@@ -192,51 +191,7 @@ class DashboardPadre extends StatelessWidget {
 
           const SizedBox(height: 24),
 
-          // Anuncios
-          Text(
-            'Anuncios',
-            style: Theme.of(context).textTheme.titleLarge?.copyWith(
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          const SizedBox(height: 16),
-
-          StreamBuilder<List<Anuncio>>(
-            stream: firestoreService.getAnuncios(),
-            builder: (context, snapshot) {
-              if (snapshot.connectionState == ConnectionState.waiting) {
-                return const Center(child: CircularProgressIndicator());
-              }
-
-              if (!snapshot.hasData || snapshot.data!.isEmpty) {
-                return const Card(
-                  child: Padding(
-                    padding: EdgeInsets.all(32),
-                    child: Center(
-                      child: Text('No hay anuncios'),
-                    ),
-                  ),
-                );
-              }
-
-              final anuncios = snapshot.data!;
-
-              return Column(
-                children: anuncios.map((anuncio) {
-                  return AnuncioCard(
-                    anuncio: anuncio,
-                    usuarioId: usuario.id,
-                    onMarcarLeido: () async {
-                      await firestoreService.marcarAnuncioLeido(
-                        anuncio.id,
-                        usuario.id,
-                      );
-                    },
-                  );
-                }).toList(),
-              );
-            },
-          ),
+          AnunciosPadreSection(usuarioId: usuario.id),
         ],
       ),
     );

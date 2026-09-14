@@ -510,22 +510,47 @@ class _BitacorasScreenState extends State<BitacorasScreen> {
         ],
       ),
       floatingActionButton: (_esDirectora || !_profesoraSinGrupo)
-          ? FloatingActionButton.extended(
-              onPressed: () {
-                GoRouter.of(context).push(
-                  '/directora/bitacoras/crear',
-                  extra: {'fecha': _fechaSeleccionada},
-                );
-              },
-              backgroundColor: const Color(0xFF166534),
-              icon: const Icon(Icons.add, color: Colors.white),
-              label: Text(
-                'Nueva bitácora',
-                style: GoogleFonts.poppins(
-                  color: Colors.white,
-                  fontWeight: FontWeight.w600,
+          ? Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                FloatingActionButton.extended(
+                  heroTag: 'bitacora_uno',
+                  onPressed: () {
+                    GoRouter.of(context).push(
+                      '/directora/bitacoras/crear',
+                      extra: {'fecha': _fechaSeleccionada},
+                    );
+                  },
+                  backgroundColor: Colors.white,
+                  foregroundColor: const Color(0xFF166534),
+                  elevation: 2,
+                  icon: const Icon(Icons.person_add_alt_1),
+                  label: Text(
+                    'Uno solo',
+                    style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
+                  ),
                 ),
-              ),
+                const SizedBox(height: 10),
+                FloatingActionButton.extended(
+                  heroTag: 'bitacora_grupo',
+                  onPressed: () {
+                    GoRouter.of(context).push(
+                      '/directora/bitacoras/rapida',
+                      extra: {'fecha': _fechaSeleccionada},
+                    );
+                  },
+                  backgroundColor: const Color(0xFF166534),
+                  icon: const Icon(Icons.groups, color: Colors.white),
+                  label: Text(
+                    'Bitácora del grupo',
+                    style: GoogleFonts.poppins(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
             )
           : null,
     );

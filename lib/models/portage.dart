@@ -39,6 +39,8 @@ class PortageLista {
   final bool activa;
   /// `habilidades` | `alertas`
   final String tipo;
+  /// Edad en meses del tramo de hitos (3, 6, … 72). Null = lista legacy.
+  final int? mesesEdad;
   final String? createdBy;
   final DateTime createdAt;
   final DateTime updatedAt;
@@ -49,6 +51,7 @@ class PortageLista {
     required this.nombre,
     this.activa = true,
     this.tipo = 'habilidades',
+    this.mesesEdad,
     this.createdBy,
     required this.createdAt,
     required this.updatedAt,
@@ -56,6 +59,7 @@ class PortageLista {
 
   bool get esAlertas => tipo == 'alertas';
   bool get esHabilidades => !esAlertas;
+  bool get esHitos => mesesEdad != null;
 
   String get tipoEtiqueta => esAlertas ? 'Alertas' : 'Habilidades';
 
@@ -66,6 +70,7 @@ class PortageLista {
       nombre: json['nombre'] as String? ?? 'Indicadores de desarrollo',
       activa: json['activa'] as bool? ?? true,
       tipo: (json['tipo'] as String?) ?? 'habilidades',
+      mesesEdad: json['meses_edad'] as int?,
       createdBy: json['created_by'] as String?,
       createdAt: DateTime.parse(json['created_at'] as String),
       updatedAt: DateTime.parse(json['updated_at'] as String),
@@ -78,6 +83,7 @@ class PortageLista {
       'nombre': nombre,
       'activa': activa,
       'tipo': tipo,
+      if (mesesEdad != null) 'meses_edad': mesesEdad,
       if (createdBy != null) 'created_by': createdBy,
     };
   }
@@ -88,6 +94,7 @@ class PortageIndicador {
   final String listaId;
   final String nombre;
   final int orden;
+  final String? area;
   final DateTime createdAt;
 
   PortageIndicador({
@@ -95,6 +102,7 @@ class PortageIndicador {
     required this.listaId,
     required this.nombre,
     required this.orden,
+    this.area,
     required this.createdAt,
   });
 
@@ -104,6 +112,7 @@ class PortageIndicador {
       listaId: json['lista_id'] as String,
       nombre: json['nombre'] as String,
       orden: json['orden'] as int? ?? 0,
+      area: json['area'] as String?,
       createdAt: DateTime.parse(json['created_at'] as String),
     );
   }
@@ -113,6 +122,7 @@ class PortageIndicador {
       'lista_id': listaId,
       'nombre': nombre,
       'orden': orden,
+      if (area != null) 'area': area,
     };
   }
 }

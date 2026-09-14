@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
 import '../config/app_colors.dart';
 import '../services/auth_service.dart';
 import '../services/solicitud_recogida_service.dart';
+import '../utils/mexico_time.dart';
 
 class SolicitudRecogidaPadreCard extends StatefulWidget {
   final String alumnoId;
@@ -79,7 +79,7 @@ class _SolicitudRecogidaPadreCardState extends State<SolicitudRecogidaPadreCard>
       builder: (context, snapshot) {
         final pendiente = snapshot.data;
         final hora = pendiente != null
-            ? DateFormat('dd/MM/yyyy HH:mm').format(pendiente.createdAt.toLocal())
+            ? MexicoTime.fechaHora(pendiente.createdAt)
             : null;
 
         return Card(

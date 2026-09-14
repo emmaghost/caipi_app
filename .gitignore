@@ -28,6 +28,7 @@ android/app/upload-keystore.jks
 .pub-cache/
 .pub/
 /build/
+/exports/
 
 # Android related (rutas locales; cada dev las genera al abrir Android Studio / flutter)
 **/android/**/local.properties

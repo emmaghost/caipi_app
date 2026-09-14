@@ -162,6 +162,100 @@ class _PortageAlumnoHubScreenState extends State<PortageAlumnoHubScreen> {
     }
   }
 
+  Future<void> _asignarHitos() async {
+    final alumno = _alumno;
+    if (alumno == null || alumno.gradoId == null) return;
+    final user = context.read<AuthService>().currentUser;
+    final disponibles =
+        await _portage.listarListasPorGrado(alumno.gradoId!);
+    final hitos = disponibles.where((l) => l.mesesEdad != null).toList()
+      ..sort((a, b) => (a.mesesEdad ?? 0).compareTo(b.mesesEdad ?? 0));
+    if (hitos.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'No hay hitos cargados en este grupo. Ve a «Hitos (cargar catálogo)».',
+          ),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+    final actuales =
+        (await _portage.listarListaIdsAsignadasAlumno(alumno.id)).toSet();
+    if (!mounted) return;
+
+    final seleccion = Set<String>.from(actuales);
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setLocal) => AlertDialog(
+          title: const Text('Asignar hitos'),
+          content: SizedBox(
+            width: 400,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: hitos
+                    .map(
+                      (l) => CheckboxListTile(
+                        value: seleccion.contains(l.id),
+                        title: Text(l.nombre),
+                        subtitle: Text('${l.mesesEdad} meses'),
+                        onChanged: (v) => setLocal(() {
+                          if (v == true) {
+                            seleccion.add(l.id);
+                          } else {
+                            seleccion.remove(l.id);
+                          }
+                        }),
+                      ),
+                    )
+                    .toList(),
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancelar'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Guardar'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (ok != true) return;
+    try {
+      await _portage.sincronizarAsignacionesAlumno(
+        alumnoId: alumno.id,
+        listaIds: seleccion,
+        assignedBy: user?.id,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('${seleccion.length} lista(s) asignada(s)'),
+          backgroundColor: Colors.green.shade700,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Error al asignar. ¿Ejecutaste HITOS_DESARROLLO_CARGAR.sql?\n$e',
+          ),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
   Future<void> _calificarUltima() async {
     final alumno = _alumno;
     final ultima = _ultima;
@@ -226,8 +320,10 @@ class _PortageAlumnoHubScreenState extends State<PortageAlumnoHubScreen> {
                               ),
                               const SizedBox(height: 4),
                               Text(
-                                'Se califica solo el último seguimiento. '
-                                'La gráfica muestra cómo ha ido evolucionando en el tiempo.',
+                                '1) Asigna hitos a este niño. '
+                                '2) Crea seguimientos en el grupo (cada uno = una fecha). '
+                                '3) Califica. Si algo que ya lograba luego falla, '
+                                'baja en la gráfica = retroceso.',
                                 style: GoogleFonts.poppins(
                                   fontSize: 12,
                                   color: AppColors.gris,
@@ -240,7 +336,7 @@ class _PortageAlumnoHubScreenState extends State<PortageAlumnoHubScreen> {
                                   title: const Text('Visible al padre'),
                                   subtitle: Text(
                                     alumno.portageVisiblePadre
-                                        ? 'Ve la última evaluación'
+                                        ? 'Ve hitos asignados y calificados'
                                         : 'No ve indicadores',
                                     style: GoogleFonts.poppins(fontSize: 12),
                                   ),
@@ -248,6 +344,12 @@ class _PortageAlumnoHubScreenState extends State<PortageAlumnoHubScreen> {
                                   onChanged: (_) => _toggleVisiblePadre(),
                                 ),
                               ],
+                              const SizedBox(height: 8),
+                              OutlinedButton.icon(
+                                onPressed: _asignarHitos,
+                                icon: const Icon(Icons.playlist_add_check),
+                                label: const Text('Asignar hitos a este niño'),
+                              ),
                             ],
                           ),
                         ),
@@ -263,8 +365,8 @@ class _PortageAlumnoHubScreenState extends State<PortageAlumnoHubScreen> {
                       const SizedBox(height: 8),
                       if (ultima == null)
                         Text(
-                          'Aún no hay seguimientos en este grupo. '
-                          'La directora los crea con «Nueva» en Administrar.',
+                          'Aún no hay seguimientos. Carga hitos en el menú '
+                          '«Hitos (cargar catálogo)», asígnalos aquí y crea un seguimiento.',
                           style: GoogleFonts.poppins(color: AppColors.gris),
                         )
                       else
@@ -298,7 +400,7 @@ class _PortageAlumnoHubScreenState extends State<PortageAlumnoHubScreen> {
                       ],
                       const SizedBox(height: 24),
                       Text(
-                        'Evolución en el tiempo',
+                        'Evolución en el tiempo (histórico)',
                         style: GoogleFonts.poppins(
                           fontSize: 15,
                           fontWeight: FontWeight.w700,
@@ -306,7 +408,8 @@ class _PortageAlumnoHubScreenState extends State<PortageAlumnoHubScreen> {
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        'Cada punto es un seguimiento de este niño en el rango elegido.',
+                        'Cada punto es un seguimiento. Si el % baja, hubo retroceso '
+                        '(ej. esfínteres: logrado → en proceso).',
                         style: GoogleFonts.poppins(
                           fontSize: 12,
                           color: AppColors.gris,
@@ -344,6 +447,55 @@ class _PortageAlumnoHubScreenState extends State<PortageAlumnoHubScreen> {
                                 ),
                         ),
                       ),
+                      if (_evaluaciones.length > 1) ...[
+                        const SizedBox(height: 20),
+                        Text(
+                          'Histórico de seguimientos',
+                          style: GoogleFonts.poppins(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Toca uno anterior para ver o actualizar esa calificación.',
+                          style: GoogleFonts.poppins(
+                            fontSize: 12,
+                            color: AppColors.gris,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        ..._evaluaciones.map(
+                          (e) {
+                            final esUltima = ultima != null && e.id == ultima.id;
+                            return Card(
+                              margin: const EdgeInsets.only(bottom: 6),
+                              child: ListTile(
+                                dense: true,
+                                title: Text(
+                                  e.tituloDisplay,
+                                  style: GoogleFonts.poppins(
+                                    fontWeight: esUltima
+                                        ? FontWeight.w700
+                                        : FontWeight.w500,
+                                  ),
+                                ),
+                                subtitle: Text(
+                                  DateFormat('dd/MM/yyyy').format(e.fechaInicio) +
+                                      (esUltima ? ' · actual' : ''),
+                                ),
+                                trailing: const Icon(Icons.chevron_right),
+                                onTap: () async {
+                                  await context.push(
+                                    '/directora/portage/evaluacion/${e.id}/alumno/${alumno.id}',
+                                  );
+                                  await _cargar();
+                                },
+                              ),
+                            );
+                          },
+                        ),
+                      ],
                       if (ultima != null) ...[
                         const SizedBox(height: 8),
                         CheckboxListTile(

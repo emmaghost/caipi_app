@@ -11,6 +11,7 @@ import '../../models/grado.dart';
 import '../../services/auth_service.dart';
 import '../../services/chat_service.dart';
 import '../../services/profesor_grupos_service.dart';
+import '../../utils/mexico_time.dart';
 import '../../widgets/app_drawer.dart';
 import '../../widgets/caipi_app_bar_leading.dart';
 
@@ -524,10 +525,10 @@ class _ChatListaEscuelaScreenState extends State<ChatListaEscuelaScreen> {
                                           if (conv?.ultimoMensajeAt !=
                                               null)
                                             Text(
-                                              DateFormat('dd/MM HH:mm')
-                                                  .format(
-                                                conv!.ultimoMensajeAt!
-                                                    .toLocal(),
+                                              DateFormat('dd/MM HH:mm').format(
+                                                MexicoTime.toMexico(
+                                                  conv!.ultimoMensajeAt!,
+                                                ),
                                               ),
                                               style: GoogleFonts.poppins(
                                                 fontSize: 11,

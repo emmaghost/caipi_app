@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
@@ -230,7 +230,7 @@ class _PortageEvaluacionScreenState extends State<PortageEvaluacionScreen> {
                                         );
                                       },
                                     ),
-                                    const Icon(Icons.edit_note),
+                                    const Icon(Icons.chevron_right),
                                   ],
                                 ),
                                 onTap: () async {
@@ -470,7 +470,8 @@ class _PortageCalificarAlumnoScreenState
   }
 }
 
-/// Vista padre: última evaluación de indicadores (ligas Drive van aparte).
+
+/// Vista padre: hitos asignados, por lista y calificación (sin volcar todo).
 class PortagePadreVista extends StatelessWidget {
   final Alumno alumno;
 
@@ -481,43 +482,91 @@ class PortagePadreVista extends StatelessWidget {
     if (!alumno.portageVisiblePadre) {
       return const SizedBox.shrink();
     }
-    return FutureBuilder(
+    return FutureBuilder<_PadreHitosData>(
       future: _cargar(),
       builder: (context, snap) {
-        if (!snap.hasData) {
-          return const SizedBox.shrink();
-        }
+        if (!snap.hasData) return const SizedBox.shrink();
         final data = snap.data!;
-        if (data.eval == null) return const SizedBox.shrink();
+        if (data.bloques.isEmpty) {
+          return Card(
+            child: Padding(
+              padding: const EdgeInsets.all(14),
+              child: Text(
+                'Aún no hay hitos asignados para mostrar.',
+                style: GoogleFonts.poppins(fontSize: 13),
+              ),
+            ),
+          );
+        }
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Text(
-              'Indicadores de desarrollo (última evaluación)',
-              style: GoogleFonts.poppins(fontWeight: FontWeight.w700),
+              'Hitos de desarrollo',
+              style: GoogleFonts.poppins(
+                fontWeight: FontWeight.w700,
+                fontSize: 16,
+              ),
             ),
-            const SizedBox(height: 8),
-            ...data.indicadores.map((ind) {
-              final r = data.resultados[ind.id];
+            const SizedBox(height: 4),
+            Text(
+              'Solo lo que la escuela asignó y calificó para tu hijo/a.',
+              style: GoogleFonts.poppins(fontSize: 12, color: Colors.grey[700]),
+            ),
+            const SizedBox(height: 10),
+            ...data.bloques.map((b) {
               return Card(
-                child: ListTile(
-                  title: Text(ind.nombre, style: const TextStyle(fontSize: 13)),
+                margin: const EdgeInsets.only(bottom: 10),
+                child: ExpansionTile(
+                  initiallyExpanded: data.bloques.length == 1,
+                  title: Text(
+                    b.lista.nombre,
+                    style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
+                  ),
                   subtitle: Text(
-                    [
-                      PortageEstado.etiqueta(r?.estado),
-                      if (r?.observaciones?.trim().isNotEmpty == true)
-                        r!.observaciones!.trim(),
-                    ].join(' · '),
+                    '${b.calificados}/${b.indicadores.length} calificados',
+                    style: GoogleFonts.poppins(fontSize: 12),
                   ),
-                  trailing: Text(
-                    PortageEstado.simbolo(r?.estado),
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      color: PortageEstado.isLogrado(r?.estado)
-                          ? AppColors.verde
-                          : Colors.orange,
-                    ),
-                  ),
+                  children: [
+                    ..._agruparPorArea(b.indicadores).entries.expand((e) {
+                      return [
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+                          child: Text(
+                            e.key,
+                            style: GoogleFonts.poppins(
+                              fontWeight: FontWeight.w700,
+                              fontSize: 13,
+                              color: AppColors.morado,
+                            ),
+                          ),
+                        ),
+                        ...e.value.map((ind) {
+                          final r = b.resultados[ind.id];
+                          return ListTile(
+                            dense: true,
+                            title: Text(
+                              ind.nombre,
+                              style: const TextStyle(fontSize: 13),
+                            ),
+                            subtitle: Text(
+                              PortageEstado.etiqueta(r?.estado),
+                              style: GoogleFonts.poppins(fontSize: 12),
+                            ),
+                            trailing: Text(
+                              PortageEstado.simbolo(r?.estado),
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                color: PortageEstado.isLogrado(r?.estado)
+                                    ? AppColors.verde
+                                    : Colors.orange,
+                              ),
+                            ),
+                          );
+                        }),
+                      ];
+                    }),
+                  ],
                 ),
               );
             }),
@@ -527,30 +576,69 @@ class PortagePadreVista extends StatelessWidget {
     );
   }
 
-  Future<_PadrePortageData> _cargar() async {
-    final svc = PortageService();
-    final eval = await svc.ultimaEvaluacionParaAlumno(alumno.id);
-    if (eval == null) {
-      return _PadrePortageData();
+  Map<String, List<PortageIndicador>> _agruparPorArea(
+    List<PortageIndicador> inds,
+  ) {
+    final map = <String, List<PortageIndicador>>{};
+    for (final i in inds) {
+      final key = (i.area == null || i.area!.trim().isEmpty)
+          ? 'Indicadores'
+          : i.area!;
+      map.putIfAbsent(key, () => []).add(i);
     }
-    final inds = await svc.listarIndicadores(eval.listaId);
-    final res = await svc.obtenerResultados(eval.id, alumno.id);
-    return _PadrePortageData(
-      eval: eval,
-      indicadores: inds,
-      resultados: {for (final r in res) r.indicadorId: r},
-    );
+    return map;
+  }
+
+  Future<_PadreHitosData> _cargar() async {
+    final svc = PortageService();
+    final listas = await svc.listarListasAsignadasAlumno(alumno.id);
+    final bloques = <_PadreHitosBloque>[];
+
+    for (final lista in listas) {
+      final inds = await svc.listarIndicadores(lista.id);
+      final evals = await svc.listarEvaluacionesPorLista(lista.id);
+      final eval = evals.isEmpty ? null : evals.first;
+      final resultados = <String, PortageResultado>{};
+      if (eval != null) {
+        final res = await svc.obtenerResultados(eval.id, alumno.id);
+        for (final r in res) {
+          resultados[r.indicadorId] = r;
+        }
+      }
+      final visibles = inds.where((i) {
+        final r = resultados[i.id];
+        return r != null && !PortageEstado.isSinCalificar(r.estado);
+      }).toList();
+      if (visibles.isEmpty && resultados.isEmpty) continue;
+      final mostrar = visibles.isNotEmpty ? visibles : inds;
+      bloques.add(
+        _PadreHitosBloque(
+          lista: lista,
+          indicadores: mostrar,
+          resultados: resultados,
+          calificados: visibles.length,
+        ),
+      );
+    }
+
+    return _PadreHitosData(bloques: bloques);
   }
 }
 
-class _PadrePortageData {
-  final PortageEvaluacion? eval;
+class _PadreHitosData {
+  final List<_PadreHitosBloque> bloques;
+  _PadreHitosData({required this.bloques});
+}
+
+class _PadreHitosBloque {
+  final PortageLista lista;
   final List<PortageIndicador> indicadores;
   final Map<String, PortageResultado> resultados;
-
-  _PadrePortageData({
-    this.eval,
-    this.indicadores = const [],
-    this.resultados = const {},
+  final int calificados;
+  _PadreHitosBloque({
+    required this.lista,
+    required this.indicadores,
+    required this.resultados,
+    required this.calificados,
   });
 }

@@ -121,6 +121,21 @@ class _CrearClaseExtracurricularScreenState extends State<CrearClaseExtracurricu
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: AppColors.azulOscuro.withValues(alpha: 0.08),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Text(
+                        'Solo das de alta la clase con su costo. '
+                        'Nadie queda inscrito todavía: los niños se asignan después '
+                        'y ahí se genera el pago.',
+                        style: GoogleFonts.poppins(fontSize: 13),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
                     // Nombre
                     TextFormField(
                       controller: _nombreController,
@@ -156,9 +171,9 @@ class _CrearClaseExtracurricularScreenState extends State<CrearClaseExtracurricu
                     ),
                     const SizedBox(height: 16),
 
-                    // Días de la semana
+                    // Días de la semana (opcional al crear; se puede completar después)
                     Text(
-                      'Días de la semana *',
+                      'Días de la semana (opcional)',
                       style: GoogleFonts.poppins(
                         fontSize: 16,
                         fontWeight: FontWeight.w600,
@@ -182,22 +197,11 @@ class _CrearClaseExtracurricularScreenState extends State<CrearClaseExtracurricu
                               }
                             });
                           },
-                          selectedColor: AppColors.azulOscuro.withOpacity(0.3),
+                          selectedColor: AppColors.azulOscuro.withValues(alpha: 0.3),
                           checkmarkColor: AppColors.azulOscuro,
                         );
                       }).toList(),
                     ),
-                    if (_diasSeleccionados.isEmpty)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 8),
-                        child: Text(
-                          'Selecciona al menos un día',
-                          style: GoogleFonts.poppins(
-                            fontSize: 12,
-                            color: Colors.red,
-                          ),
-                        ),
-                      ),
                     const SizedBox(height: 16),
 
                     // Horario
@@ -294,12 +298,21 @@ class _CrearClaseExtracurricularScreenState extends State<CrearClaseExtracurricu
                             controller: _costoController,
                             keyboardType: TextInputType.number,
                             decoration: InputDecoration(
-                              labelText: 'Costo mensual',
+                              labelText: 'Costo mensual *',
+                              hintText: 'Ej. 500',
                               prefixIcon: const Icon(Icons.attach_money),
                               border: OutlineInputBorder(
                                 borderRadius: BorderRadius.circular(12),
                               ),
                             ),
+                            validator: (value) {
+                              if (value == null || value.trim().isEmpty) {
+                                return 'Pon el costo';
+                              }
+                              final n = double.tryParse(value.trim());
+                              if (n == null || n < 0) return 'Costo inválido';
+                              return null;
+                            },
                           ),
                         ),
                       ],
@@ -366,22 +379,14 @@ class _CrearClaseExtracurricularScreenState extends State<CrearClaseExtracurricu
   Future<void> _guardar() async {
     if (!_formKey.currentState!.validate()) return;
 
-    if (_diasSeleccionados.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Selecciona al menos un día'),
-          backgroundColor: Colors.orange,
-        ),
-      );
-      return;
-    }
-
     setState(() => _isLoading = true);
 
     try {
       final data = {
         'nombre': _nombreController.text.trim(),
-        'descripcion': _descripcionController.text.trim().isEmpty ? null : _descripcionController.text.trim(),
+        'descripcion': _descripcionController.text.trim().isEmpty
+            ? null
+            : _descripcionController.text.trim(),
         'dias_semana': _diasSeleccionados,
         'hora_inicio': _horaInicio != null
             ? '${_horaInicio!.hour.toString().padLeft(2, '0')}:${_horaInicio!.minute.toString().padLeft(2, '0')}:00'
@@ -390,21 +395,17 @@ class _CrearClaseExtracurricularScreenState extends State<CrearClaseExtracurricu
             ? '${_horaFin!.hour.toString().padLeft(2, '0')}:${_horaFin!.minute.toString().padLeft(2, '0')}:00'
             : null,
         'cupo_maximo': int.parse(_cupoController.text.trim()),
-        'costo_mensual': _costoController.text.trim().isEmpty
-            ? null
-            : double.parse(_costoController.text.trim()),
+        'costo_mensual': double.parse(_costoController.text.trim()),
         'permite_externos': _permiteExternos,
         'activo': true,
       };
 
       if (widget.claseId == null) {
-        // Crear nueva
         data['id'] = const Uuid().v4();
         await Supabase.instance.client
             .from('clases_extracurriculares')
             .insert(data);
       } else {
-        // Actualizar existente
         await Supabase.instance.client
             .from('clases_extracurriculares')
             .update(data)
@@ -416,25 +417,27 @@ class _CrearClaseExtracurricularScreenState extends State<CrearClaseExtracurricu
           SnackBar(
             content: Text(
               widget.claseId == null
-                  ? 'Clase creada exitosamente'
-                  : 'Clase actualizada exitosamente',
+                  ? 'Clase creada (sin inscritos). Ya puedes asignar niños cuando quieras.'
+                  : 'Clase actualizada',
             ),
             backgroundColor: Colors.green,
           ),
         );
+        // Volver a la lista para que se vea al instante
         context.go('/directora/clases-extracurriculares');
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error: $e'),
+            content: Text('Error al guardar: $e'),
             backgroundColor: Colors.red,
+            duration: const Duration(seconds: 6),
           ),
         );
       }
     } finally {
-      setState(() => _isLoading = false);
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 

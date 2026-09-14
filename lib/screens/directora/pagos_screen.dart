@@ -3,7 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
-import 'package:url_launcher/url_launcher.dart';
+import 'package:uuid/uuid.dart';
 
 import '../../services/supabase_service.dart';
 import '../../services/exportacion_pagos_excel.dart';
@@ -11,6 +11,7 @@ import '../../services/recibo_pago_pdf.dart';
 import '../../models/pago.dart';
 import '../../models/abono.dart';
 import '../../models/alumno.dart';
+import '../../models/anuncio.dart';
 import '../../models/grado.dart';
 import '../../config/app_colors.dart';
 import '../../widgets/app_drawer.dart';
@@ -439,6 +440,13 @@ class _PagosScreenState extends State<PagosScreen> with SingleTickerProviderStat
                     _confirmarEliminarSeleccionados(context, firestoreService),
               ),
           ] else ...[
+            if (_tabController.index < 2 &&
+                context.read<AuthService>().puedeGestionarPagos)
+              IconButton(
+                icon: const Icon(Icons.campaign_outlined),
+                tooltip: 'Aviso de pago: chat y/o anuncio',
+                onPressed: () => _mostrarAvisarPagoAAlumno(context),
+              ),
             if (_tabController.index < 2 &&
                 context.read<AuthService>().puedeGestionarPagos)
               IconButton(
@@ -993,53 +1001,586 @@ class _PagosScreenState extends State<PagosScreen> with SingleTickerProviderStat
     );
   }
 
-  Future<void> _notificarWhatsApp(
-    BuildContext context,
-    SupabaseService service,
-    String alumnoId,
-    String nombreAlumno,
-    List<Pago> pagosVencidos,
-  ) async {
-    final telefono = await service.obtenerTelefonoPadrePorAlumnoId(alumnoId);
-    if (telefono == null || telefono.isEmpty) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('No hay teléfono o WhatsApp registrado para el padre de este alumno.'),
-            backgroundColor: Colors.orange,
+  /// Caja/directora: aviso de pago configurable (filtro grado/alumno → chat y/o anuncio).
+  Future<void> _mostrarAvisarPagoAAlumno(BuildContext context) async {
+    final service = context.read<SupabaseService>();
+    final alumnos = await _alumnosParaCargos(service);
+    if (!context.mounted) return;
+
+    if (alumnos.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'No hay alumnos visibles. Si eres caja, revisa FIX_CAJA_VER_ALUMNOS_Y_PAGOS.sql',
           ),
-        );
-      }
+          backgroundColor: AppColors.rojo,
+        ),
+      );
       return;
     }
-    final conceptos = pagosVencidos.map((p) => p.concepto ?? 'Sin concepto').toList();
-    final total = pagosVencidos.fold<double>(0, (sum, p) => sum + p.saldoPendiente);
-    String detalle;
-    if (conceptos.length == 1) {
-      detalle = '${conceptos.first} por \$${_formatoMonto(total)}.';
-    } else {
-      detalle = '${conceptos.join(", ")}. *Total: \$${_formatoMonto(total)}*.';
+
+    final grados = await service.obtenerGrados();
+    if (!context.mounted) return;
+    final gradosKinder =
+        grados.where((g) => g.muestraModuloPagos).toList()
+          ..sort((a, b) => a.nombre.compareTo(b.nombre));
+
+    final todosPagos = await service.obtenerPagos();
+    if (!context.mounted) return;
+
+    String? gradoId;
+    final alumnosSel = <String>{
+      if (_filtroAlumnoId != null) _filtroAlumnoId!,
+    };
+    // Si ya había filtro de alumno, precargar su grado.
+    if (_filtroAlumnoId != null) {
+      final a = alumnos.where((x) => x.id == _filtroAlumnoId).firstOrNull;
+      gradoId = a?.gradoId;
     }
-    final mensaje = 'CAIPI - Recordatorio de pago\n\n'
-        '$nombreAlumno tiene pendiente de pago: $detalle\n\n'
-        'Favor de regularizar. Gracias.';
-    final soloNumeros = telefono.replaceAll(RegExp(r'[^0-9]'), '');
-    final codigo = soloNumeros.length == 10 ? '52$soloNumeros' : soloNumeros;
-    final uri = Uri.parse(
-      'https://wa.me/$codigo?text=${Uri.encodeComponent(mensaje)}',
-    );
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
-    } else {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('No se pudo abrir WhatsApp. Verifique que esté instalado.'),
-            backgroundColor: Colors.red,
-          ),
-        );
+
+    final tituloCtrl = TextEditingController(text: 'Recordatorio de pago');
+    final mensajeCtrl = TextEditingController();
+    var enviarChat = true;
+    var publicarAnuncio = true;
+
+    void rellenarPlantilla(void Function(void Function()) setLocal) {
+      final sel = alumnos.where((a) => alumnosSel.contains(a.id)).toList();
+      if (sel.isEmpty && gradoId != null) {
+        final delGrado = alumnos.where((a) => a.gradoId == gradoId).toList();
+        final nombres = delGrado.take(3).map((a) => a.nombreCompleto).join(', ');
+        final extra = delGrado.length > 3 ? ' y más' : '';
+        mensajeCtrl.text =
+            'Hola. Te escribimos de CAIPI respecto a la colegiatura'
+            '${nombres.isEmpty ? '' : ' ($nombres$extra)'}.\n\n'
+            'Por favor revisa tu apartado de pagos en la app o acude a caja. Gracias.';
+        setLocal(() {});
+        return;
       }
+      if (sel.isEmpty) {
+        mensajeCtrl.text =
+            'Hola. Te escribimos de CAIPI respecto a la colegiatura.\n\n'
+            'Por favor revisa tu apartado de pagos en la app o acude a caja. Gracias.';
+        setLocal(() {});
+        return;
+      }
+      if (sel.length == 1) {
+        final a = sel.first;
+        final pendientes = todosPagos
+            .where((p) =>
+                p.alumnoId == a.id &&
+                p.estatus != 'pagado' &&
+                p.estatus != 'cancelado' &&
+                p.saldoPendiente > 0)
+            .toList();
+        if (pendientes.isNotEmpty) {
+          mensajeCtrl.text = PagoHelpers.mensajeRecordatorioAdeudo(
+            nombreAlumno: a.nombreCompleto,
+            pagosVencidos: pendientes,
+            formatearMonto: (m) => '\$${_formatoMonto(m)}',
+          );
+        } else {
+          mensajeCtrl.text =
+              'Hola. Te escribimos de CAIPI respecto a la colegiatura de '
+              '${a.nombreCompleto}.\n\n'
+              'Por favor revisa tu apartado de pagos en la app o acude a caja. Gracias.';
+        }
+      } else {
+        final nombres = sel.map((a) => a.nombreCompleto).join(', ');
+        mensajeCtrl.text =
+            'Hola. Te escribimos de CAIPI respecto a la colegiatura de:\n'
+            '$nombres\n\n'
+            'Por favor revisa tu apartado de pagos en la app o acude a caja. Gracias.';
+      }
+      setLocal(() {});
     }
+
+    // Primera plantilla
+    rellenarPlantilla((_) {});
+
+    final rootMessenger = ScaffoldMessenger.of(context);
+    var enviando = false;
+    String? errorVisible;
+
+    final resultado = await showModalBottomSheet<Map<String, Object?>>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (sheetCtx) {
+        return StatefulBuilder(
+          builder: (sheetCtx, setLocal) {
+            final alumnosVisibles = alumnos
+                .where((a) => gradoId == null || a.gradoId == gradoId)
+                .toList()
+              ..sort((a, b) => a.nombreCompleto.compareTo(b.nombreCompleto));
+
+            final bottom = MediaQuery.viewInsetsOf(sheetCtx).bottom;
+
+            Future<void> enviar() async {
+              if (enviando) return;
+              final titulo = tituloCtrl.text.trim();
+              final mensaje = mensajeCtrl.text.trim();
+              if (titulo.isEmpty || mensaje.isEmpty) {
+                setLocal(
+                    () => errorVisible = 'Título y mensaje son obligatorios');
+                return;
+              }
+              if (!enviarChat && !publicarAnuncio) {
+                setLocal(() => errorVisible = 'Activa chat y/o anuncio');
+                return;
+              }
+              if (alumnosSel.isEmpty && gradoId == null) {
+                setLocal(
+                  () => errorVisible =
+                      'Elige un grado o marca al menos un alumno',
+                );
+                return;
+              }
+
+              final usuario = context.read<AuthService>().currentUser;
+              if (usuario == null) {
+                setLocal(
+                  () => errorVisible =
+                      'Sesión no válida. Vuelve a iniciar sesión.',
+                );
+                return;
+              }
+
+              setLocal(() {
+                enviando = true;
+                errorVisible = null;
+              });
+              try {
+                final padreIds = <String>{};
+                var gradoIdsAnuncio = <String>[];
+
+                if (alumnosSel.isNotEmpty) {
+                  for (final id in alumnosSel) {
+                    padreIds.addAll(await service.idsPadresDeAlumno(id));
+                    final al =
+                        alumnos.where((x) => x.id == id).firstOrNull;
+                    if (al?.gradoId != null) {
+                      gradoIdsAnuncio.add(al!.gradoId!);
+                    }
+                  }
+                  gradoIdsAnuncio = gradoIdsAnuncio.toSet().toList();
+                } else if (gradoId != null) {
+                  gradoIdsAnuncio = [gradoId!];
+                  for (final a
+                      in alumnos.where((a) => a.gradoId == gradoId)) {
+                    padreIds.addAll(await service.idsPadresDeAlumno(a.id));
+                  }
+                }
+
+                if (gradoIdsAnuncio.isEmpty && gradoId != null) {
+                  gradoIdsAnuncio = [gradoId!];
+                }
+
+                var chatN = 0;
+                var anuncioOk = false;
+                String? avisoExtra;
+
+                if (enviarChat) {
+                  if (padreIds.isEmpty) {
+                    if (!publicarAnuncio) {
+                      throw StateError(
+                        'Ese alumno no tiene papá vinculado en la app. '
+                        'Vincula el tutor en Padres/Alumnos.',
+                      );
+                    }
+                    avisoExtra =
+                        'Chat omitido: no hay papá vinculado; solo se publica anuncio.';
+                  } else {
+                    chatN = await ChatService().enviarMensajeMasivoAPadres(
+                      remitenteId: usuario.id,
+                      contenido: '📢 $titulo\n\n$mensaje',
+                      paraTodos: false,
+                      soloPadreIds: padreIds.toList(),
+                      omitirHorario: true,
+                    );
+                    if (chatN == 0) {
+                      avisoExtra =
+                          'El chat no llegó a ningún papá (revisa tutores activos).';
+                    }
+                  }
+                }
+
+                if (publicarAnuncio) {
+                  if (gradoIdsAnuncio.isEmpty) {
+                    throw StateError(
+                      'No se pudo saber el grado para el anuncio. '
+                      'Elige un Kínder en el filtro.',
+                    );
+                  }
+                  try {
+                    await service.crearAnuncio(
+                      Anuncio(
+                        id: const Uuid().v4(),
+                        titulo: titulo,
+                        mensaje: mensaje,
+                        prioridad: PrioridadAnuncio.alta,
+                        fechaPublicacion: DateTime.now(),
+                        creadoPor: usuario.id,
+                        paraTodos: false,
+                        paraGrados: gradoIdsAnuncio,
+                      ),
+                    );
+                    anuncioOk = true;
+                  } catch (e) {
+                    final msg = e.toString().toLowerCase();
+                    if (msg.contains('policy') ||
+                        msg.contains('rls') ||
+                        msg.contains('row-level') ||
+                        msg.contains('42501') ||
+                        msg.contains('permission') ||
+                        msg.contains('forbidden')) {
+                      if (msg.contains('conversaciones') ||
+                          msg.contains('mensajes_chat')) {
+                        throw StateError(
+                          'Caja no tiene permiso de chat todavía. '
+                          'Ejecuta en Supabase FIX_CAJA_CHAT_CONVERSACIONES.sql '
+                          'y vuelve a intentar.\n$e',
+                        );
+                      }
+                      throw StateError(
+                        'Sin permiso para publicar anuncios (rol caja). '
+                        'Ejecuta en Supabase FIX_CAJA_INSERTAR_ANUNCIOS.sql '
+                        'y vuelve a intentar.\n$e',
+                      );
+                    }
+                    rethrow;
+                  }
+                }
+
+                if (!sheetCtx.mounted) return;
+                Navigator.of(sheetCtx).pop(<String, Object?>{
+                  'chatN': chatN,
+                  'anuncioOk': anuncioOk,
+                  'enviarChat': enviarChat,
+                  'publicarAnuncio': publicarAnuncio,
+                  'extra': avisoExtra,
+                  'titulo': titulo,
+                  'alumnoIds': alumnosSel.toList(),
+                });
+              } catch (e) {
+                if (sheetCtx.mounted) {
+                  final raw = '$e';
+                  final low = raw.toLowerCase();
+                  var msg = raw;
+                  if (low.contains('conversaciones') ||
+                      low.contains('mensajes_chat')) {
+                    msg =
+                        'Caja no puede abrir el chat todavía.\n'
+                        'Ejecuta en Supabase: FIX_CAJA_CHAT_CONVERSACIONES.sql\n'
+                        'Luego vuelve a enviar.\n\n$raw';
+                  } else if (low.contains('anuncios') &&
+                      (low.contains('42501') ||
+                          low.contains('row-level') ||
+                          low.contains('policy'))) {
+                    msg =
+                        'Caja no puede publicar anuncios todavía.\n'
+                        'Ejecuta en Supabase: FIX_CAJA_INSERTAR_ANUNCIOS.sql\n'
+                        'Luego vuelve a enviar.\n\n$raw';
+                  }
+                  setLocal(() {
+                    enviando = false;
+                    errorVisible = msg;
+                  });
+                }
+              }
+            }
+
+            return Padding(
+              padding: EdgeInsets.only(bottom: bottom),
+              child: SizedBox(
+                height: MediaQuery.sizeOf(sheetCtx).height * 0.92,
+                child: Column(
+                  children: [
+                    const SizedBox(height: 8),
+                    Container(
+                      width: 40,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: Colors.grey.shade300,
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(20, 12, 20, 8),
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Aviso de pago',
+                              style: GoogleFonts.poppins(
+                                fontSize: 20,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            Text(
+                              'Grado + alumno(s) · texto editable · chat y/o anuncio',
+                              style: GoogleFonts.poppins(
+                                fontSize: 13,
+                                color: Colors.grey[700],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    if (errorVisible != null)
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+                        child: Material(
+                          color: const Color(0xFFFFEBEE),
+                          borderRadius: BorderRadius.circular(12),
+                          child: Padding(
+                            padding: const EdgeInsets.all(12),
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Icon(Icons.error_outline,
+                                    color: Colors.red),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    errorVisible!,
+                                    style: GoogleFonts.poppins(
+                                      fontSize: 13,
+                                      color: Colors.red[900],
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    Expanded(
+                      child: ListView(
+                        padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
+                        children: [
+                          DropdownButtonFormField<String?>(
+                            value: gradoId,
+                            isExpanded: true,
+                            decoration: const InputDecoration(
+                              labelText: 'Grado / Kínder',
+                              border: OutlineInputBorder(),
+                            ),
+                            items: [
+                              const DropdownMenuItem<String?>(
+                                value: null,
+                                child: Text('Todos los grados (Kínder)'),
+                              ),
+                              ...gradosKinder.map(
+                                (g) => DropdownMenuItem<String?>(
+                                  value: g.id,
+                                  child: Text(g.nombre),
+                                ),
+                              ),
+                            ],
+                            onChanged: enviando
+                                ? null
+                                : (v) {
+                                    setLocal(() {
+                                      gradoId = v;
+                                      errorVisible = null;
+                                      alumnosSel.removeWhere((id) {
+                                        final a = alumnos
+                                            .where((x) => x.id == id)
+                                            .firstOrNull;
+                                        return a != null &&
+                                            v != null &&
+                                            a.gradoId != v;
+                                      });
+                                    });
+                                    rellenarPlantilla(setLocal);
+                                  },
+                          ),
+                          const SizedBox(height: 12),
+                          Text(
+                            'Alumnos (marca uno o varios)',
+                            style: GoogleFonts.poppins(
+                              fontWeight: FontWeight.w600,
+                              fontSize: 14,
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          if (alumnosVisibles.isEmpty)
+                            Text(
+                              'No hay alumnos en este filtro.',
+                              style: TextStyle(color: Colors.grey[600]),
+                            )
+                          else
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: 8,
+                              children: alumnosVisibles.map((a) {
+                                final on = alumnosSel.contains(a.id);
+                                return FilterChip(
+                                  selected: on,
+                                  label: Text(a.nombreCompleto),
+                                  onSelected: enviando
+                                      ? null
+                                      : (sel) {
+                                          setLocal(() {
+                                            errorVisible = null;
+                                            if (sel) {
+                                              alumnosSel.add(a.id);
+                                            } else {
+                                              alumnosSel.remove(a.id);
+                                            }
+                                          });
+                                          rellenarPlantilla(setLocal);
+                                        },
+                                );
+                              }).toList(),
+                            ),
+                          const SizedBox(height: 16),
+                          TextField(
+                            controller: tituloCtrl,
+                            enabled: !enviando,
+                            decoration: const InputDecoration(
+                              labelText: 'Título',
+                              border: OutlineInputBorder(),
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          TextField(
+                            controller: mensajeCtrl,
+                            enabled: !enviando,
+                            minLines: 4,
+                            maxLines: 8,
+                            decoration: const InputDecoration(
+                              labelText: 'Mensaje (editable)',
+                              alignLabelWithHint: true,
+                              border: OutlineInputBorder(),
+                            ),
+                          ),
+                          CheckboxListTile(
+                            contentPadding: EdgeInsets.zero,
+                            value: enviarChat,
+                            onChanged: enviando
+                                ? null
+                                : (v) =>
+                                    setLocal(() => enviarChat = v ?? true),
+                            title: const Text('Enviar por chat'),
+                            controlAffinity:
+                                ListTileControlAffinity.leading,
+                          ),
+                          CheckboxListTile(
+                            contentPadding: EdgeInsets.zero,
+                            value: publicarAnuncio,
+                            onChanged: enviando
+                                ? null
+                                : (v) => setLocal(
+                                      () => publicarAnuncio = v ?? true,
+                                    ),
+                            title: const Text('Publicar anuncio único'),
+                            subtitle: const Text(
+                              'Visible para papás del grado en Anuncios',
+                            ),
+                            controlAffinity:
+                                ListTileControlAffinity.leading,
+                          ),
+                        ],
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
+                      child: Column(
+                        children: [
+                          FilledButton.icon(
+                            onPressed: enviando ? null : enviar,
+                            icon: enviando
+                                ? const SizedBox(
+                                    width: 18,
+                                    height: 18,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: Colors.white,
+                                    ),
+                                  )
+                                : const Icon(Icons.send),
+                            label: Text(
+                              enviando ? 'Enviando…' : 'Enviar aviso',
+                            ),
+                            style: FilledButton.styleFrom(
+                              minimumSize: const Size.fromHeight(48),
+                            ),
+                          ),
+                          TextButton(
+                            onPressed: enviando
+                                ? null
+                                : () => Navigator.pop(sheetCtx),
+                            child: const Text('Cancelar'),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+
+    tituloCtrl.dispose();
+    mensajeCtrl.dispose();
+
+    if (!mounted || resultado == null) return;
+
+    final chatN = resultado['chatN'] as int? ?? 0;
+    final anuncioOk = resultado['anuncioOk'] == true;
+    final hizoChat = resultado['enviarChat'] == true;
+    final hizoAnuncio = resultado['publicarAnuncio'] == true;
+    final extra = resultado['extra'] as String?;
+    final tituloOk = resultado['titulo'] as String? ?? 'Aviso';
+    final ids = (resultado['alumnoIds'] as List?)?.cast<String>() ?? const [];
+
+    if (ids.length == 1) {
+      setState(() {
+        _filtroAlumnoId = ids.first;
+        _filtroEstado = 'pendientes';
+      });
+    }
+
+    final lineas = <String>[
+      if (hizoChat) '• Chat enviado a $chatN papá(s)',
+      if (hizoAnuncio)
+        anuncioOk
+            ? '• Anuncio publicado (lo ven en Anuncios)'
+            : '• Anuncio no se publicó',
+      if (extra != null && extra.isNotEmpty) '• $extra',
+    ];
+
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Aviso enviado'),
+        content: Text(
+          '$tituloOk\n\n${lineas.join('\n')}\n\n'
+          'Si elegiste anuncio, el papá lo ve en el menú Anuncios. '
+          'El chat aparece en Conversaciones.',
+        ),
+        actions: [
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Entendido'),
+          ),
+        ],
+      ),
+    );
+
+    rootMessenger.showSnackBar(
+      SnackBar(
+        content: Text('✓ $tituloOk'),
+        backgroundColor: Colors.green,
+      ),
+    );
   }
 
   Widget _buildChipEstado(String valor, String label, {bool esPagados = false}) {
@@ -1244,10 +1785,15 @@ class _PagosScreenState extends State<PagosScreen> with SingleTickerProviderStat
             : pagosFiltrados.fold<double>(0, (sum, p) => sum + p.saldoPendiente);
         final vencidos = pagosFiltrados.where((p) => p.estaVencido).toList();
         final totalVencidos = vencidos.fold<double>(0, (sum, p) => sum + p.saldoPendiente);
+        final pagosConSaldo = pagosFiltrados
+            .where((p) => p.saldoPendiente > 0)
+            .toList();
+        final paraAvisar =
+            vencidos.isNotEmpty ? vencidos : pagosConSaldo;
         final puedeNotificar = filtroTipo == 'alumnos' &&
             filtroAlumnoId != null &&
-            vencidos.isNotEmpty &&
-            !esPagados;
+            !esPagados &&
+            paraAvisar.isNotEmpty;
 
         return RefreshIndicator(
           color: AppColors.morado,
@@ -1335,10 +1881,10 @@ class _PagosScreenState extends State<PagosScreen> with SingleTickerProviderStat
                                   filtroAlumnoId,
                                   mapaNombresAlumnos?[filtroAlumnoId] ??
                                       'Alumno',
-                                  vencidos,
+                                  paraAvisar,
                                 ),
                                 icon: const Icon(Icons.forum_outlined, size: 20),
-                                label: const Text('Chat adeudos'),
+                                label: const Text('Chat rápido'),
                                 style: OutlinedButton.styleFrom(
                                   foregroundColor: AppColors.morado,
                                   side: BorderSide(
@@ -1356,20 +1902,14 @@ class _PagosScreenState extends State<PagosScreen> with SingleTickerProviderStat
                             const SizedBox(width: 10),
                             Expanded(
                               child: OutlinedButton.icon(
-                                onPressed: () => _notificarWhatsApp(
-                                  context,
-                                  service,
-                                  filtroAlumnoId,
-                                  mapaNombresAlumnos?[filtroAlumnoId] ??
-                                      'Alumno',
-                                  vencidos,
-                                ),
-                                icon: const Icon(Icons.chat, size: 20),
-                                label: const Text('WhatsApp'),
+                                onPressed: () =>
+                                    _mostrarAvisarPagoAAlumno(context),
+                                icon: const Icon(Icons.campaign_outlined, size: 20),
+                                label: const Text('Editar y enviar'),
                                 style: OutlinedButton.styleFrom(
-                                  foregroundColor: const Color(0xFF25D366),
-                                  side: const BorderSide(
-                                    color: Color(0xFF25D366),
+                                  foregroundColor: AppColors.naranja,
+                                  side: BorderSide(
+                                    color: AppColors.naranja.withOpacity(0.7),
                                   ),
                                   padding: const EdgeInsets.symmetric(
                                     vertical: 12,
@@ -2083,13 +2623,15 @@ class _PagosScreenState extends State<PagosScreen> with SingleTickerProviderStat
 
   void _mostrarMenuAgregarPago(BuildContext context) {
     final bottomInset = MediaQuery.viewPaddingOf(context).bottom;
+    // Guardar el context de la pantalla: el del bottom sheet se invalida al hacer pop.
+    final pantallaContext = context;
 
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
       backgroundColor: Colors.transparent,
-      builder: (context) => Container(
+      builder: (sheetContext) => Container(
         decoration: const BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
@@ -2116,57 +2658,72 @@ class _PagosScreenState extends State<PagosScreen> with SingleTickerProviderStat
             ),
             const SizedBox(height: 20),
             _buildOpcionPago(
-              context: context,
+              context: sheetContext,
               titulo: 'Colegiatura / cargo nuevo',
               icono: Icons.school_outlined,
               color: AppColors.morado,
               onTap: () {
-                Navigator.pop(context);
-                _mostrarDialogoCrearPagoManual(context);
+                Navigator.pop(sheetContext);
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  if (!mounted) return;
+                  _mostrarDialogoCrearPagoManual(pantallaContext);
+                });
               },
             ),
             const SizedBox(height: 12),
             _buildOpcionPago(
-              context: context,
+              context: sheetContext,
               titulo: 'Ya pagó todo el año',
               icono: Icons.event_available,
               color: AppColors.verde,
               onTap: () {
-                Navigator.pop(context);
-                _mostrarDialogoPagoTodoElAnio(context);
+                Navigator.pop(sheetContext);
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  if (!mounted) return;
+                  _mostrarDialogoPagoTodoElAnio(pantallaContext);
+                });
               },
             ),
             const SizedBox(height: 12),
             _buildOpcionPago(
-              context: context,
+              context: sheetContext,
               titulo: 'Libros',
               icono: Icons.menu_book,
               color: AppColors.purpura,
               onTap: () {
-                Navigator.pop(context);
-                _mostrarDialogoAgregarLibros(context);
+                Navigator.pop(sheetContext);
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  if (!mounted) return;
+                  _mostrarDialogoAgregarLibros(pantallaContext);
+                });
               },
             ),
             const SizedBox(height: 12),
             _buildOpcionPago(
-              context: context,
+              context: sheetContext,
               titulo: 'Uniforme',
               icono: Icons.inventory_2_outlined,
               color: AppColors.azul,
               onTap: () {
-                Navigator.pop(context);
-                _mostrarDialogoAgregarUniforme(context);
+                Navigator.pop(sheetContext);
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  if (!mounted) return;
+                  _mostrarDialogoAgregarUniforme(pantallaContext);
+                });
               },
             ),
             const SizedBox(height: 12),
             _buildOpcionPago(
-              context: context,
+              context: sheetContext,
               titulo: 'Otro gasto',
               icono: Icons.add_circle_outline,
               color: AppColors.naranja,
               onTap: () {
-                Navigator.pop(context);
-                _mostrarDialogoAgregarGastoPersonalizado(context);
+                Navigator.pop(sheetContext);
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  if (!mounted) return;
+                  _mostrarDialogoAgregarGastoPersonalizado(pantallaContext);
+                });
               },
             ),
           ],
@@ -2554,6 +3111,84 @@ class _PagosScreenState extends State<PagosScreen> with SingleTickerProviderStat
     final alumnos = await service.obtenerAlumnos();
     final grados = await service.obtenerGrados();
     return _alumnosModuloPagos(alumnos, grados);
+  }
+
+  Future<({List<Alumno> alumnos, List<Grado> grados})> _alumnosYGradosParaCargos(
+    SupabaseService service,
+  ) async {
+    final alumnos = await service.obtenerAlumnos();
+    final gradosAll = await service.obtenerGrados();
+    final grados = _gradosModuloPagos(gradosAll)
+      ..sort((a, b) => a.nombre.compareTo(b.nombre));
+    return (
+      alumnos: _alumnosModuloPagos(alumnos, gradosAll),
+      grados: grados,
+    );
+  }
+
+  /// Grupo + alumno (filtra la lista para no mostrar todos a la vez).
+  List<Widget> _camposGrupoYAlumno({
+    required List<Alumno> alumnos,
+    required List<Grado> grados,
+    required String? filtroGradoId,
+    required String? alumnoId,
+    required void Function(String? gradoId, String? alumnoId) onChanged,
+  }) {
+    final filtrados = filtroGradoId == null
+        ? alumnos
+        : alumnos.where((a) => a.gradoId == filtroGradoId).toList();
+    final alumnoValido =
+        alumnoId != null && filtrados.any((a) => a.id == alumnoId);
+
+    return [
+      DropdownButtonFormField<String?>(
+        value: filtroGradoId,
+        isExpanded: true,
+        decoration: InputDecoration(
+          labelText: 'Grupo',
+          prefixIcon: const Icon(Icons.groups_outlined),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+        ),
+        items: [
+          const DropdownMenuItem<String?>(
+            value: null,
+            child: Text('Todos los grupos'),
+          ),
+          ...grados.map(
+            (g) => DropdownMenuItem<String?>(
+              value: g.id,
+              child: Text(g.nombre),
+            ),
+          ),
+        ],
+        onChanged: (v) => onChanged(v, null),
+      ),
+      const SizedBox(height: 12),
+      DropdownButtonFormField<String>(
+        value: alumnoValido ? alumnoId : null,
+        isExpanded: true,
+        decoration: InputDecoration(
+          labelText: 'Seleccionar alumno',
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+        ),
+        items: filtrados
+            .map(
+              (a) => DropdownMenuItem(
+                value: a.id,
+                child: Text(
+                  a.nombreCompleto,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            )
+            .toList(),
+        onChanged: (v) => onChanged(filtroGradoId, v),
+      ),
+    ];
   }
 
   /// Registra que el papá ya pagó (o paga ahora) todas las colegiaturas pendientes.
@@ -3183,9 +3818,12 @@ class _PagosScreenState extends State<PagosScreen> with SingleTickerProviderStat
   Future<void> _mostrarDialogoAgregarLibros(BuildContext context) async {
     final TextEditingController montoController = TextEditingController(text: '800');
     String? alumnoSeleccionado;
+    String? filtroGradoId;
 
     final supabaseService = context.read<SupabaseService>();
-    final alumnos = await _alumnosParaCargos(supabaseService);
+    final datos = await _alumnosYGradosParaCargos(supabaseService);
+    final alumnos = datos.alumnos;
+    final grados = datos.grados;
 
     if (!context.mounted) return;
 
@@ -3213,23 +3851,15 @@ class _PagosScreenState extends State<PagosScreen> with SingleTickerProviderStat
           builder: (context, setState) => Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              DropdownButtonFormField<String>(
-                value: alumnoSeleccionado,
-                decoration: InputDecoration(
-                  labelText: 'Seleccionar alumno',
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                ),
-                items: alumnos.map((alumno) {
-                  return DropdownMenuItem(
-                    value: alumno.id,
-                    child: Text(alumno.nombreCompleto),
-                  );
-                }).toList(),
-                onChanged: (value) {
-                  setState(() => alumnoSeleccionado = value);
-                },
+              ..._camposGrupoYAlumno(
+                alumnos: alumnos,
+                grados: grados,
+                filtroGradoId: filtroGradoId,
+                alumnoId: alumnoSeleccionado,
+                onChanged: (g, a) => setState(() {
+                  filtroGradoId = g;
+                  alumnoSeleccionado = a;
+                }),
               ),
               const SizedBox(height: 16),
               TextFormField(
@@ -3295,9 +3925,12 @@ class _PagosScreenState extends State<PagosScreen> with SingleTickerProviderStat
     final TextEditingController cantidadController = TextEditingController(text: '1');
     final TextEditingController precioController = TextEditingController(text: '250');
     String? alumnoSeleccionado;
+    String? filtroGradoId;
 
     final supabaseService = context.read<SupabaseService>();
-    final alumnos = await _alumnosParaCargos(supabaseService);
+    final datos = await _alumnosYGradosParaCargos(supabaseService);
+    final alumnos = datos.alumnos;
+    final grados = datos.grados;
 
     if (!context.mounted) return;
 
@@ -3325,23 +3958,15 @@ class _PagosScreenState extends State<PagosScreen> with SingleTickerProviderStat
           builder: (context, setState) => Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              DropdownButtonFormField<String>(
-                value: alumnoSeleccionado,
-                decoration: InputDecoration(
-                  labelText: 'Seleccionar alumno',
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                ),
-                items: alumnos.map((alumno) {
-                  return DropdownMenuItem(
-                    value: alumno.id,
-                    child: Text(alumno.nombreCompleto),
-                  );
-                }).toList(),
-                onChanged: (value) {
-                  setState(() => alumnoSeleccionado = value);
-                },
+              ..._camposGrupoYAlumno(
+                alumnos: alumnos,
+                grados: grados,
+                filtroGradoId: filtroGradoId,
+                alumnoId: alumnoSeleccionado,
+                onChanged: (g, a) => setState(() {
+                  filtroGradoId = g;
+                  alumnoSeleccionado = a;
+                }),
               ),
               const SizedBox(height: 16),
               Row(
@@ -3427,11 +4052,27 @@ class _PagosScreenState extends State<PagosScreen> with SingleTickerProviderStat
     final nombreController = TextEditingController();
     final montoController = TextEditingController();
     String? alumnoSeleccionado;
+    String? filtroGradoId;
 
     final supabaseService = context.read<SupabaseService>();
-    final alumnos = await _alumnosParaCargos(supabaseService);
+    final datos = await _alumnosYGradosParaCargos(supabaseService);
+    final alumnos = datos.alumnos;
+    final grados = datos.grados;
 
     if (!context.mounted) return;
+
+    if (alumnos.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'No hay alumnos para cargar. Si eres caja, ejecuta '
+            'FIX_CAJA_VER_ALUMNOS_Y_PAGOS.sql en Supabase.',
+          ),
+          backgroundColor: AppColors.rojo,
+        ),
+      );
+      return;
+    }
 
     final confirmar = await showDialog<bool>(
       context: context,
@@ -3457,21 +4098,15 @@ class _PagosScreenState extends State<PagosScreen> with SingleTickerProviderStat
               builder: (context, setState) => Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  DropdownButtonFormField<String>(
-                    value: alumnoSeleccionado,
-                    decoration: InputDecoration(
-                      labelText: 'Seleccionar alumno',
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                    ),
-                    items: alumnos.map((alumno) {
-                      return DropdownMenuItem(
-                        value: alumno.id,
-                        child: Text(alumno.nombreCompleto),
-                      );
-                    }).toList(),
-                    onChanged: (value) => setState(() => alumnoSeleccionado = value),
+                  ..._camposGrupoYAlumno(
+                    alumnos: alumnos,
+                    grados: grados,
+                    filtroGradoId: filtroGradoId,
+                    alumnoId: alumnoSeleccionado,
+                    onChanged: (g, a) => setState(() {
+                      filtroGradoId = g;
+                      alumnoSeleccionado = a;
+                    }),
                   ),
                   const SizedBox(height: 16),
                   TextFormField(
@@ -3542,11 +4177,18 @@ class _PagosScreenState extends State<PagosScreen> with SingleTickerProviderStat
         );
 
         if (!context.mounted) return;
+        setState(() {
+          _filtroTipoPago = null; // Todos los tipos
+          _filtroEstado = 'pendientes';
+          _filtroAlumnoId = alumnoSeleccionado;
+        });
         await _refrescarPagosPendientes(supabaseService);
         if (!context.mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Gasto "$nombre" agregado'),
+            content: Text(
+              'Gasto "$nombre" agregado. Filtro: ese alumno · pendientes.',
+            ),
             backgroundColor: AppColors.verde,
           ),
         );

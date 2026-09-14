@@ -11,7 +11,6 @@ import '../../models/portage.dart';
 import '../../services/auth_service.dart';
 import '../../services/portage_service.dart';
 import '../../services/supabase_service.dart';
-import '../../utils/portage_plantilla.dart';
 import '../../widgets/app_drawer.dart';
 import '../../widgets/caipi_app_bar_leading.dart';
 
@@ -32,14 +31,15 @@ class _PortageHomeScreenState extends State<PortageHomeScreen> {
   List<PortageEvaluacion> _evaluaciones = [];
   List<Alumno> _alumnos = [];
   bool _loading = true;
-  bool _adminAbierto = false;
   String? _error;
   String? _gradoProfesor;
   String _filtro = '';
 
-  bool get _puedeEditarListas {
+  bool get _puedeCrearSeguimiento {
     final u = context.read<AuthService>().currentUser;
-    return u?.esDirectora == true;
+    return u?.esDirectora == true ||
+        u?.esProfesorAdmin == true ||
+        u?.esProfesor == true;
   }
 
   bool get _esDirectora =>
@@ -137,162 +137,6 @@ class _PortageHomeScreenState extends State<PortageHomeScreen> {
     }
   }
 
-  Future<void> _crearLista() async {
-    if (!_puedeEditarListas || _gradoId == null) return;
-    String tipo = PortagePlantilla.tipoHabilidades;
-    final nombreCtrl = TextEditingController(text: 'Lista de habilidades');
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setLocal) => AlertDialog(
-          title: const Text('Nueva lista'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              DropdownButtonFormField<String>(
-                value: tipo,
-                decoration: const InputDecoration(labelText: 'Tipo'),
-                items: const [
-                  DropdownMenuItem(
-                    value: PortagePlantilla.tipoHabilidades,
-                    child: Text('Habilidades'),
-                  ),
-                  DropdownMenuItem(
-                    value: PortagePlantilla.tipoAlertas,
-                    child: Text('Alertas'),
-                  ),
-                ],
-                onChanged: (v) {
-                  if (v == null) return;
-                  setLocal(() {
-                    tipo = v;
-                    if (nombreCtrl.text.trim().isEmpty ||
-                        nombreCtrl.text == 'Lista de habilidades' ||
-                        nombreCtrl.text == 'Lista de alertas') {
-                      nombreCtrl.text = v == PortagePlantilla.tipoAlertas
-                          ? 'Lista de alertas'
-                          : 'Lista de habilidades';
-                    }
-                  });
-                },
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: nombreCtrl,
-                decoration:
-                    const InputDecoration(labelText: 'Nombre de la lista'),
-                autofocus: true,
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Cancelar'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('Crear'),
-            ),
-          ],
-        ),
-      ),
-    );
-    if (ok != true || !mounted) {
-      nombreCtrl.dispose();
-      return;
-    }
-    final user = context.read<AuthService>().currentUser!;
-    final nombreDefault = tipo == PortagePlantilla.tipoAlertas
-        ? 'Lista de alertas'
-        : 'Lista de habilidades';
-    try {
-      final lista = await _portage.crearLista(
-        gradoId: _gradoId!,
-        nombre: nombreCtrl.text.trim().isEmpty
-            ? nombreDefault
-            : nombreCtrl.text.trim(),
-        createdBy: user.id,
-        tipo: tipo,
-      );
-      nombreCtrl.dispose();
-      if (!mounted) return;
-      await context.push('/directora/portage/lista/${lista.id}');
-      await _cargarGrado();
-    } catch (e) {
-      nombreCtrl.dispose();
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error: $e'), backgroundColor: AppColors.rojo),
-      );
-    }
-  }
-
-  Future<void> _cargarPlantillas() async {
-    if (!_puedeEditarListas || _gradoId == null) return;
-    final user = context.read<AuthService>().currentUser!;
-    final incluirAlertas = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Cargar plantilla habilidades'),
-        content: const Text(
-          'Se crearán las listas de habilidades del grado (si aún no existen).\n\n'
-          '¿También cargar una lista de alertas de ejemplo?',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancelar'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Solo habilidades'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Habilidades + alertas'),
-          ),
-        ],
-      ),
-    );
-    if (incluirAlertas == null || !mounted) return;
-    setState(() => _loading = true);
-    try {
-      final creadas = await _portage.cargarPlantillaHabilidades(
-        gradoId: _gradoId!,
-        createdBy: user.id,
-        plantillas: PortagePlantilla.habilidades,
-      );
-      if (incluirAlertas) {
-        await _portage.cargarPlantillaAlertas(
-          gradoId: _gradoId!,
-          createdBy: user.id,
-          items: PortagePlantilla.alertasEjemplo,
-        );
-      }
-      await _cargarGrado();
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            creadas == 0
-                ? 'Las plantillas de habilidades ya estaban cargadas'
-                    '${incluirAlertas ? ' (alertas revisadas)' : ''}'
-                : 'Se crearon $creadas lista(s) de habilidades'
-                    '${incluirAlertas ? ' (+ alertas)' : ''}',
-          ),
-          backgroundColor: AppColors.verde,
-        ),
-      );
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error: $e'), backgroundColor: AppColors.rojo),
-      );
-    } finally {
-      if (mounted) setState(() => _loading = false);
-    }
-  }
 
   Future<void> _crearEvaluacion() async {
     if (_gradoId == null) return;
@@ -300,83 +144,107 @@ class _PortageHomeScreenState extends State<PortageHomeScreen> {
     if (listasActivas.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Primero crea una lista de habilidades o alertas para este grado'),
+          content: Text(
+            'No hay listas en este grupo. Ve a «Administrar listas» '
+            'o «Hitos» para cargarlas primero.',
+          ),
         ),
       );
       return;
     }
     String listaId = listasActivas.first.id;
     final tituloCtrl = TextEditingController();
+    void disposeTitulo() {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        tituloCtrl.dispose();
+      });
+    }
     DateTime fecha = DateTime.now();
 
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setLocal) => AlertDialog(
+          insetPadding:
+              const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
           title: const Text('Nuevo seguimiento'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              DropdownButtonFormField<String>(
-                value: listaId,
-                isExpanded: true,
-                decoration: const InputDecoration(
-                  labelText: 'Lista (habilidades / alertas)',
+          content: SizedBox(
+            width: MediaQuery.sizeOf(ctx).width,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  'Elige la lista a evaluar (ej. hitos 6 meses). '
+                  'Esto no borra calificaciones anteriores: cada seguimiento '
+                  'queda en el histórico del niño.',
+                  style:
+                      GoogleFonts.poppins(fontSize: 12, color: AppColors.gris),
                 ),
-                items: listasActivas
-                    .map(
-                      (l) => DropdownMenuItem(
-                        value: l.id,
-                        child: Text(
-                          '${l.nombre} (${l.tipoEtiqueta})',
-                          overflow: TextOverflow.ellipsis,
-                          maxLines: 2,
+                const SizedBox(height: 12),
+                DropdownButtonFormField<String>(
+                  value: listaId,
+                  isExpanded: true,
+                  decoration: const InputDecoration(
+                    labelText: 'Lista a evaluar',
+                    border: OutlineInputBorder(),
+                  ),
+                  items: listasActivas
+                      .map(
+                        (l) => DropdownMenuItem(
+                          value: l.id,
+                          child: Text(
+                            '${l.nombre} (${l.tipoEtiqueta})',
+                            overflow: TextOverflow.ellipsis,
+                            maxLines: 2,
+                            softWrap: true,
+                          ),
                         ),
-                      ),
-                    )
-                    .toList(),
-                selectedItemBuilder: (context) => listasActivas
-                    .map(
-                      (l) => Align(
-                        alignment: Alignment.centerLeft,
-                        child: Text(
+                      )
+                      .toList(),
+                  selectedItemBuilder: (context) => listasActivas
+                      .map(
+                        (l) => Text(
                           '${l.nombre} (${l.tipoEtiqueta})',
                           overflow: TextOverflow.ellipsis,
                           maxLines: 1,
+                          softWrap: false,
                         ),
-                      ),
-                    )
-                    .toList(),
-                onChanged: (v) {
-                  if (v != null) setLocal(() => listaId = v);
-                },
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: tituloCtrl,
-                decoration: const InputDecoration(
-                  labelText: 'Título (opcional)',
-                  hintText: 'Ej. Seguimiento — marzo',
+                      )
+                      .toList(),
+                  onChanged: (v) {
+                    if (v != null) setLocal(() => listaId = v);
+                  },
                 ),
-              ),
-              const SizedBox(height: 12),
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                title: Text(
-                  'Fecha inicio: ${DateFormat('dd/MM/yyyy').format(fecha)}',
+                const SizedBox(height: 12),
+                TextField(
+                  controller: tituloCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'Título (opcional)',
+                    hintText: 'Ej. Seguimiento — marzo',
+                    border: OutlineInputBorder(),
+                  ),
                 ),
-                trailing: const Icon(Icons.calendar_month),
-                onTap: () async {
-                  final p = await showDatePicker(
-                    context: ctx,
-                    initialDate: fecha,
-                    firstDate: DateTime(2020),
-                    lastDate: DateTime.now().add(const Duration(days: 365)),
-                  );
-                  if (p != null) setLocal(() => fecha = p);
-                },
-              ),
-            ],
+                const SizedBox(height: 12),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: Text(
+                    'Fecha inicio: ${DateFormat('dd/MM/yyyy').format(fecha)}',
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  trailing: const Icon(Icons.calendar_month),
+                  onTap: () async {
+                    final p = await showDatePicker(
+                      context: ctx,
+                      initialDate: fecha,
+                      firstDate: DateTime(2020),
+                      lastDate: DateTime.now().add(const Duration(days: 365)),
+                    );
+                    if (p != null) setLocal(() => fecha = p);
+                  },
+                ),
+              ],
+            ),
           ),
           actions: [
             TextButton(
@@ -392,39 +260,43 @@ class _PortageHomeScreenState extends State<PortageHomeScreen> {
       ),
     );
     if (ok != true || !mounted) {
-      tituloCtrl.dispose();
+      disposeTitulo();
       return;
     }
     final user = context.read<AuthService>().currentUser!;
-    if (!user.esDirectora) {
-      tituloCtrl.dispose();
+    if (!_puedeCrearSeguimiento) {
+      disposeTitulo();
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Solo la directora crea nuevos seguimientos'),
+          content: Text('No tienes permiso para crear seguimientos'),
           backgroundColor: AppColors.rojo,
         ),
       );
       return;
     }
+    final titulo =
+        tituloCtrl.text.trim().isEmpty ? null : tituloCtrl.text.trim();
+    disposeTitulo();
     try {
       await _portage.crearEvaluacion(
         listaId: listaId,
         gradoId: _gradoId!,
-        titulo: tituloCtrl.text.trim().isEmpty ? null : tituloCtrl.text.trim(),
+        titulo: titulo,
         fechaInicio: fecha,
         createdBy: user.id,
       );
-      tituloCtrl.dispose();
       await _cargarGrado();
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Seguimiento creado. Elige un niño para calificar.'),
+          content: Text(
+            'Seguimiento creado. Abre un niño para calificarlo. '
+            'Cada seguimiento queda en el histórico (gráfica).',
+          ),
           backgroundColor: AppColors.verde,
         ),
       );
     } catch (e) {
-      tituloCtrl.dispose();
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Error: $e'), backgroundColor: AppColors.rojo),
@@ -655,189 +527,99 @@ class _PortageHomeScreenState extends State<PortageHomeScreen> {
                               ),
                             ),
                           const SizedBox(height: 20),
-                          Card(
-                            child: ExpansionTile(
-                              initiallyExpanded: _adminAbierto,
-                              onExpansionChanged: (v) =>
-                                  setState(() => _adminAbierto = v),
-                              title: Text(
-                                'Administrar listas y seguimientos',
-                                style: GoogleFonts.poppins(
-                                  fontWeight: FontWeight.w600,
-                                  fontSize: 14,
-                                ),
-                              ),
-                              subtitle: Text(
-                                _esDirectora
-                                    ? 'Listas de habilidades / alertas y seguimientos'
-                                    : 'Ver listas (solo lectura) y seguimientos del grupo',
-                                style: GoogleFonts.poppins(fontSize: 11),
-                              ),
-                              children: [
-                                Padding(
-                                  padding: const EdgeInsets.fromLTRB(
-                                    16,
-                                    0,
-                                    16,
-                                    12,
-                                  ),
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.stretch,
-                                    children: [
-                                      Row(
-                                        children: [
-                                          Expanded(
-                                            child: Text(
-                                              'Listas de habilidades / alertas',
-                                              style: GoogleFonts.poppins(
-                                                fontWeight: FontWeight.w600,
-                                              ),
-                                            ),
-                                          ),
-                                          if (_puedeEditarListas)
-                                            TextButton.icon(
-                                              onPressed: _crearLista,
-                                              icon: const Icon(Icons.add),
-                                              label: const Text('Lista'),
-                                            ),
-                                        ],
-                                      ),
-                                      if (_puedeEditarListas)
-                                        Align(
-                                          alignment: Alignment.centerLeft,
-                                          child: TextButton.icon(
-                                            onPressed: _cargarPlantillas,
-                                            icon: const Icon(
-                                              Icons.library_add_outlined,
-                                              size: 18,
-                                            ),
-                                            label: const Text(
-                                              'Cargar plantilla habilidades',
-                                            ),
-                                          ),
-                                        ),
-                                      if (_listas.isEmpty)
-                                        Text(
-                                          'Sin listas aún.',
-                                          style: GoogleFonts.poppins(
-                                            color: AppColors.gris,
-                                            fontSize: 12,
-                                          ),
-                                        ),
-                                      ..._listas.map(
-                                        (l) => ListTile(
-                                          dense: true,
-                                          contentPadding: EdgeInsets.zero,
-                                          title: Text(l.nombre),
-                                          subtitle: Row(
-                                            children: [
-                                              Chip(
-                                                label: Text(
-                                                  l.tipoEtiqueta,
-                                                  style: GoogleFonts.poppins(
-                                                    fontSize: 10,
-                                                    fontWeight: FontWeight.w600,
-                                                  ),
-                                                ),
-                                                visualDensity:
-                                                    VisualDensity.compact,
-                                                materialTapTargetSize:
-                                                    MaterialTapTargetSize
-                                                        .shrinkWrap,
-                                                padding:
-                                                    const EdgeInsets.symmetric(
-                                                  horizontal: 4,
-                                                ),
-                                                backgroundColor: l.esAlertas
-                                                    ? AppColors.naranjaClaro
-                                                        .withOpacity(0.35)
-                                                    : AppColors.morado
-                                                        .withOpacity(0.12),
-                                              ),
-                                              const SizedBox(width: 8),
-                                              Text(
-                                                l.activa
-                                                    ? 'Activa'
-                                                    : 'Inactiva',
-                                                style: GoogleFonts.poppins(
-                                                  fontSize: 11,
-                                                  color: AppColors.gris,
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                          trailing:
-                                              const Icon(Icons.chevron_right),
-                                          onTap: () async {
-                                            await context.push(
-                                              '/directora/portage/lista/${l.id}',
-                                            );
-                                            await _cargarGrado();
-                                          },
-                                        ),
-                                      ),
-                                      const Divider(),
-                                      Row(
-                                        children: [
-                                          Expanded(
-                                            child: Text(
-                                              'Seguimientos',
-                                              style: GoogleFonts.poppins(
-                                                fontWeight: FontWeight.w600,
-                                              ),
-                                            ),
-                                          ),
-                                          if (_esDirectora)
-                                            TextButton.icon(
-                                              onPressed: _crearEvaluacion,
-                                              icon: const Icon(Icons.add),
-                                              label: const Text('Nueva'),
-                                            ),
-                                        ],
-                                      ),
-                                      if (_evaluaciones.isEmpty)
-                                        Text(
-                                          'Sin seguimientos. La directora crea uno con «Nueva».',
-                                          style: GoogleFonts.poppins(
-                                            color: AppColors.gris,
-                                            fontSize: 12,
-                                          ),
-                                        ),
-                                      ..._evaluaciones.map(
-                                        (e) => ListTile(
-                                          dense: true,
-                                          contentPadding: EdgeInsets.zero,
-                                          title: Text(e.tituloDisplay),
-                                          subtitle: Text(
-                                            DateFormat('dd/MM/yyyy')
-                                                .format(e.fechaInicio),
-                                          ),
-                                          trailing: Row(
-                                            mainAxisSize: MainAxisSize.min,
-                                            children: [
-                                              if (_esDirectora)
-                                                IconButton(
-                                                  tooltip: 'Borrar seguimiento',
-                                                  icon: const Icon(
-                                                    Icons.delete_outline,
-                                                    color: AppColors.rojo,
-                                                  ),
-                                                  onPressed: () =>
-                                                      _eliminarEvaluacion(e),
-                                                ),
-                                              const Icon(Icons.chevron_right),
-                                            ],
-                                          ),
-                                          onTap: () => context.push(
-                                            '/directora/portage/evaluacion/${e.id}',
-                                          ),
-                                        ),
-                                      ),
-                                    ],
+                          Text(
+                            '3. Seguimientos del grupo',
+                            style: GoogleFonts.poppins(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'Cada seguimiento es una foto en el tiempo '
+                            '(hoy, en un mes, en 3…). Si algo que ya lograba '
+                            'luego falla, lo verás en la gráfica del niño.',
+                            style: GoogleFonts.poppins(
+                              fontSize: 12,
+                              color: AppColors.gris,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Row(
+                            children: [
+                              if (_puedeCrearSeguimiento)
+                                FilledButton.icon(
+                                  onPressed: _crearEvaluacion,
+                                  icon: const Icon(Icons.add),
+                                  label: const Text('Nuevo seguimiento'),
+                                  style: FilledButton.styleFrom(
+                                    backgroundColor: AppColors.morado,
                                   ),
                                 ),
-                              ],
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          if (_evaluaciones.isEmpty)
+                            Text(
+                              'Sin seguimientos aún. Crea uno con la lista '
+                              '(ej. hitos 6 meses) y luego califica niño por niño.',
+                              style: GoogleFonts.poppins(
+                                color: AppColors.gris,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ..._evaluaciones.map(
+                            (e) => Card(
+                              margin: const EdgeInsets.only(bottom: 8),
+                              child: ListTile(
+                                title: Text(e.tituloDisplay),
+                                subtitle: Text(
+                                  DateFormat('dd/MM/yyyy').format(e.fechaInicio),
+                                ),
+                                trailing: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    if (_esDirectora)
+                                      IconButton(
+                                        tooltip: 'Borrar seguimiento',
+                                        icon: const Icon(
+                                          Icons.delete_outline,
+                                          color: AppColors.rojo,
+                                        ),
+                                        onPressed: () =>
+                                            _eliminarEvaluacion(e),
+                                      ),
+                                    const Icon(Icons.chevron_right),
+                                  ],
+                                ),
+                                onTap: () => context.push(
+                                  '/directora/portage/evaluacion/${e.id}',
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                          OutlinedButton.icon(
+                            onPressed: () async {
+                              final gid = _gradoId;
+                              await context.push(
+                                gid == null
+                                    ? '/directora/portage/listas'
+                                    : '/directora/portage/listas?grado=$gid',
+                              );
+                              await _cargarGrado();
+                            },
+                            icon: const Icon(Icons.list_alt),
+                            label: const Text(
+                              'Administrar listas / plantillas',
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          TextButton.icon(
+                            onPressed: () => context.push('/directora/hitos'),
+                            icon: const Icon(Icons.timeline, size: 18),
+                            label: const Text(
+                              'Hitos por meses (cargar catálogo)',
                             ),
                           ),
                           const SizedBox(height: 40),

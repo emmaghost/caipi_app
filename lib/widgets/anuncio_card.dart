@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
 import '../models/anuncio.dart';
+import '../utils/mexico_time.dart';
 
 class AnuncioCard extends StatelessWidget {
   final Anuncio anuncio;
@@ -72,8 +72,10 @@ class AnuncioCard extends StatelessWidget {
                   
                   Expanded(
                     child: Text(
-                      DateFormat('dd/MMM/yyyy HH:mm')
-                          .format(anuncio.fechaPublicacion),
+                      MexicoTime.format(
+                        anuncio.fechaPublicacion,
+                        'dd/MMM/yyyy HH:mm',
+                      ),
                       style: TextStyle(
                         fontSize: 12,
                         color: Colors.grey[600],
@@ -117,7 +119,7 @@ class AnuncioCard extends StatelessWidget {
                     ),
                     const SizedBox(width: 4),
                     Text(
-                      'Evento: ${DateFormat('dd/MMM/yyyy').format(anuncio.fechaEvento!)}',
+                      'Evento: ${MexicoTime.format(anuncio.fechaEvento!, 'dd/MMM/yyyy')}',
                       style: TextStyle(
                         fontSize: 13,
                         color: anuncio.prioridadColor,
@@ -135,47 +137,80 @@ class AnuncioCard extends StatelessWidget {
   }
 
   void _mostrarDetalleAnuncio(BuildContext context) {
+    final leido = anuncio.fueLeidoPor(usuarioId);
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text(anuncio.titulo),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(anuncio.mensaje),
-              if (anuncio.fechaEvento != null) ...[
-                const SizedBox(height: 16),
-                const Divider(),
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    const Icon(Icons.event, size: 20),
-                    const SizedBox(width: 8),
-                    Text(
-                      'Fecha del evento:',
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        color: Colors.grey[700],
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 4),
+        insetPadding:
+            const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+        title: Text(
+          anuncio.titulo,
+          maxLines: 3,
+          overflow: TextOverflow.ellipsis,
+        ),
+        content: SizedBox(
+          width: MediaQuery.sizeOf(context).width,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
                 Text(
-                  DateFormat('EEEE, dd de MMMM de yyyy', 'es_MX')
-                      .format(anuncio.fechaEvento!),
-                  style: const TextStyle(fontSize: 15),
+                  MexicoTime.format(
+                    anuncio.fechaPublicacion,
+                    'dd/MM/yyyy HH:mm',
+                  ),
+                  style: TextStyle(fontSize: 12, color: Colors.grey[600]),
                 ),
+                const SizedBox(height: 12),
+                Text(anuncio.mensaje),
+                if (anuncio.fechaEvento != null) ...[
+                  const SizedBox(height: 16),
+                  const Divider(),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      const Icon(Icons.event, size: 20),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Fecha del evento:',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: Colors.grey[700],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    MexicoTime.format(
+                      anuncio.fechaEvento!,
+                      'EEEE, dd de MMMM de yyyy',
+                    ),
+                    style: const TextStyle(fontSize: 15),
+                  ),
+                ],
               ],
-            ],
+            ),
           ),
         ),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cerrar'),
+          if (!leido && onMarcarLeido != null)
+            TextButton(
+              onPressed: () {
+                onMarcarLeido!();
+                Navigator.pop(context);
+              },
+              child: const Text('Marcar como leído'),
+            ),
+          FilledButton(
+            onPressed: () {
+              if (!leido && onMarcarLeido != null) {
+                onMarcarLeido!();
+              }
+              Navigator.pop(context);
+            },
+            child: Text(leido ? 'Cerrar' : 'Leído y cerrar'),
           ),
         ],
       ),

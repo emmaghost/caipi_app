@@ -7,6 +7,7 @@ import '../../config/app_colors.dart';
 import '../../services/auth_service.dart';
 import '../../services/chat_service.dart';
 import '../../services/pago_avisos_service.dart';
+import '../../services/supabase_service.dart';
 import '../../widgets/app_drawer.dart';
 import '../../widgets/caipi_app_bar_leading.dart';
 
@@ -22,6 +23,7 @@ class _PagoAvisosScreenState extends State<PagoAvisosScreen> {
   final _service = PagoAvisosService();
   late Future<List<PagoAvisoProgramado>> _future;
   bool _enviando = false;
+  bool _ayudaExpandida = false;
 
   @override
   void initState() {
@@ -189,12 +191,18 @@ class _PagoAvisosScreenState extends State<PagoAvisosScreen> {
                       value: chat,
                       onChanged: (v) => setLocal(() => chat = v),
                     ),
-                    SwitchListTile(
-                      contentPadding: EdgeInsets.zero,
-                      title: const Text('Enviar push (si hay tokens)'),
-                      value: push,
-                      onChanged: (v) => setLocal(() => push = v),
-                    ),
+                      SwitchListTile(
+                        contentPadding: EdgeInsets.zero,
+                        title: const Text(
+                          'Notificación al celular',
+                        ),
+                        subtitle: const Text(
+                          'Solo llega si el papá tiene la app instalada '
+                          'y aceptó avisos (token FCM). Si no, igual puede ir por chat.',
+                        ),
+                        value: push,
+                        onChanged: (v) => setLocal(() => push = v),
+                      ),
                   ],
                 ),
               ),
@@ -294,7 +302,7 @@ class _PagoAvisosScreenState extends State<PagoAvisosScreen> {
 
     setState(() => _enviando = true);
     try {
-      final filas = await _service.destinatariosPara(aviso);
+      var filas = await _service.destinatariosPara(aviso);
       if (filas.isEmpty) {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
@@ -309,6 +317,14 @@ class _PagoAvisosScreenState extends State<PagoAvisosScreen> {
         );
         return;
       }
+
+      if (!mounted) return;
+      final seleccion = await _elegirDestinatarios(filas);
+      if (seleccion == null || !mounted) {
+        setState(() => _enviando = false);
+        return;
+      }
+      filas = seleccion;
 
       final porPadre = _service.agruparPorPadre(filas);
       var enviadosChat = 0;
@@ -362,7 +378,7 @@ class _PagoAvisosScreenState extends State<PagoAvisosScreen> {
           content: Text(
             'Chat: $enviadosChat enviado(s)'
             '${omitidos > 0 ? ' · $omitidos ya notificados hoy' : ''}. '
-            '${PagoAvisoTipo.etiqueta(aviso.tipo)} · Kínder 1–3.',
+            '${PagoAvisoTipo.etiqueta(aviso.tipo)}.',
           ),
           backgroundColor: AppColors.verde,
           duration: const Duration(seconds: 5),
@@ -379,6 +395,153 @@ class _PagoAvisosScreenState extends State<PagoAvisosScreen> {
     } finally {
       if (mounted) setState(() => _enviando = false);
     }
+  }
+
+  Future<List<PadreAdeudoResumen>?> _elegirDestinatarios(
+    List<PadreAdeudoResumen> todos,
+  ) async {
+    final svc = context.read<SupabaseService>();
+    final grados = await svc.obtenerGrados();
+    final alumnos = await svc.obtenerAlumnos();
+    final gradoPorAlumno = {
+      for (final a in alumnos)
+        if (a.gradoId != null) a.id: a.gradoId!,
+    };
+    final gradosOk = grados.where((g) => g.muestraModuloPagos).toList();
+    if (!mounted) return null;
+
+    String modo = 'todos'; // todos | grupo | varios
+    String? gradoId;
+    final seleccionados = <String>{};
+
+    return showDialog<List<PadreAdeudoResumen>>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setLocal) {
+          final visibles = todos.where((f) {
+            if (modo == 'todos') return true;
+            if (modo == 'grupo') {
+              if (gradoId == null) return false;
+              return gradoPorAlumno[f.alumnoId] == gradoId;
+            }
+            return seleccionados.contains(f.alumnoId);
+          }).toList();
+
+          return AlertDialog(
+            title: const Text('¿A quién enviar?'),
+            content: SizedBox(
+              width: 420,
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text(
+                      'Base: ${todos.length} hijo(s) con saldo según el tipo de aviso.',
+                      style: GoogleFonts.poppins(fontSize: 12),
+                    ),
+                    const SizedBox(height: 12),
+                    Wrap(
+                      spacing: 8,
+                      children: [
+                        ChoiceChip(
+                          label: const Text('Todos'),
+                          selected: modo == 'todos',
+                          onSelected: (_) => setLocal(() {
+                            modo = 'todos';
+                            seleccionados.clear();
+                          }),
+                        ),
+                        ChoiceChip(
+                          label: const Text('Por grupo'),
+                          selected: modo == 'grupo',
+                          onSelected: (_) => setLocal(() {
+                            modo = 'grupo';
+                            seleccionados.clear();
+                          }),
+                        ),
+                        ChoiceChip(
+                          label: const Text('Uno / varios'),
+                          selected: modo == 'varios',
+                          onSelected: (_) => setLocal(() {
+                            modo = 'varios';
+                            gradoId = null;
+                          }),
+                        ),
+                      ],
+                    ),
+                    if (modo == 'grupo') ...[
+                      const SizedBox(height: 12),
+                      DropdownButtonFormField<String>(
+                        value: gradoId,
+                        decoration: const InputDecoration(
+                          labelText: 'Grupo (Kínder)',
+                          border: OutlineInputBorder(),
+                        ),
+                        items: gradosOk
+                            .map(
+                              (g) => DropdownMenuItem(
+                                value: g.id,
+                                child: Text(g.nombre),
+                              ),
+                            )
+                            .toList(),
+                        onChanged: (v) => setLocal(() => gradoId = v),
+                      ),
+                    ],
+                    if (modo == 'varios') ...[
+                      const SizedBox(height: 8),
+                      ...todos.map(
+                        (f) => CheckboxListTile(
+                          dense: true,
+                          contentPadding: EdgeInsets.zero,
+                          value: seleccionados.contains(f.alumnoId),
+                          title: Text(
+                            f.alumnoNombre,
+                            style: GoogleFonts.poppins(fontSize: 13),
+                          ),
+                          subtitle: Text(
+                            'Saldo ${PagoAvisoTipo.formatoMxn.format(f.saldo)}',
+                            style: GoogleFonts.poppins(fontSize: 11),
+                          ),
+                          onChanged: (v) => setLocal(() {
+                            if (v == true) {
+                              seleccionados.add(f.alumnoId);
+                            } else {
+                              seleccionados.remove(f.alumnoId);
+                            }
+                          }),
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 8),
+                    Text(
+                      'Se enviará a ${visibles.length} registro(s).',
+                      style: GoogleFonts.poppins(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Cancelar'),
+              ),
+              FilledButton(
+                onPressed: visibles.isEmpty
+                    ? null
+                    : () => Navigator.pop(ctx, visibles),
+                child: const Text('Enviar'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
   }
 
   @override
@@ -411,24 +574,48 @@ class _PagoAvisosScreenState extends State<PagoAvisosScreen> {
         children: [
           Container(
             width: double.infinity,
-            margin: const EdgeInsets.all(16),
-            padding: const EdgeInsets.all(14),
+            margin: const EdgeInsets.fromLTRB(16, 16, 16, 8),
             decoration: BoxDecoration(
               color: Colors.blue.shade50,
               borderRadius: BorderRadius.circular(12),
               border: Border.all(color: Colors.blue.shade200),
             ),
-            child: Text(
-              'Avisos 100% configurables (caja y directora): día del mes, tipo, '
-              'título y texto. Usa {nombres_hijos}, {nombre_hijo} y {saldo} '
-              '(el saldo sale en pesos MX, ej. \$27,830.00).\n\n'
-              '• Pronto pago — el pago está por llegar; eviten recargos.\n'
-              '• Adeudo — saldo vencido; pasar a pagar.\n'
-              '• Administración — aviso institucional.\n\n'
-              'El título lleva «Administración CAIPI informa». '
-              'Primero ejecuta ADD_PAGO_AVISOS_PROGRAMADOS.sql si aún no. '
-              '«Enviar ahora» prueba el envío.',
-              style: GoogleFonts.poppins(fontSize: 13, color: Colors.blue.shade900),
+            child: Theme(
+              data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+              child: ExpansionTile(
+                initiallyExpanded: false,
+                onExpansionChanged: (v) =>
+                    setState(() => _ayudaExpandida = v),
+                tilePadding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 0),
+                childrenPadding: const EdgeInsets.fromLTRB(14, 0, 14, 12),
+                title: Text(
+                  _ayudaExpandida
+                      ? 'Cómo funcionan los avisos'
+                      : 'Avisos configurables · toca para ver ayuda',
+                  style: GoogleFonts.poppins(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.blue.shade900,
+                  ),
+                ),
+                children: [
+                  Text(
+                    'Día del mes, tipo, título y texto. Placeholders: '
+                    '{nombres_hijos}, {nombre_hijo}, {saldo}.\n\n'
+                    '• Pronto pago — el pago está por llegar.\n'
+                    '• Adeudo — saldo vencido.\n'
+                    '• Administración — aviso institucional.\n\n'
+                    'Al enviar puedes elegir: todos, un grupo, varios niños o uno solo.\n'
+                    'Notificación al celular solo si el papá tiene la app con avisos activos.',
+                    style: GoogleFonts.poppins(
+                      fontSize: 12.5,
+                      color: Colors.blue.shade900,
+                      height: 1.35,
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
           Expanded(

@@ -330,7 +330,7 @@ class _AppDrawerState extends State<AppDrawer> {
                               ruta: '/directora/alumnos',
                               tienePermiso: true,
                             ),
-                            if (usuario?.puedeVerPortage == true)
+                            if (usuario?.puedeVerPortage == true) ...[
                               _buildMenuItem(
                                 context: context,
                                 icon: Icons.psychology_outlined,
@@ -338,6 +338,14 @@ class _AppDrawerState extends State<AppDrawer> {
                                 ruta: '/directora/portage',
                                 tienePermiso: true,
                               ),
+                              _buildMenuItem(
+                                context: context,
+                                icon: Icons.timeline,
+                                title: 'Hitos (cargar catálogo)',
+                                ruta: '/directora/hitos',
+                                tienePermiso: true,
+                              ),
+                            ],
                             _buildSectionHeader('COMUNICACIÓN'),
                             _buildMenuItem(
                               context: context,
@@ -409,6 +417,13 @@ class _AppDrawerState extends State<AppDrawer> {
                               icon: Icons.psychology_outlined,
                               title: 'Indicadores de desarrollo',
                               ruta: '/directora/portage',
+                              tienePermiso: true,
+                            ),
+                            _buildMenuItem(
+                              context: context,
+                              icon: Icons.timeline,
+                              title: 'Hitos (cargar catálogo)',
+                              ruta: '/directora/hitos',
                               tienePermiso: true,
                             ),
                             if (usuario?.esDirectora == true ||

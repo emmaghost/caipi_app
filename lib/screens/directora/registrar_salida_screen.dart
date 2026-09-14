@@ -50,6 +50,9 @@ class _RegistrarSalidaScreenState extends State<RegistrarSalidaScreen> {
   TimeOfDay _horaSalida = const TimeOfDay(hour: 14, minute: 0); // Por defecto 2:00 PM
   String? _personaAutorizadaId;
   bool _ausente = false;
+  /// Si true, al guardar salida se avisa a papá(s) vinculados (1 o 2).
+  bool _notificarPadres = true;
+  int _nPadresAlumno = 0;
 
   bool _cargando = false;
   bool _esEdicion = false;
@@ -78,10 +81,23 @@ class _RegistrarSalidaScreenState extends State<RegistrarSalidaScreen> {
       _horaSalida = TimeOfDay.now();
     }
 
+    // Días anteriores: por defecto NO notificar (evita confusión).
+    final hoy = DateTime.now();
+    final esHoy =
+        _fecha.year == hoy.year && _fecha.month == hoy.month && _fecha.day == hoy.day;
+    _notificarPadres = esHoy;
+
     if (widget.controlId != null) {
       _esEdicion = true;
       _cargarDatosControl();
+    } else if (_alumnoSeleccionadoId != null) {
+      _actualizarConteoPadres(_alumnoSeleccionadoId!);
     }
+  }
+
+  Future<void> _actualizarConteoPadres(String alumnoId) async {
+    final n = await NotificacionEntregaService().contarPadresDeAlumno(alumnoId);
+    if (mounted) setState(() => _nPadresAlumno = n);
   }
 
   Future<void> _cargarDatosControl() async {
@@ -111,8 +127,13 @@ class _RegistrarSalidaScreenState extends State<RegistrarSalidaScreen> {
         _quienRecogioController.text = control.quienRecogio ?? '';
         _personaAutorizadaId = control.personaAutorizadaId;
         _ausente = control.ausente;
+        final hoy = DateTime.now();
+        _notificarPadres = control.fecha.year == hoy.year &&
+            control.fecha.month == hoy.month &&
+            control.fecha.day == hoy.day;
         _cargando = false;
       });
+      await _actualizarConteoPadres(control.alumnoId);
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -381,7 +402,40 @@ class _RegistrarSalidaScreenState extends State<RegistrarSalidaScreen> {
                                 ),
                               ),
                             ),
-                            const SizedBox(height: 16),
+                            const SizedBox(height: 12),
+                            SwitchListTile(
+                              contentPadding: EdgeInsets.zero,
+                              secondary: Icon(
+                                _notificarPadres
+                                    ? Icons.notifications_active
+                                    : Icons.notifications_off_outlined,
+                                color: _notificarPadres
+                                    ? const Color(0xFF166534)
+                                    : Colors.grey,
+                              ),
+                              title: Text(
+                                _nPadresAlumno >= 2
+                                    ? 'Notificar a los 2 padres/tutores'
+                                    : _nPadresAlumno == 1
+                                        ? 'Notificar al padre/tutor'
+                                        : 'Notificar a padres',
+                                style: GoogleFonts.poppins(
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 14,
+                                ),
+                              ),
+                              subtitle: Text(
+                                _notificarPadres
+                                    ? 'Push con la fecha de esta salida'
+                                    : 'No se avisará a los padres',
+                                style: GoogleFonts.poppins(fontSize: 12),
+                              ),
+                              value: _notificarPadres,
+                              activeColor: const Color(0xFF166534),
+                              onChanged: (v) =>
+                                  setState(() => _notificarPadres = v),
+                            ),
+                            const SizedBox(height: 8),
 
                             // Persona autorizada
                             if (_alumnoSeleccionadoId != null)
@@ -584,6 +638,7 @@ class _RegistrarSalidaScreenState extends State<RegistrarSalidaScreen> {
             setState(() {
               _alumnoSeleccionadoId = value;
             });
+            if (value != null) _actualizarConteoPadres(value);
           },
           validator: (value) {
             if (value == null || value.isEmpty) {
@@ -717,6 +772,8 @@ class _RegistrarSalidaScreenState extends State<RegistrarSalidaScreen> {
         await NotificacionEntregaService().avisarNinoRecogido(
           alumnoId: _alumnoSeleccionadoId!,
           quienRecibio: _quienRecogioController.text.trim(),
+          fechaSalida: _fecha,
+          notificarPadres: _notificarPadres,
         );
       }
 
@@ -725,8 +782,12 @@ class _RegistrarSalidaScreenState extends State<RegistrarSalidaScreen> {
           SnackBar(
             content: Text(
               _esEdicion
-                  ? '✓ Registro actualizado correctamente'
-                  : '✓ Registro creado correctamente',
+                  ? (_notificarPadres
+                      ? '✓ Actualizado · padres notificados'
+                      : '✓ Actualizado · sin aviso a padres')
+                  : (_notificarPadres
+                      ? '✓ Creado · padres notificados'
+                      : '✓ Creado · sin aviso a padres'),
             ),
             backgroundColor: Colors.green,
           ),

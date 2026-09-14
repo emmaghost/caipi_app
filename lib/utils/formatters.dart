@@ -1,14 +1,16 @@
 import 'package:intl/intl.dart';
 
+import 'mexico_time.dart';
+
 class Formatters {
-  // Formato de fecha: 15/Mar/2026
+  // Formato de fecha: 15/Mar/2026 (hora México Centro)
   static String formatFecha(DateTime fecha) {
-    return DateFormat('dd/MMM/yyyy', 'es_MX').format(fecha);
+    return MexicoTime.format(fecha, 'dd/MMM/yyyy');
   }
 
-  // Formato de fecha y hora: 15/Mar/2026 14:30
+  // Formato de fecha y hora: 15/Mar/2026 14:30 (hora México Centro)
   static String formatFechaHora(DateTime fecha) {
-    return DateFormat('dd/MMM/yyyy HH:mm', 'es_MX').format(fecha);
+    return MexicoTime.format(fecha, 'dd/MMM/yyyy HH:mm');
   }
 
   // Formato de dinero: $1,234.56

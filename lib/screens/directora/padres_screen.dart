@@ -8,6 +8,7 @@ import '../../config/app_colors.dart';
 import '../../models/grado.dart';
 import '../../services/auth_service.dart';
 import '../../services/chat_service.dart';
+import '../../services/exportacion_padres_hijos_excel.dart';
 import '../../utils/constantes.dart';
 import '../../widgets/app_drawer.dart';
 import '../../widgets/caipi_app_bar_leading.dart';
@@ -113,6 +114,34 @@ class _PadresScreenState extends State<PadresScreen> {
     await future.catchError((_) => _PadresData.empty);
   }
 
+  Future<void> _exportarExcelPadresHijos() async {
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(child: CircularProgressIndicator()),
+    );
+    try {
+      await ExportacionPadresHijosExcel().generarYCompartir();
+      if (!mounted) return;
+      Navigator.of(context, rootNavigator: true).pop();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Excel listo para compartir / guardar'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      Navigator.of(context, rootNavigator: true).pop();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('No se pudo exportar: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
   Future<void> _abrirCrearPadre() async {
     await context.push('/directora/padres/crear');
     if (mounted) await _refrescar();
@@ -159,6 +188,11 @@ class _PadresScreenState extends State<PadresScreen> {
         backgroundColor: Colors.white,
         elevation: 0,
         actions: [
+          IconButton(
+            icon: const Icon(Icons.table_chart_outlined),
+            tooltip: 'Excel: papá ↔ hijo',
+            onPressed: _exportarExcelPadresHijos,
+          ),
           IconButton(
             icon: const Icon(Icons.refresh),
             onPressed: _refrescar,
