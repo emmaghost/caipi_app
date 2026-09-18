@@ -25,8 +25,11 @@ class _AnunciosPadreSectionState extends State<AnunciosPadreSection> {
   _FiltroAnunciosPadre _filtro = _FiltroAnunciosPadre.todos;
 
   bool _visibleParaPadre(Anuncio a, Set<String> gradoIdsHijos) {
+    // Escuela completa
     if (a.paraTodos) return true;
-    if (a.paraGrados.isEmpty) return true;
+    // Sin grados destino = no mostrar (antes se filtraba mal y llegaba a todos)
+    if (a.paraGrados.isEmpty) return false;
+    // Solo si algún hijo está en un grado del anuncio
     return a.paraGrados.any(gradoIdsHijos.contains);
   }
 

@@ -8,13 +8,22 @@ import '../utils/portage_stats.dart';
 /// Gráfica de línea con puntos (evolución de logrados).
 class PortageLineChart extends StatelessWidget {
   final List<PortagePuntoSerie> serie;
+  /// Si true, dibuja el número de logrados arriba de cada punto.
+  final bool anotarValores;
 
-  const PortageLineChart({super.key, required this.serie});
+  const PortageLineChart({
+    super.key,
+    required this.serie,
+    this.anotarValores = false,
+  });
 
   @override
   Widget build(BuildContext context) {
     return CustomPaint(
-      painter: _PortageLineChartPainter(serie: serie),
+      painter: _PortageLineChartPainter(
+        serie: serie,
+        anotarValores: anotarValores,
+      ),
       child: const SizedBox.expand(),
     );
   }
@@ -22,8 +31,12 @@ class PortageLineChart extends StatelessWidget {
 
 class _PortageLineChartPainter extends CustomPainter {
   final List<PortagePuntoSerie> serie;
+  final bool anotarValores;
 
-  _PortageLineChartPainter({required this.serie});
+  _PortageLineChartPainter({
+    required this.serie,
+    this.anotarValores = false,
+  });
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -31,7 +44,7 @@ class _PortageLineChartPainter extends CustomPainter {
 
     const left = 36.0;
     const right = 12.0;
-    const top = 16.0;
+    const top = 22.0;
     const bottom = 44.0;
     final chartW = size.width - left - right;
     final chartH = size.height - top - bottom;
@@ -119,6 +132,21 @@ class _PortageLineChartPainter extends CustomPainter {
         ..close();
       canvas.drawPath(diamond, pointPaint);
 
+      if (anotarValores) {
+        final val = TextPainter(
+          text: TextSpan(
+            text: '${serie[i].logrados}',
+            style: const TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              color: Color(0xFFC62828),
+            ),
+          ),
+          textDirection: ui.TextDirection.ltr,
+        )..layout();
+        val.paint(canvas, Offset(o.dx - val.width / 2, o.dy - 18));
+      }
+
       final fecha = DateFormat('dd/MM').format(serie[i].fecha);
       final tp = TextPainter(
         text: TextSpan(
@@ -137,5 +165,5 @@ class _PortageLineChartPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _PortageLineChartPainter oldDelegate) =>
-      oldDelegate.serie != serie;
+      oldDelegate.serie != serie || oldDelegate.anotarValores != anotarValores;
 }

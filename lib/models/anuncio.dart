@@ -57,6 +57,17 @@ class Anuncio {
   }
 
   factory Anuncio.fromJson(Map<String, dynamic> json) {
+    final grados = _parseGrados(json);
+    final paraTodosRaw = json['para_todos'];
+    final bool paraTodos;
+    if (paraTodosRaw is bool) {
+      paraTodos = paraTodosRaw;
+    } else if (grados.isNotEmpty) {
+      // Legacy / dato incompleto: hay grados → no es para toda la escuela
+      paraTodos = false;
+    } else {
+      paraTodos = true;
+    }
     return Anuncio(
       id: json['id']?.toString() ?? '',
       titulo: json['titulo']?.toString() ?? '',
@@ -72,8 +83,8 @@ class Anuncio {
           ? List<String>.from(json['leido_por'] as List)
           : const [],
       creadoPor: json['creado_por']?.toString() ?? '',
-      paraTodos: json['para_todos'] as bool? ?? true,
-      paraGrados: _parseGrados(json),
+      paraTodos: paraTodos,
+      paraGrados: grados,
     );
   }
 

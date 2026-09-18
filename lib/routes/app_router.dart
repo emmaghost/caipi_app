@@ -67,6 +67,7 @@ import '../screens/padres/eventos_screen.dart';
 import '../screens/padres/personas_autorizadas_screen.dart';
 import '../screens/padres/qr_temporal_screen.dart';
 import '../screens/padres/acceso_restringido_screen.dart';
+import '../screens/padres/indicadores_padre_screen.dart';
 import '../screens/chat/chat_lista_escuela_screen.dart';
 import '../screens/chat/chat_conversacion_screen.dart';
 import '../screens/chat/chat_padre_screen.dart';
@@ -625,6 +626,17 @@ GoRouter createRouter({
     GoRoute(
       path: '/padre',
       builder: (context, state) => const DashboardPadre(),
+    ),
+    GoRoute(
+      path: '/padre/indicadores',
+      builder: (context, state) => const IndicadoresPadreHubScreen(),
+    ),
+    GoRoute(
+      path: '/padre/hijo/:id/indicadores',
+      builder: (context, state) {
+        final hijoId = state.pathParameters['id']!;
+        return IndicadoresPadreScreen(alumnoId: hijoId);
+      },
     ),
     GoRoute(
       path: '/padre/hijo/:id/pagos',

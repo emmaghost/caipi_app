@@ -255,6 +255,13 @@ class _AppDrawerState extends State<AppDrawer> {
                                 ruta: '/padre/chat',
                                 tienePermiso: true,
                               ),
+                              _buildMenuItem(
+                                context: context,
+                                icon: Icons.auto_graph,
+                                title: 'Indicadores de desarrollo',
+                                ruta: '/padre/indicadores',
+                                tienePermiso: true,
+                              ),
                               _buildSectionHeader('CUENTA'),
                               _buildMenuItem(
                                 context: context,
@@ -445,7 +452,6 @@ class _AppDrawerState extends State<AppDrawer> {
                               ),
                           ],
 
-                          // SECCIÓN: PAGOS (directora; caja tiene menú propio)
                           if (_permisos['ver_pagos'] == true &&
                               usuario?.esDirectora == true) ...[
                             _buildSectionHeader('PAGOS'),
@@ -472,7 +478,6 @@ class _AppDrawerState extends State<AppDrawer> {
                             ),
                           ],
 
-                          // SECCIÓN: PERSONAL (solo directora)
                           if (usuario?.esDirectora == true &&
                               (_permisos['ver_profesores'] == true ||
                                   _permisos['ver_padres'] == true)) ...[
@@ -495,7 +500,6 @@ class _AppDrawerState extends State<AppDrawer> {
                               ),
                           ],
 
-                          // SECCIÓN: EVENTOS E INCIDENTES
                           if (_permisos['ver_eventos'] == true ||
                               _permisos['ver_incidentes'] == true) ...[
                             _buildSectionHeader('EVENTOS & INCIDENTES'),
@@ -526,7 +530,6 @@ class _AppDrawerState extends State<AppDrawer> {
                               ),
                           ],
 
-                          // SECCIÓN: COMUNICACIÓN
                           if (_permisos['ver_anuncios'] == true) ...[
                             _buildSectionHeader('COMUNICACIÓN'),
                             _buildMenuItem(
@@ -546,7 +549,6 @@ class _AppDrawerState extends State<AppDrawer> {
                               ),
                           ],
 
-                          // SECCIÓN: BITÁCORA
                           if (_permisos['ver_bitacora'] == true) ...[
                             _buildSectionHeader('BITÁCORA'),
                             _buildMenuItem(

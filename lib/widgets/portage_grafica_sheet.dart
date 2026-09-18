@@ -12,17 +12,17 @@ import '../services/portage_service.dart';
 import '../utils/portage_stats.dart';
 import 'portage_line_chart.dart';
 
-/// Bottom sheet: evolución + opción de incluir gráfica en PDF.
+/// Bottom sheet: evolución por seguimientos + PDF.
 Future<void> mostrarPortageGraficaPdf({
   required BuildContext context,
   required Alumno alumno,
   required String gradoId,
   required PortageEvaluacion evaluacionPdf,
   required List<PortageIndicador> indicadoresPdf,
-  int ventanaMesesInicial = 3,
+  int? maxSeguimientosInicial,
 }) async {
   final portage = PortageService();
-  var ventanaMeses = ventanaMesesInicial;
+  int? maxSeg = maxSeguimientosInicial;
 
   Future<void> abrir() async {
     final evals = await portage.listarEvaluacionesPorGrado(gradoId);
@@ -35,11 +35,11 @@ Future<void> mostrarPortageGraficaPdf({
           await portage.obtenerResultados(e.id, alumno.id);
     }
 
-    final serie = PortageStats.seriePorVentanaMeses(
+    final serie = PortageStats.seriePorSeguimientos(
       evaluaciones: evals,
       resultadosPorEvaluacion: resultadosPorEval,
       totalIndicadoresPorEvaluacion: totales,
-      meses: ventanaMeses,
+      maxSeguimientos: maxSeg,
     );
 
     if (!context.mounted) return;
@@ -68,16 +68,24 @@ Future<void> mostrarPortageGraficaPdf({
                       fontSize: 16,
                     ),
                   ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Cada punto es un seguimiento calificado.',
+                    style: GoogleFonts.poppins(
+                      fontSize: 12,
+                      color: AppColors.gris,
+                    ),
+                  ),
                   const SizedBox(height: 8),
-                  SegmentedButton<int>(
+                  SegmentedButton<int?>(
                     segments: const [
-                      ButtonSegment(value: 1, label: Text('1 mes')),
-                      ButtonSegment(value: 3, label: Text('3 meses')),
-                      ButtonSegment(value: 6, label: Text('6 meses')),
+                      ButtonSegment(value: null, label: Text('Todos')),
+                      ButtonSegment(value: 3, label: Text('Últ. 3')),
+                      ButtonSegment(value: 6, label: Text('Últ. 6')),
                     ],
-                    selected: {ventanaMeses},
+                    selected: {maxSeg},
                     onSelectionChanged: (s) {
-                      ventanaMeses = s.first;
+                      maxSeg = s.first;
                       Navigator.pop(ctx);
                       abrir();
                     },
@@ -85,14 +93,27 @@ Future<void> mostrarPortageGraficaPdf({
                   const SizedBox(height: 16),
                   if (serie.isEmpty)
                     Text(
-                      'Sin registros en este rango de meses.',
+                      'Aún no hay seguimientos calificados para graficar.',
                       style: GoogleFonts.poppins(color: AppColors.gris),
                     )
-                  else
+                  else ...[
                     SizedBox(
                       height: 220,
                       child: PortageLineChart(serie: serie),
                     ),
+                    if (serie.length == 1)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 8),
+                        child: Text(
+                          'Solo hay 1 seguimiento. Cuando califiques otro, '
+                          'verás la línea de tendencia entre fechas.',
+                          style: GoogleFonts.poppins(
+                            fontSize: 12,
+                            color: AppColors.gris,
+                          ),
+                        ),
+                      ),
+                  ],
                   const SizedBox(height: 8),
                   CheckboxListTile(
                     contentPadding: EdgeInsets.zero,

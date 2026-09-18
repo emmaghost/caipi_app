@@ -1,7 +1,7 @@
 name: escuela_caipi
 description: Sistema de gestión escolar para padres y directora
 publish_to: 'none'
-version: 1.0.12+4015
+version: 1.0.13+4016
 environment:
   sdk: '>=3.0.0 <4.0.0'
 

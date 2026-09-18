@@ -13,7 +13,6 @@ import '../../config/app_colors.dart';
 import '../../widgets/app_drawer.dart';
 import '../../widgets/solicitud_recogida_padre_card.dart';
 import '../../widgets/ligas_padre_vista.dart';
-import '../directora/portage_evaluacion_screen.dart';
 import '../../widgets/caipi_app_bar_leading.dart';
 
 class DetalleHijoScreen extends StatelessWidget {
@@ -289,7 +288,73 @@ class DetalleHijoScreen extends StatelessWidget {
 
               LigasPadreVista(alumnoId: alumno.id),
               const SizedBox(height: 12),
-              PortagePadreVista(alumno: alumno),
+
+              // Indicadores de desarrollo → pantalla dedicada
+              Card(
+                elevation: 2,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: InkWell(
+                  onTap: () => context.push(
+                    '/padre/hijo/${alumno.id}/indicadores',
+                  ),
+                  borderRadius: BorderRadius.circular(16),
+                  child: Container(
+                    padding: const EdgeInsets.all(20),
+                    decoration: BoxDecoration(
+                      color: AppColors.moradoClaro,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(
+                        color: AppColors.morado.withOpacity(0.35),
+                        width: 1,
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(14),
+                          decoration: const BoxDecoration(
+                            color: AppColors.morado,
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(
+                            Icons.auto_graph,
+                            color: Colors.white,
+                            size: 28,
+                          ),
+                        ),
+                        const SizedBox(width: 16),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Indicadores',
+                                style: GoogleFonts.fredoka(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.bold,
+                                  color: AppColors.morado,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                'Último seguimiento y gráfica de evolución',
+                                style: GoogleFonts.poppins(
+                                  fontSize: 14,
+                                  color: AppColors.grisOscuro,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        Icon(Icons.arrow_forward_ios,
+                            color: AppColors.morado, size: 18),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
               const SizedBox(height: 12),
 
               // Pagos solo Kínder 1–3 (no estimulación / maternal)

@@ -698,12 +698,27 @@ class _CrearAnuncioScreenState extends State<CrearAnuncioScreen> {
 
         var chatEnviados = 0;
         if (_enviarComoChat && usuario != null) {
+          // Nunca ampliar alcance: maestra solo a sus grados.
+          final paraTodosChat =
+              _paraTodos && _puedeEnviarGeneral;
+          final gradosChat = paraTodosChat
+              ? <String>[]
+              : (_gradosPermitidos == null
+                  ? List<String>.from(_gradosSeleccionados)
+                  : _gradosSeleccionados
+                      .where(_gradosPermitidos!.contains)
+                      .toList());
+          if (!paraTodosChat && gradosChat.isEmpty) {
+            throw Exception(
+              'Sin grados destino para el chat. Revisa tus grupos asignados.',
+            );
+          }
           final prefijo = _urgente ? '📢 Anuncio urgente' : '📢 Anuncio';
           chatEnviados = await ChatService().enviarMensajeMasivoAPadres(
             remitenteId: usuario.id,
             contenido: '$prefijo: $titulo\n\n$mensaje',
-            paraTodos: _paraTodos,
-            gradoIds: _gradosSeleccionados,
+            paraTodos: paraTodosChat,
+            gradoIds: gradosChat,
             omitirHorario: true,
           );
         }

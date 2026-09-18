@@ -1,12 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:intl/intl.dart';
+import 'package:provider/provider.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../config/app_colors.dart';
-import '../../widgets/app_drawer.dart';
+import '../../models/alumno.dart';
 import '../../models/evento.dart';
+import '../../services/auth_service.dart';
+import '../../services/supabase_service.dart';
+import '../../utils/mexico_time.dart';
+import '../../widgets/app_drawer.dart';
 import '../../widgets/caipi_app_bar_leading.dart';
 
 class EventosPadreScreen extends StatefulWidget {
@@ -19,18 +24,35 @@ class EventosPadreScreen extends StatefulWidget {
 class _EventosPadreScreenState extends State<EventosPadreScreen> {
   String _filtroTipo = 'Todos';
 
+  DateTime _soloDia(DateTime d) => DateTime(d.year, d.month, d.day);
+
+  bool _esHoyOFuturo(DateTime fecha) {
+    final hoy = _soloDia(MexicoTime.now());
+    return !_soloDia(fecha).isBefore(hoy);
+  }
+
+  bool _visibleParaPadre(Evento e, Set<String> gradoIdsHijos) {
+    if (e.paraTodos) return true;
+    final grados = e.gradosIds ?? const <String>[];
+    if (grados.isEmpty) return true; // sin destino = escuela
+    if (gradoIdsHijos.isEmpty) return false;
+    return grados.any(gradoIdsHijos.contains);
+  }
+
   @override
   Widget build(BuildContext context) {
+    final usuario = context.watch<AuthService>().currentUser;
+
     return Scaffold(
       backgroundColor: AppColors.grisClaro,
       drawer: const AppDrawer(),
       appBar: AppBar(
         leading: const CaipiAppBarLeading(),
-        backgroundColor: const Color(0xFFEC407A), // Rosa pastel (igual que Mis Hijos)
+        backgroundColor: const Color(0xFFEC407A),
         foregroundColor: Colors.white,
         elevation: 0,
         title: Text(
-          'Próximos Eventos',
+          'Eventos',
           style: GoogleFonts.fredoka(fontWeight: FontWeight.bold),
         ),
         actions: [
@@ -43,7 +65,6 @@ class _EventosPadreScreenState extends State<EventosPadreScreen> {
       ),
       body: Column(
         children: [
-          // Filtros por tipo
           Container(
             height: 60,
             padding: const EdgeInsets.symmetric(vertical: 8),
@@ -56,81 +77,117 @@ class _EventosPadreScreenState extends State<EventosPadreScreen> {
                 _buildFiltroChip('festivo', Icons.celebration, label: 'Festivo'),
                 _buildFiltroChip('reunion', Icons.groups, label: 'Reunión'),
                 _buildFiltroChip('clausura', Icons.school, label: 'Clausura'),
+                _buildFiltroChip('otro', Icons.more_horiz, label: 'Otro'),
               ],
             ),
           ),
-
-          // Lista de eventos
           Expanded(
-            child: StreamBuilder<List<Map<String, dynamic>>>(
-              stream: Supabase.instance.client
-                  .from('eventos')
-                  .stream(primaryKey: ['id'])
-                  .order('fecha_evento'),
-              builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const Center(child: CircularProgressIndicator());
-                }
+            child: StreamBuilder<List<Alumno>>(
+              stream: usuario == null
+                  ? const Stream.empty()
+                  : context
+                      .read<SupabaseService>()
+                      .getAlumnosPorPadre(usuario.id),
+              builder: (context, hijosSnap) {
+                final gradoIds = <String>{
+                  for (final h in hijosSnap.data ?? const <Alumno>[])
+                    if (h.gradoId != null) h.gradoId!,
+                };
 
-                if (snapshot.hasError) {
-                  return Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        const Icon(Icons.error_outline, size: 64, color: Colors.red),
-                        const SizedBox(height: 16),
-                        Text('Error: ${snapshot.error}'),
-                      ],
-                    ),
-                  );
-                }
+                return StreamBuilder<List<Map<String, dynamic>>>(
+                  stream: Supabase.instance.client
+                      .from('eventos')
+                      .stream(primaryKey: ['id'])
+                      .order('fecha_evento'),
+                  builder: (context, snapshot) {
+                    if (snapshot.connectionState == ConnectionState.waiting &&
+                        !snapshot.hasData) {
+                      return const Center(child: CircularProgressIndicator());
+                    }
 
-                final eventosData = snapshot.data ?? [];
-                
-                // Filtrar solo eventos futuros
-                final ahora = DateTime.now();
-                var eventosFuturos = eventosData.where((e) {
-                  final fechaEvento = DateTime.parse(e['fecha_evento']);
-                  return fechaEvento.isAfter(ahora) || _esMismoDia(fechaEvento, ahora);
-                }).toList();
-
-                // Aplicar filtro de tipo
-                if (_filtroTipo != 'Todos') {
-                  eventosFuturos = eventosFuturos
-                      .where((e) => e['tipo'] == _filtroTipo)
-                      .toList();
-                }
-
-                if (eventosFuturos.isEmpty) {
-                  return Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          Icons.calendar_today_outlined,
-                          size: 80,
-                          color: AppColors.gris.withOpacity(0.5),
-                        ),
-                        const SizedBox(height: 16),
-                        Text(
-                          _filtroTipo == 'Todos' 
-                              ? 'No hay eventos próximos'
-                              : 'No hay eventos de este tipo',
-                          style: GoogleFonts.poppins(
-                            fontSize: 18,
-                            color: AppColors.gris,
+                    if (snapshot.hasError) {
+                      return Center(
+                        child: Padding(
+                          padding: const EdgeInsets.all(24),
+                          child: Text(
+                            'No se pudieron cargar los eventos.\n${snapshot.error}',
+                            textAlign: TextAlign.center,
+                            style: GoogleFonts.poppins(color: AppColors.rojo),
                           ),
                         ),
-                      ],
-                    ),
-                  );
-                }
+                      );
+                    }
 
-                return ListView.builder(
-                  padding: const EdgeInsets.all(16),
-                  itemCount: eventosFuturos.length,
-                  itemBuilder: (context, index) {
-                    return _buildEventoCard(eventosFuturos[index]);
+                    final raw = snapshot.data ?? [];
+                    final eventos = <Evento>[];
+                    for (final row in raw) {
+                      try {
+                        final e = Evento.fromJson(row);
+                        if (!e.activo) continue;
+                        if (!_visibleParaPadre(e, gradoIds)) continue;
+                        if (_filtroTipo != 'Todos' && e.tipo != _filtroTipo) {
+                          continue;
+                        }
+                        eventos.add(e);
+                      } catch (_) {
+                        // Fila incompleta: se omite
+                      }
+                    }
+
+                    final proximos = eventos
+                        .where((e) => _esHoyOFuturo(e.fechaEvento))
+                        .toList()
+                      ..sort(
+                        (a, b) => a.fechaEvento.compareTo(b.fechaEvento),
+                      );
+                    final pasados = eventos
+                        .where((e) => !_esHoyOFuturo(e.fechaEvento))
+                        .toList()
+                      ..sort(
+                        (a, b) => b.fechaEvento.compareTo(a.fechaEvento),
+                      );
+
+                    if (proximos.isEmpty && pasados.isEmpty) {
+                      return Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              Icons.calendar_today_outlined,
+                              size: 80,
+                              color: AppColors.gris.withOpacity(0.5),
+                            ),
+                            const SizedBox(height: 16),
+                            Text(
+                              _filtroTipo == 'Todos'
+                                  ? 'No hay eventos'
+                                  : 'No hay eventos de este tipo',
+                              style: GoogleFonts.poppins(
+                                fontSize: 18,
+                                color: AppColors.gris,
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    }
+
+                    return ListView(
+                      padding: const EdgeInsets.all(16),
+                      children: [
+                        if (proximos.isNotEmpty) ...[
+                          _header('Próximos', proximos.length),
+                          const SizedBox(height: 8),
+                          ...proximos.map(_buildEventoCard),
+                          const SizedBox(height: 20),
+                        ],
+                        if (pasados.isNotEmpty) ...[
+                          _header('Anteriores', pasados.length),
+                          const SizedBox(height: 8),
+                          ...pasados.take(20).map(_buildEventoCard),
+                        ],
+                      ],
+                    );
                   },
                 );
               },
@@ -141,10 +198,35 @@ class _EventosPadreScreenState extends State<EventosPadreScreen> {
     );
   }
 
-  bool _esMismoDia(DateTime fecha1, DateTime fecha2) {
-    return fecha1.year == fecha2.year &&
-        fecha1.month == fecha2.month &&
-        fecha1.day == fecha2.day;
+  Widget _header(String titulo, int n) {
+    return Row(
+      children: [
+        Text(
+          titulo,
+          style: GoogleFonts.fredoka(
+            fontSize: 18,
+            fontWeight: FontWeight.bold,
+            color: const Color(0xFFE91E63),
+          ),
+        ),
+        const SizedBox(width: 8),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
+          decoration: BoxDecoration(
+            color: const Color(0xFFE91E63),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Text(
+            '$n',
+            style: const TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.bold,
+              fontSize: 12,
+            ),
+          ),
+        ),
+      ],
+    );
   }
 
   Widget _buildFiltroChip(String tipo, IconData icon, {String? label}) {
@@ -163,11 +245,7 @@ class _EventosPadreScreenState extends State<EventosPadreScreen> {
           ],
         ),
         selected: isSelected,
-        onSelected: (_) {
-          setState(() {
-            _filtroTipo = tipo;
-          });
-        },
+        onSelected: (_) => setState(() => _filtroTipo = tipo),
         selectedColor: const Color(0xFFEC407A),
         checkmarkColor: Colors.white,
         labelStyle: TextStyle(
@@ -177,11 +255,10 @@ class _EventosPadreScreenState extends State<EventosPadreScreen> {
     );
   }
 
-  Widget _buildEventoCard(Map<String, dynamic> eventoData) {
-    final evento = Evento.fromJson(eventoData);
-    final dateFormat = DateFormat('dd/MM/yyyy', 'es_MX');
-    final ahora = DateTime.now();
-    final diasRestantes = evento.fechaEvento.difference(ahora).inDays;
+  Widget _buildEventoCard(Evento evento) {
+    final ahora = _soloDia(MexicoTime.now());
+    final fecha = _soloDia(evento.fechaEvento);
+    final diasRestantes = fecha.difference(ahora).inDays;
 
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
@@ -199,26 +276,20 @@ class _EventosPadreScreenState extends State<EventosPadreScreen> {
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Fecha en formato calendario (rosa pastel)
               Container(
                 width: 60,
                 height: 70,
                 decoration: BoxDecoration(
-                  color: diasRestantes == 0 ? Colors.red : const Color(0xFFE91E63),
+                  color: diasRestantes == 0
+                      ? Colors.red
+                      : const Color(0xFFE91E63),
                   borderRadius: BorderRadius.circular(12),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.pink.shade300.withOpacity(0.4),
-                      blurRadius: 6,
-                      offset: const Offset(0, 2),
-                    ),
-                  ],
                 ),
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     Text(
-                      DateFormat('MMM', 'es_MX').format(evento.fechaEvento).toUpperCase(),
+                      DateFormat('MMM', 'es').format(fecha).toUpperCase(),
                       style: const TextStyle(
                         color: Colors.white,
                         fontSize: 12,
@@ -226,7 +297,7 @@ class _EventosPadreScreenState extends State<EventosPadreScreen> {
                       ),
                     ),
                     Text(
-                      evento.fechaEvento.day.toString(),
+                      fecha.day.toString(),
                       style: const TextStyle(
                         color: Colors.white,
                         fontSize: 24,
@@ -237,18 +308,13 @@ class _EventosPadreScreenState extends State<EventosPadreScreen> {
                 ),
               ),
               const SizedBox(width: 16),
-
-              // Información del evento
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Row(
                       children: [
-                        Text(
-                          evento.emoji,
-                          style: const TextStyle(fontSize: 20),
-                        ),
+                        Text(evento.emoji, style: const TextStyle(fontSize: 20)),
                         const SizedBox(width: 8),
                         Expanded(
                           child: Text(
@@ -265,33 +331,38 @@ class _EventosPadreScreenState extends State<EventosPadreScreen> {
                     const SizedBox(height: 8),
                     Text(
                       evento.descripcion,
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: Colors.grey[700],
-                      ),
+                      style: TextStyle(fontSize: 14, color: Colors.grey[700]),
                       maxLines: 3,
                       overflow: TextOverflow.ellipsis,
                     ),
                     const SizedBox(height: 8),
                     Row(
                       children: [
-                        Icon(Icons.calendar_today, size: 14, color: Colors.grey[600]),
+                        Icon(Icons.calendar_today,
+                            size: 14, color: Colors.grey[600]),
                         const SizedBox(width: 4),
                         Text(
-                          diasRestantes == 0
-                              ? '¡HOY!'
-                              : diasRestantes == 1
-                                  ? 'Mañana'
-                                  : 'En $diasRestantes días',
+                          diasRestantes < 0
+                              ? DateFormat('dd/MM/yyyy').format(fecha)
+                              : diasRestantes == 0
+                                  ? '¡HOY!'
+                                  : diasRestantes == 1
+                                      ? 'Mañana'
+                                      : 'En $diasRestantes días',
                           style: TextStyle(
                             fontSize: 12,
-                            color: diasRestantes == 0 ? Colors.red : Colors.grey[600],
-                            fontWeight: diasRestantes == 0 ? FontWeight.bold : FontWeight.normal,
+                            color: diasRestantes == 0
+                                ? Colors.red
+                                : Colors.grey[600],
+                            fontWeight: diasRestantes == 0
+                                ? FontWeight.bold
+                                : FontWeight.normal,
                           ),
                         ),
                         if (evento.horaInicio != null) ...[
                           const SizedBox(width: 16),
-                          Icon(Icons.access_time, size: 14, color: Colors.grey[600]),
+                          Icon(Icons.access_time,
+                              size: 14, color: Colors.grey[600]),
                           const SizedBox(width: 4),
                           Text(
                             evento.horaInicio!,
@@ -306,8 +377,6 @@ class _EventosPadreScreenState extends State<EventosPadreScreen> {
                   ],
                 ),
               ),
-
-              // Icono
               Icon(
                 Icons.arrow_forward_ios,
                 size: 16,
@@ -329,10 +398,7 @@ class _EventosPadreScreenState extends State<EventosPadreScreen> {
             Text(evento.emoji),
             const SizedBox(width: 8),
             Expanded(
-              child: Text(
-                evento.titulo,
-                style: GoogleFonts.fredoka(),
-              ),
+              child: Text(evento.titulo, style: GoogleFonts.fredoka()),
             ),
           ],
         ),
@@ -341,32 +407,25 @@ class _EventosPadreScreenState extends State<EventosPadreScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
-              _buildDetalleItem(
-                '📅 Fecha',
-                DateFormat('EEEE, d MMMM yyyy', 'es_MX').format(evento.fechaEvento),
+              Text(
+                'Fecha: ${DateFormat('dd/MM/yyyy').format(_soloDia(evento.fechaEvento))}',
+                style: GoogleFonts.poppins(fontSize: 14),
               ),
               if (evento.horaInicio != null) ...[
-                const SizedBox(height: 12),
-                _buildDetalleItem(
-                  '🕐 Hora',
-                  '${evento.horaInicio}${evento.horaFin != null ? ' - ${evento.horaFin}' : ''}',
+                const SizedBox(height: 8),
+                Text(
+                  'Hora: ${evento.horaInicio}${evento.horaFin != null ? ' - ${evento.horaFin}' : ''}',
+                  style: GoogleFonts.poppins(fontSize: 14),
                 ),
               ],
               if (evento.lugar != null) ...[
-                const SizedBox(height: 12),
-                _buildDetalleItem('📍 Lugar', evento.lugar!),
+                const SizedBox(height: 8),
+                Text(
+                  'Lugar: ${evento.lugar}',
+                  style: GoogleFonts.poppins(fontSize: 14),
+                ),
               ],
               const SizedBox(height: 12),
-              const Divider(),
-              const SizedBox(height: 12),
-              Text(
-                'Descripción:',
-                style: TextStyle(
-                  fontWeight: FontWeight.bold,
-                  color: AppColors.morado,
-                ),
-              ),
-              const SizedBox(height: 8),
               Text(
                 evento.descripcion,
                 style: TextStyle(color: Colors.grey[700]),
@@ -381,32 +440,6 @@ class _EventosPadreScreenState extends State<EventosPadreScreen> {
           ),
         ],
       ),
-    );
-  }
-
-  Widget _buildDetalleItem(String label, String valor) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          label,
-          style: TextStyle(
-            fontSize: 14,
-            color: Colors.grey[600],
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-        const SizedBox(width: 8),
-        Expanded(
-          child: Text(
-            valor,
-            style: const TextStyle(
-              fontSize: 14,
-              color: Colors.black87,
-            ),
-          ),
-        ),
-      ],
     );
   }
 }

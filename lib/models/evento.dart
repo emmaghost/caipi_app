@@ -34,24 +34,35 @@ class Evento {
   });
 
   factory Evento.fromJson(Map<String, dynamic> json) {
+    final ahora = DateTime.now();
+    DateTime parseDt(dynamic raw, {DateTime? fallback}) {
+      if (raw == null) return fallback ?? ahora;
+      if (raw is DateTime) return raw;
+      return DateTime.tryParse(raw.toString()) ?? fallback ?? ahora;
+    }
+
+    List<String>? grados;
+    final rawGrados = json['grados_ids'] ?? json['para_grados'];
+    if (rawGrados is List) {
+      grados = rawGrados.map((e) => e.toString()).where((e) => e.isNotEmpty).toList();
+    }
+
     return Evento(
-      id: json['id'] as String,
-      titulo: json['titulo'] as String,
-      descripcion: json['descripcion'] as String,
-      fechaEvento: DateTime.parse(json['fecha_evento']),
+      id: json['id']?.toString() ?? '',
+      titulo: json['titulo']?.toString() ?? '',
+      descripcion: json['descripcion']?.toString() ?? '',
+      fechaEvento: parseDt(json['fecha_evento']),
       horaInicio: json['hora_inicio'] as String?,
       horaFin: json['hora_fin'] as String?,
       lugar: json['lugar'] as String?,
-      tipo: json['tipo'] as String,
+      tipo: json['tipo']?.toString() ?? 'otro',
       paraTodos: json['para_todos'] as bool? ?? true,
-      gradosIds: json['grados_ids'] != null 
-          ? List<String>.from(json['grados_ids'])
-          : null,
+      gradosIds: grados,
       fotoUrl: json['foto_url'] as String?,
-      creadoPor: json['creado_por'] as String?,
+      creadoPor: json['creado_por']?.toString(),
       activo: json['activo'] as bool? ?? true,
-      createdAt: DateTime.parse(json['created_at']),
-      updatedAt: DateTime.parse(json['updated_at']),
+      createdAt: parseDt(json['created_at'], fallback: ahora),
+      updatedAt: parseDt(json['updated_at'], fallback: ahora),
     );
   }
 

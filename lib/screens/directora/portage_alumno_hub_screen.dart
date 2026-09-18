@@ -17,7 +17,7 @@ import '../../widgets/caipi_app_bar_leading.dart';
 
 /// Ficha de un niño:
 /// - Solo el **último** seguimiento para calificar / PDF.
-/// - La gráfica usa los seguimientos del rango 1 / 3 / 6 meses (evolución).
+/// - La gráfica usa seguimientos calificados (cada uno = un punto).
 class PortageAlumnoHubScreen extends StatefulWidget {
   final String alumnoId;
 
@@ -31,11 +31,14 @@ class _PortageAlumnoHubScreenState extends State<PortageAlumnoHubScreen> {
   final _portage = PortageService();
   Alumno? _alumno;
   List<PortageEvaluacion> _evaluaciones = [];
+  Map<String, List<PortageResultado>> _resultadosPorEval = {};
+  Map<String, int> _totalesPorEval = {};
   PortageEvaluacion? _ultima;
   PortageConteoResumen? _resumenUltima;
   List<PortageIndicador> _indicadoresUltima = [];
   List<PortagePuntoSerie> _serie = [];
-  int _ventanaMeses = 3;
+  /// null = todos; 3/6 = últimos N seguimientos calificados.
+  int? _maxSeguimientos;
   bool _loading = true;
   bool _incluirGraficaPdf = true;
 
@@ -97,17 +100,19 @@ class _PortageAlumnoHubScreenState extends State<PortageAlumnoHubScreen> {
             await _portage.obtenerResultados(e.id, alumno.id);
       }
 
-      final serie = PortageStats.seriePorVentanaMeses(
+      final serie = PortageStats.seriePorSeguimientos(
         evaluaciones: evals,
         resultadosPorEvaluacion: resultadosPorEval,
         totalIndicadoresPorEvaluacion: totales,
-        meses: _ventanaMeses,
+        maxSeguimientos: _maxSeguimientos,
       );
 
       if (!mounted) return;
       setState(() {
         _alumno = alumno;
         _evaluaciones = evals;
+        _resultadosPorEval = resultadosPorEval;
+        _totalesPorEval = totales;
         _ultima = ultima;
         _resumenUltima = resumenUltima;
         _indicadoresUltima = indicadoresUltima;
@@ -123,28 +128,18 @@ class _PortageAlumnoHubScreenState extends State<PortageAlumnoHubScreen> {
     }
   }
 
-  Future<void> _cambiarVentana(int meses) async {
-    if (_ventanaMeses == meses) return;
-    setState(() => _ventanaMeses = meses);
-    final alumno = _alumno;
-    if (alumno == null || alumno.gradoId == null) return;
-
-    final resultadosPorEval = <String, List<PortageResultado>>{};
-    final totales = <String, int>{};
-    for (final e in _evaluaciones) {
-      final inds = await _portage.listarIndicadores(e.listaId);
-      totales[e.id] = inds.length;
-      resultadosPorEval[e.id] =
-          await _portage.obtenerResultados(e.id, alumno.id);
-    }
-    final serie = PortageStats.seriePorVentanaMeses(
+  void _cambiarVentana(int? maxSeg) {
+    if (_maxSeguimientos == maxSeg) return;
+    final serie = PortageStats.seriePorSeguimientos(
       evaluaciones: _evaluaciones,
-      resultadosPorEvaluacion: resultadosPorEval,
-      totalIndicadoresPorEvaluacion: totales,
-      meses: meses,
+      resultadosPorEvaluacion: _resultadosPorEval,
+      totalIndicadoresPorEvaluacion: _totalesPorEval,
+      maxSeguimientos: maxSeg,
     );
-    if (!mounted) return;
-    setState(() => _serie = serie);
+    setState(() {
+      _maxSeguimientos = maxSeg;
+      _serie = serie;
+    });
   }
 
   Future<void> _toggleVisiblePadre() async {
@@ -400,7 +395,7 @@ class _PortageAlumnoHubScreenState extends State<PortageAlumnoHubScreen> {
                       ],
                       const SizedBox(height: 24),
                       Text(
-                        'Evolución en el tiempo (histórico)',
+                        'Evolución (por seguimientos)',
                         style: GoogleFonts.poppins(
                           fontSize: 15,
                           fontWeight: FontWeight.w700,
@@ -408,21 +403,21 @@ class _PortageAlumnoHubScreenState extends State<PortageAlumnoHubScreen> {
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        'Cada punto es un seguimiento. Si el % baja, hubo retroceso '
-                        '(ej. esfínteres: logrado → en proceso).',
+                        'Cada punto es un seguimiento calificado. '
+                        'Si baja el número de logrados, hubo retroceso.',
                         style: GoogleFonts.poppins(
                           fontSize: 12,
                           color: AppColors.gris,
                         ),
                       ),
                       const SizedBox(height: 10),
-                      SegmentedButton<int>(
+                      SegmentedButton<int?>(
                         segments: const [
-                          ButtonSegment(value: 1, label: Text('1 mes')),
-                          ButtonSegment(value: 3, label: Text('3 meses')),
-                          ButtonSegment(value: 6, label: Text('6 meses')),
+                          ButtonSegment(value: null, label: Text('Todos')),
+                          ButtonSegment(value: 3, label: Text('Últ. 3')),
+                          ButtonSegment(value: 6, label: Text('Últ. 6')),
                         ],
-                        selected: {_ventanaMeses},
+                        selected: {_maxSeguimientos},
                         onSelectionChanged: (s) => _cambiarVentana(s.first),
                       ),
                       const SizedBox(height: 12),
@@ -433,17 +428,38 @@ class _PortageAlumnoHubScreenState extends State<PortageAlumnoHubScreen> {
                               ? Padding(
                                   padding: const EdgeInsets.all(16),
                                   child: Text(
-                                    'No hay seguimientos en este rango. '
-                                    'Cuando existan varios meses, aquí verás la tendencia.',
+                                    'Aún no hay seguimientos calificados. '
+                                    'Cuando califiques, aquí verás la tendencia.',
                                     style: GoogleFonts.poppins(
                                       color: AppColors.gris,
                                       fontSize: 13,
                                     ),
                                   ),
                                 )
-                              : SizedBox(
-                                  height: 220,
-                                  child: PortageLineChart(serie: _serie),
+                              : Column(
+                                  children: [
+                                    SizedBox(
+                                      height: 220,
+                                      child: PortageLineChart(serie: _serie),
+                                    ),
+                                    if (_serie.length == 1)
+                                      Padding(
+                                        padding: const EdgeInsets.fromLTRB(
+                                          12,
+                                          0,
+                                          12,
+                                          8,
+                                        ),
+                                        child: Text(
+                                          'Solo 1 seguimiento. Con el siguiente '
+                                          'aparecerá la línea entre fechas.',
+                                          style: GoogleFonts.poppins(
+                                            color: AppColors.gris,
+                                            fontSize: 12,
+                                          ),
+                                        ),
+                                      ),
+                                  ],
                                 ),
                         ),
                       ),

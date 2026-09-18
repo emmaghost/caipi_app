@@ -115,8 +115,38 @@ class PortagePdf {
     );
   }
 
-  /// Gráfica de línea con puntos (estilo tendencia) para muchos registros.
+  /// Gráfica de evolución. Con 1 punto el Chart de pdf falla; usamos resumen.
   static pw.Widget _graficaLinea(List<PortagePuntoSerie> serie) {
+    if (serie.isEmpty) return pw.SizedBox();
+
+    if (serie.length == 1) {
+      final p = serie.first;
+      return pw.Container(
+        padding: const pw.EdgeInsets.all(12),
+        decoration: pw.BoxDecoration(
+          border: pw.Border.all(color: PdfColors.grey400),
+          borderRadius: pw.BorderRadius.circular(6),
+        ),
+        child: pw.Column(
+          crossAxisAlignment: pw.CrossAxisAlignment.start,
+          children: [
+            pw.Text(
+              'Primer registro · ${DateFormat('dd/MM/yyyy').format(p.fecha)}',
+              style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 11),
+            ),
+            pw.SizedBox(height: 6),
+            pw.Text('Logrados: ${p.logrados} de ${p.total}'),
+            pw.Text('En proceso: ${p.enProceso}'),
+            pw.SizedBox(height: 6),
+            pw.Text(
+              'Con otro seguimiento aparecerá la línea de tendencia.',
+              style: const pw.TextStyle(fontSize: 9, color: PdfColors.grey700),
+            ),
+          ],
+        ),
+      );
+    }
+
     final maxY = serie
         .map((p) => math.max(p.logrados, p.total == 0 ? 1 : p.total))
         .fold<int>(1, (a, b) => a > b ? a : b)
@@ -128,44 +158,67 @@ class PortagePdf {
       yTicks.add(y);
     }
 
-    final labels = serie
-        .map((p) => DateFormat('dd/MM').format(p.fecha))
-        .toList();
+    // Etiquetas únicas (mismo día en 2 seguimientos no rompe el eje X)
+    final seen = <String, int>{};
+    final labels = serie.map((p) {
+      final base = DateFormat('dd/MM').format(p.fecha);
+      final n = (seen[base] ?? 0) + 1;
+      seen[base] = n;
+      return n == 1 ? base : '$base ($n)';
+    }).toList();
 
-    return pw.SizedBox(
-      height: 190,
-      child: pw.Chart(
-        grid: pw.CartesianGrid(
-          xAxis: pw.FixedAxis.fromStrings(
-            labels,
-            marginStart: 0,
-            marginEnd: 0,
-            ticks: true,
-          ),
-          yAxis: pw.FixedAxis(
-            yTicks,
-            divisions: true,
-          ),
-        ),
-        datasets: [
-          pw.LineDataSet(
-            legend: 'Logrados',
-            drawLine: true,
-            drawPoints: true,
-            color: PdfColors.red,
-            pointSize: 4,
-            lineWidth: 2,
-            data: List.generate(
-              serie.length,
-              (i) => pw.PointChartValue(
-                i.toDouble(),
-                serie[i].logrados.toDouble(),
-              ),
+    try {
+      return pw.SizedBox(
+        height: 190,
+        child: pw.Chart(
+          grid: pw.CartesianGrid(
+            xAxis: pw.FixedAxis.fromStrings(
+              labels,
+              marginStart: 0,
+              marginEnd: 0,
+              ticks: true,
+            ),
+            yAxis: pw.FixedAxis(
+              yTicks,
+              divisions: true,
             ),
           ),
+          datasets: [
+            pw.LineDataSet(
+              legend: 'Logrados',
+              drawLine: true,
+              drawPoints: true,
+              color: PdfColors.red,
+              pointSize: 4,
+              lineWidth: 2,
+              data: List.generate(
+                serie.length,
+                (i) => pw.PointChartValue(
+                  i.toDouble(),
+                  serie[i].logrados.toDouble(),
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    } catch (_) {
+      // Fallback tabular si el Chart falla
+      return pw.Column(
+        crossAxisAlignment: pw.CrossAxisAlignment.start,
+        children: [
+          for (final p in serie)
+            pw.Padding(
+              padding: const pw.EdgeInsets.only(bottom: 4),
+              child: pw.Text(
+                '${DateFormat('dd/MM/yyyy').format(p.fecha)}: '
+                '${p.logrados} logrados / ${p.total}',
+                style: const pw.TextStyle(fontSize: 10),
+              ),
+            ),
         ],
-      ),
-    );
+      );
+    }
   }
 
   static pw.Widget _tablaIndicadores(

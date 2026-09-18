@@ -74,8 +74,11 @@ class PortageStats {
     );
   }
 
-  /// Ventanas soportadas en meses para la gráfica de evolución.
+  /// Ventanas legacy en meses (compatibilidad). Preferir [seriePorSeguimientos].
   static const ventanasMeses = [1, 3, 6];
+
+  /// Filtros de evolución por cantidad de seguimientos (null = todos).
+  static const ventanasSeguimientos = [null, 3, 6];
 
   static bool ventanaValida(int meses) => ventanasMeses.contains(meses);
 
@@ -87,23 +90,31 @@ class PortageStats {
     return DateTime(ahora.year, ahora.month - meses, ahora.day);
   }
 
-  /// Serie temporal filtrada: evaluaciones con fecha_inicio dentro de los últimos [meses].
-  static List<PortagePuntoSerie> seriePorVentanaMeses({
+  /// Serie por seguimientos: cada calificación/seguimiento = 1 punto en la gráfica.
+  /// [maxSeguimientos] null = todos; 3/6 = los más recientes.
+  static List<PortagePuntoSerie> seriePorSeguimientos({
     required List<PortageEvaluacion> evaluaciones,
     required Map<String, List<PortageResultado>> resultadosPorEvaluacion,
     required Map<String, int> totalIndicadoresPorEvaluacion,
-    required int meses,
-    DateTime? ahora,
+    int? maxSeguimientos,
   }) {
-    final ref = ahora ?? DateTime.now();
-    final limite = limiteVentanaMeses(ref, meses);
-
-    final filtradas = evaluaciones
-        .where((e) => !_soloFecha(e.fechaInicio).isBefore(_soloFecha(limite)))
-        .toList()
+    final ordenadas = [...evaluaciones]
       ..sort((a, b) => a.fechaInicio.compareTo(b.fechaInicio));
 
-    return filtradas.map((evaluacion) {
+    // Solo seguimientos con al menos una calificación (punto real de evolución)
+    final conDatos = ordenadas.where((e) {
+      final res = resultadosPorEvaluacion[e.id] ?? const [];
+      return res.any((r) => !r.sinCalificar);
+    }).toList();
+
+    var slice = conDatos;
+    if (maxSeguimientos != null &&
+        maxSeguimientos > 0 &&
+        slice.length > maxSeguimientos) {
+      slice = slice.sublist(slice.length - maxSeguimientos);
+    }
+
+    return slice.map((evaluacion) {
       final total = totalIndicadoresPorEvaluacion[evaluacion.id] ?? 0;
       final resultados = resultadosPorEvaluacion[evaluacion.id] ?? const [];
       final conteo = contarPorEstado(
@@ -118,6 +129,29 @@ class PortageStats {
         total: conteo.total,
       );
     }).toList();
+  }
+
+  /// Serie temporal filtrada por meses (legacy). Prefiere [seriePorSeguimientos].
+  static List<PortagePuntoSerie> seriePorVentanaMeses({
+    required List<PortageEvaluacion> evaluaciones,
+    required Map<String, List<PortageResultado>> resultadosPorEvaluacion,
+    required Map<String, int> totalIndicadoresPorEvaluacion,
+    required int meses,
+    DateTime? ahora,
+  }) {
+    final ref = ahora ?? DateTime.now();
+    final limite = limiteVentanaMeses(ref, meses);
+
+    final filtradas = evaluaciones
+        .where((e) => !_soloFecha(e.fechaInicio).isBefore(_soloFecha(limite)))
+        .toList();
+
+    return seriePorSeguimientos(
+      evaluaciones: filtradas,
+      resultadosPorEvaluacion: resultadosPorEvaluacion,
+      totalIndicadoresPorEvaluacion: totalIndicadoresPorEvaluacion,
+      maxSeguimientos: null,
+    );
   }
 
   /// Descripción ASCII simple para PDF o texto (barras proporcionales).

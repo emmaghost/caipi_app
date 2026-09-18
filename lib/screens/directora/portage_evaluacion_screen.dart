@@ -10,10 +10,13 @@ import '../../models/portage.dart';
 import '../../services/auth_service.dart';
 import '../../services/portage_service.dart';
 import '../../services/supabase_service.dart';
+import '../../utils/portage_stats.dart';
 import '../../widgets/portage_grafica_sheet.dart';
 import '../../widgets/caipi_app_bar_leading.dart';
 
-/// Alumnos de un seguimiento (con búsqueda) — atajo desde administración.
+enum _FiltroCalifSeguimiento { todos, pendientes, calificados }
+
+/// Alumnos de un seguimiento (con búsqueda y estado de calificación).
 class PortageEvaluacionScreen extends StatefulWidget {
   final String evaluacionId;
 
@@ -30,16 +33,47 @@ class _PortageEvaluacionScreenState extends State<PortageEvaluacionScreen> {
   PortageEvaluacion? _eval;
   List<Alumno> _alumnos = [];
   List<PortageIndicador> _indicadores = [];
+  final Map<String, PortageConteoEstado> _conteos = {};
   bool _loading = true;
   String _filtro = '';
+  _FiltroCalifSeguimiento _filtroCalif = _FiltroCalifSeguimiento.todos;
 
   List<Alumno> get _filtrados {
+    var list = _alumnos;
+    switch (_filtroCalif) {
+      case _FiltroCalifSeguimiento.pendientes:
+        list = list.where((a) {
+          final c = _conteos[a.id];
+          final calificados = c == null ? 0 : (c.logrados + c.enProceso);
+          return calificados == 0;
+        }).toList();
+        break;
+      case _FiltroCalifSeguimiento.calificados:
+        list = list.where((a) {
+          final c = _conteos[a.id];
+          final calificados = c == null ? 0 : (c.logrados + c.enProceso);
+          return calificados > 0;
+        }).toList();
+        break;
+      case _FiltroCalifSeguimiento.todos:
+        break;
+    }
     final q = _filtro.trim().toLowerCase();
-    if (q.isEmpty) return _alumnos;
-    return _alumnos
+    if (q.isEmpty) return list;
+    return list
         .where((a) => a.nombreCompleto.toLowerCase().contains(q))
         .toList();
   }
+
+  int get _nPendientes => _alumnos.where((a) {
+        final c = _conteos[a.id];
+        return (c == null ? 0 : c.logrados + c.enProceso) == 0;
+      }).length;
+
+  int get _nCalificados => _alumnos.where((a) {
+        final c = _conteos[a.id];
+        return (c == null ? 0 : c.logrados + c.enProceso) > 0;
+      }).length;
 
   @override
   void initState() {
@@ -77,11 +111,23 @@ class _PortageEvaluacionScreenState extends State<PortageEvaluacionScreen> {
         }
       }
 
+      final conteos = <String, PortageConteoEstado>{};
+      for (final a in alumnos) {
+        final res = await _portage.obtenerResultados(eval.id, a.id);
+        conteos[a.id] = PortageStats.contarPorEstado(
+          resultados: res,
+          totalIndicadores: inds.length,
+        );
+      }
+
       if (!mounted) return;
       setState(() {
         _eval = eval;
         _indicadores = inds;
         _alumnos = alumnos;
+        _conteos
+          ..clear()
+          ..addAll(conteos);
         _loading = false;
       });
     } catch (e) {
@@ -110,6 +156,29 @@ class _PortageEvaluacionScreenState extends State<PortageEvaluacionScreen> {
         SnackBar(content: Text('Error: $e'), backgroundColor: AppColors.rojo),
       );
     }
+  }
+
+  String _subtituloEstado(Alumno a) {
+    final c = _conteos[a.id];
+    final total = c?.total ?? _indicadores.length;
+    final calificados = c == null ? 0 : c.logrados + c.enProceso;
+    if (calificados == 0) {
+      return 'Pendiente de calificar · $total indicadores';
+    }
+    if (calificados >= total && total > 0) {
+      return 'Calificado completo · ${c!.logrados} L · ${c.enProceso} EP';
+    }
+    return 'En curso · $calificados/$total · ${c!.logrados} L · ${c.enProceso} EP';
+  }
+
+  Color _colorEstado(Alumno a) {
+    final c = _conteos[a.id];
+    final calificados = c == null ? 0 : c.logrados + c.enProceso;
+    if (calificados == 0) return Colors.orange.shade800;
+    if (c != null && calificados >= c.total && c.total > 0) {
+      return AppColors.verde;
+    }
+    return AppColors.morado;
   }
 
   @override
@@ -160,6 +229,50 @@ class _PortageEvaluacionScreenState extends State<PortageEvaluacionScreen> {
                     ),
                   ),
                 ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                  child: SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      children: [
+                        FilterChip(
+                          label: Text('Todos (${_alumnos.length})'),
+                          selected:
+                              _filtroCalif == _FiltroCalifSeguimiento.todos,
+                          onSelected: (_) => setState(
+                            () => _filtroCalif = _FiltroCalifSeguimiento.todos,
+                          ),
+                          selectedColor: AppColors.morado.withOpacity(0.2),
+                          checkmarkColor: AppColors.morado,
+                        ),
+                        const SizedBox(width: 8),
+                        FilterChip(
+                          label: Text('Pendientes ($_nPendientes)'),
+                          selected: _filtroCalif ==
+                              _FiltroCalifSeguimiento.pendientes,
+                          onSelected: (_) => setState(
+                            () => _filtroCalif =
+                                _FiltroCalifSeguimiento.pendientes,
+                          ),
+                          selectedColor: Colors.orange.withOpacity(0.25),
+                          checkmarkColor: Colors.orange.shade800,
+                        ),
+                        const SizedBox(width: 8),
+                        FilterChip(
+                          label: Text('Calificados ($_nCalificados)'),
+                          selected: _filtroCalif ==
+                              _FiltroCalifSeguimiento.calificados,
+                          onSelected: (_) => setState(
+                            () => _filtroCalif =
+                                _FiltroCalifSeguimiento.calificados,
+                          ),
+                          selectedColor: AppColors.verde.withOpacity(0.2),
+                          checkmarkColor: AppColors.verde,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
                 Expanded(
                   child: lista.isEmpty
                       ? Center(
@@ -170,77 +283,107 @@ class _PortageEvaluacionScreenState extends State<PortageEvaluacionScreen> {
                             style: GoogleFonts.poppins(color: AppColors.gris),
                           ),
                         )
-                      : ListView.builder(
-                          padding: const EdgeInsets.all(16),
-                          itemCount: lista.length,
-                          itemBuilder: (context, index) {
-                            final a = lista[index];
-                            final esDir = context
-                                    .read<AuthService>()
-                                    .currentUser
-                                    ?.esDirectora ==
-                                true;
-                            return Card(
-                              margin: const EdgeInsets.only(bottom: 10),
-                              child: ListTile(
-                                title: Text(a.nombreCompleto),
-                                subtitle: esDir
-                                    ? Text(
-                                        a.portageVisiblePadre
-                                            ? 'Padre puede ver (última eval.)'
-                                            : 'Padre no ve indicadores',
-                                        style: TextStyle(
-                                          color: a.portageVisiblePadre
-                                              ? AppColors.verde
-                                              : AppColors.gris,
-                                          fontSize: 12,
-                                        ),
-                                      )
-                                    : Text(
-                                        '${_indicadores.length} indicadores',
-                                      ),
-                                trailing: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    if (esDir)
-                                      IconButton(
-                                        tooltip: 'Visible al padre',
-                                        icon: Icon(
-                                          a.portageVisiblePadre
-                                              ? Icons.visibility
-                                              : Icons.visibility_off,
-                                          color: a.portageVisiblePadre
-                                              ? AppColors.verde
-                                              : AppColors.gris,
-                                        ),
-                                        onPressed: () =>
-                                            _toggleVisiblePadre(a),
-                                      ),
-                                    IconButton(
-                                      tooltip: 'Gráfica / PDF',
-                                      icon: const Icon(Icons.show_chart),
-                                      onPressed: () async {
-                                        if (eval == null) return;
-                                        await mostrarPortageGraficaPdf(
-                                          context: context,
-                                          alumno: a,
-                                          gradoId: eval.gradoId,
-                                          evaluacionPdf: eval,
-                                          indicadoresPdf: _indicadores,
-                                        );
-                                      },
+                      : RefreshIndicator(
+                          onRefresh: _cargar,
+                          child: ListView.builder(
+                            padding: const EdgeInsets.all(16),
+                            itemCount: lista.length,
+                            itemBuilder: (context, index) {
+                              final a = lista[index];
+                              final esDir = context
+                                      .read<AuthService>()
+                                      .currentUser
+                                      ?.esDirectora ==
+                                  true;
+                              final c = _conteos[a.id];
+                              final calificados =
+                                  c == null ? 0 : c.logrados + c.enProceso;
+                              return Card(
+                                margin: const EdgeInsets.only(bottom: 10),
+                                child: ListTile(
+                                  leading: CircleAvatar(
+                                    backgroundColor:
+                                        _colorEstado(a).withOpacity(0.15),
+                                    child: Icon(
+                                      calificados == 0
+                                          ? Icons.hourglass_empty
+                                          : Icons.check_circle_outline,
+                                      color: _colorEstado(a),
+                                      size: 22,
                                     ),
-                                    const Icon(Icons.chevron_right),
-                                  ],
+                                  ),
+                                  title: Text(a.nombreCompleto),
+                                  subtitle: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        _subtituloEstado(a),
+                                        style: TextStyle(
+                                          color: _colorEstado(a),
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                      if (esDir)
+                                        Text(
+                                          a.portageVisiblePadre
+                                              ? 'Padre puede ver indicadores'
+                                              : 'Padre no ve indicadores',
+                                          style: TextStyle(
+                                            color: a.portageVisiblePadre
+                                                ? AppColors.verde
+                                                : AppColors.gris,
+                                            fontSize: 11,
+                                          ),
+                                        ),
+                                    ],
+                                  ),
+                                  isThreeLine: esDir,
+                                  trailing: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      if (esDir)
+                                        IconButton(
+                                          tooltip: 'Visible al padre',
+                                          icon: Icon(
+                                            a.portageVisiblePadre
+                                                ? Icons.visibility
+                                                : Icons.visibility_off,
+                                            color: a.portageVisiblePadre
+                                                ? AppColors.verde
+                                                : AppColors.gris,
+                                          ),
+                                          onPressed: () =>
+                                              _toggleVisiblePadre(a),
+                                        ),
+                                      IconButton(
+                                        tooltip: 'Gráfica / PDF',
+                                        icon: const Icon(Icons.show_chart),
+                                        onPressed: () async {
+                                          if (eval == null) return;
+                                          await mostrarPortageGraficaPdf(
+                                            context: context,
+                                            alumno: a,
+                                            gradoId: eval.gradoId,
+                                            evaluacionPdf: eval,
+                                            indicadoresPdf: _indicadores,
+                                          );
+                                        },
+                                      ),
+                                      const Icon(Icons.chevron_right),
+                                    ],
+                                  ),
+                                  onTap: () async {
+                                    await context.push(
+                                      '/directora/portage/evaluacion/${widget.evaluacionId}/alumno/${a.id}',
+                                    );
+                                    await _cargar();
+                                  },
                                 ),
-                                onTap: () async {
-                                  await context.push(
-                                    '/directora/portage/evaluacion/${widget.evaluacionId}/alumno/${a.id}',
-                                  );
-                                },
-                              ),
-                            );
-                          },
+                              );
+                            },
+                          ),
                         ),
                 ),
               ],
@@ -294,8 +437,9 @@ class _PortageCalificarAlumnoScreenState
   Future<void> _cargar() async {
     try {
       final eval = await _portage.obtenerEvaluacion(widget.evaluacionId);
-      final alumno =
-          await context.read<SupabaseService>().obtenerAlumnoPorId(widget.alumnoId);
+      final alumno = await context
+          .read<SupabaseService>()
+          .obtenerAlumnoPorId(widget.alumnoId);
       if (eval == null || alumno == null) {
         throw Exception('Datos no encontrados');
       }
@@ -312,8 +456,6 @@ class _PortageCalificarAlumnoScreenState
       }
 
       final user = context.read<AuthService>().currentUser;
-      // Padre nunca llega aquí por ruta staff; staff siempre puede editar
-      // excepto si en el futuro abrimos vista padre en esta misma screen.
       _soloLectura = user?.esPadre == true;
 
       if (!mounted) return;
@@ -405,8 +547,10 @@ class _PortageCalificarAlumnoScreenState
                             children: [
                               ChoiceChip(
                                 label: const Text('Logrado'),
-                                selected: _estados[ind.id] == PortageEstado.logrado,
-                                selectedColor: AppColors.verde.withOpacity(0.3),
+                                selected:
+                                    _estados[ind.id] == PortageEstado.logrado,
+                                selectedColor:
+                                    AppColors.verde.withOpacity(0.3),
                                 onSelected: _soloLectura
                                     ? null
                                     : (_) => setState(() {
@@ -416,8 +560,8 @@ class _PortageCalificarAlumnoScreenState
                               ),
                               ChoiceChip(
                                 label: const Text('En proceso'),
-                                selected:
-                                    _estados[ind.id] == PortageEstado.enProceso,
+                                selected: _estados[ind.id] ==
+                                    PortageEstado.enProceso,
                                 selectedColor: Colors.orange.withOpacity(0.3),
                                 onSelected: _soloLectura
                                     ? null
@@ -468,177 +612,4 @@ class _PortageCalificarAlumnoScreenState
             ),
     );
   }
-}
-
-
-/// Vista padre: hitos asignados, por lista y calificación (sin volcar todo).
-class PortagePadreVista extends StatelessWidget {
-  final Alumno alumno;
-
-  const PortagePadreVista({super.key, required this.alumno});
-
-  @override
-  Widget build(BuildContext context) {
-    if (!alumno.portageVisiblePadre) {
-      return const SizedBox.shrink();
-    }
-    return FutureBuilder<_PadreHitosData>(
-      future: _cargar(),
-      builder: (context, snap) {
-        if (!snap.hasData) return const SizedBox.shrink();
-        final data = snap.data!;
-        if (data.bloques.isEmpty) {
-          return Card(
-            child: Padding(
-              padding: const EdgeInsets.all(14),
-              child: Text(
-                'Aún no hay hitos asignados para mostrar.',
-                style: GoogleFonts.poppins(fontSize: 13),
-              ),
-            ),
-          );
-        }
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text(
-              'Hitos de desarrollo',
-              style: GoogleFonts.poppins(
-                fontWeight: FontWeight.w700,
-                fontSize: 16,
-              ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              'Solo lo que la escuela asignó y calificó para tu hijo/a.',
-              style: GoogleFonts.poppins(fontSize: 12, color: Colors.grey[700]),
-            ),
-            const SizedBox(height: 10),
-            ...data.bloques.map((b) {
-              return Card(
-                margin: const EdgeInsets.only(bottom: 10),
-                child: ExpansionTile(
-                  initiallyExpanded: data.bloques.length == 1,
-                  title: Text(
-                    b.lista.nombre,
-                    style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
-                  ),
-                  subtitle: Text(
-                    '${b.calificados}/${b.indicadores.length} calificados',
-                    style: GoogleFonts.poppins(fontSize: 12),
-                  ),
-                  children: [
-                    ..._agruparPorArea(b.indicadores).entries.expand((e) {
-                      return [
-                        Padding(
-                          padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-                          child: Text(
-                            e.key,
-                            style: GoogleFonts.poppins(
-                              fontWeight: FontWeight.w700,
-                              fontSize: 13,
-                              color: AppColors.morado,
-                            ),
-                          ),
-                        ),
-                        ...e.value.map((ind) {
-                          final r = b.resultados[ind.id];
-                          return ListTile(
-                            dense: true,
-                            title: Text(
-                              ind.nombre,
-                              style: const TextStyle(fontSize: 13),
-                            ),
-                            subtitle: Text(
-                              PortageEstado.etiqueta(r?.estado),
-                              style: GoogleFonts.poppins(fontSize: 12),
-                            ),
-                            trailing: Text(
-                              PortageEstado.simbolo(r?.estado),
-                              style: TextStyle(
-                                fontWeight: FontWeight.bold,
-                                color: PortageEstado.isLogrado(r?.estado)
-                                    ? AppColors.verde
-                                    : Colors.orange,
-                              ),
-                            ),
-                          );
-                        }),
-                      ];
-                    }),
-                  ],
-                ),
-              );
-            }),
-          ],
-        );
-      },
-    );
-  }
-
-  Map<String, List<PortageIndicador>> _agruparPorArea(
-    List<PortageIndicador> inds,
-  ) {
-    final map = <String, List<PortageIndicador>>{};
-    for (final i in inds) {
-      final key = (i.area == null || i.area!.trim().isEmpty)
-          ? 'Indicadores'
-          : i.area!;
-      map.putIfAbsent(key, () => []).add(i);
-    }
-    return map;
-  }
-
-  Future<_PadreHitosData> _cargar() async {
-    final svc = PortageService();
-    final listas = await svc.listarListasAsignadasAlumno(alumno.id);
-    final bloques = <_PadreHitosBloque>[];
-
-    for (final lista in listas) {
-      final inds = await svc.listarIndicadores(lista.id);
-      final evals = await svc.listarEvaluacionesPorLista(lista.id);
-      final eval = evals.isEmpty ? null : evals.first;
-      final resultados = <String, PortageResultado>{};
-      if (eval != null) {
-        final res = await svc.obtenerResultados(eval.id, alumno.id);
-        for (final r in res) {
-          resultados[r.indicadorId] = r;
-        }
-      }
-      final visibles = inds.where((i) {
-        final r = resultados[i.id];
-        return r != null && !PortageEstado.isSinCalificar(r.estado);
-      }).toList();
-      if (visibles.isEmpty && resultados.isEmpty) continue;
-      final mostrar = visibles.isNotEmpty ? visibles : inds;
-      bloques.add(
-        _PadreHitosBloque(
-          lista: lista,
-          indicadores: mostrar,
-          resultados: resultados,
-          calificados: visibles.length,
-        ),
-      );
-    }
-
-    return _PadreHitosData(bloques: bloques);
-  }
-}
-
-class _PadreHitosData {
-  final List<_PadreHitosBloque> bloques;
-  _PadreHitosData({required this.bloques});
-}
-
-class _PadreHitosBloque {
-  final PortageLista lista;
-  final List<PortageIndicador> indicadores;
-  final Map<String, PortageResultado> resultados;
-  final int calificados;
-  _PadreHitosBloque({
-    required this.lista,
-    required this.indicadores,
-    required this.resultados,
-    required this.calificados,
-  });
 }
