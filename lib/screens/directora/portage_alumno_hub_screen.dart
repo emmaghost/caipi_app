@@ -261,16 +261,107 @@ class _PortageAlumnoHubScreenState extends State<PortageAlumnoHubScreen> {
     await _cargar();
   }
 
-  Future<void> _compartirPdf() async {
+  Future<void> _compartirPdf([PortageEvaluacion? eval]) async {
     final alumno = _alumno;
-    final ultima = _ultima;
-    if (alumno == null || ultima == null) return;
+    final target = eval ?? _ultima;
+    if (alumno == null || target == null) return;
+
+    final inds = target.id == _ultima?.id
+        ? _indicadoresUltima
+        : await _portage.listarIndicadores(target.listaId);
+    final res = _resultadosPorEval[target.id] ??
+        await _portage.obtenerResultados(target.id, alumno.id);
+
+    if (!mounted) return;
     await PortagePdf.compartir(
       alumno: alumno,
-      evaluacion: ultima,
-      indicadores: _indicadoresUltima,
-      resultados: await _portage.obtenerResultados(ultima.id, alumno.id),
+      evaluacion: target,
+      indicadores: inds,
+      resultados: res,
       serieEvolucion: _incluirGraficaPdf ? _serie : null,
+      context: context,
+    );
+  }
+
+  bool _evalTieneCalif(PortageEvaluacion e) {
+    final res = _resultadosPorEval[e.id] ?? const [];
+    return res.any((r) => !r.sinCalificar);
+  }
+
+  String _subtituloEval(PortageEvaluacion e) {
+    final res = _resultadosPorEval[e.id] ?? const [];
+    final total = _totalesPorEval[e.id] ?? 0;
+    var logrados = 0;
+    var ep = 0;
+    for (final r in res) {
+      if (r.esLogrado) logrados++;
+      if (r.esEnProceso) ep++;
+    }
+    final cal = logrados + ep;
+    final fecha = DateFormat('dd/MM/yyyy').format(e.fechaInicio);
+    if (cal == 0) return '$fecha · sin calificar';
+    return '$fecha · $cal/$total · $logrados L · $ep EP';
+  }
+
+  Widget _tablaComparativa() {
+    if (_serie.length < 2) return const SizedBox.shrink();
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(14, 14, 14, 10),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Comparativo de evolución',
+              style: GoogleFonts.poppins(
+                fontWeight: FontWeight.w700,
+                fontSize: 14,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Logrados por seguimiento (más reciente arriba).',
+              style: GoogleFonts.poppins(fontSize: 12, color: AppColors.gris),
+            ),
+            const SizedBox(height: 10),
+            ..._serie.reversed.map((p) {
+              final pct = p.total <= 0
+                  ? 0
+                  : ((p.logrados / p.total) * 100).round();
+              final etiqueta =
+                  DateFormat('dd/MM/yyyy').format(p.fecha);
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Row(
+                  children: [
+                    Expanded(
+                      flex: 3,
+                      child: Text(
+                        etiqueta,
+                        style: GoogleFonts.poppins(fontSize: 12),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    Expanded(
+                      flex: 2,
+                      child: Text(
+                        '${p.logrados}/${p.total} ($pct%)',
+                        textAlign: TextAlign.right,
+                        style: GoogleFonts.poppins(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.morado,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }),
+          ],
+        ),
+      ),
     );
   }
 
@@ -463,7 +554,11 @@ class _PortageAlumnoHubScreenState extends State<PortageAlumnoHubScreen> {
                                 ),
                         ),
                       ),
-                      if (_evaluaciones.length > 1) ...[
+                      if (_serie.length >= 2) ...[
+                        const SizedBox(height: 16),
+                        _tablaComparativa(),
+                      ],
+                      if (_evaluaciones.isNotEmpty) ...[
                         const SizedBox(height: 20),
                         Text(
                           'Histórico de seguimientos',
@@ -474,16 +569,31 @@ class _PortageAlumnoHubScreenState extends State<PortageAlumnoHubScreen> {
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          'Toca uno anterior para ver o actualizar esa calificación.',
+                          'Toca para calificar o ver. El PDF está disponible '
+                          'en cada seguimiento ya calificado.',
                           style: GoogleFonts.poppins(
                             fontSize: 12,
                             color: AppColors.gris,
                           ),
                         ),
                         const SizedBox(height: 8),
+                        CheckboxListTile(
+                          contentPadding: EdgeInsets.zero,
+                          value: _incluirGraficaPdf,
+                          onChanged: (v) => setState(
+                            () => _incluirGraficaPdf = v ?? true,
+                          ),
+                          title: Text(
+                            'Incluir gráfica de evolución al PDF',
+                            style: GoogleFonts.poppins(fontSize: 13),
+                          ),
+                          controlAffinity: ListTileControlAffinity.leading,
+                        ),
                         ..._evaluaciones.map(
                           (e) {
-                            final esUltima = ultima != null && e.id == ultima.id;
+                            final esUltima =
+                                ultima != null && e.id == ultima.id;
+                            final calificado = _evalTieneCalif(e);
                             return Card(
                               margin: const EdgeInsets.only(bottom: 6),
                               child: ListTile(
@@ -496,11 +606,21 @@ class _PortageAlumnoHubScreenState extends State<PortageAlumnoHubScreen> {
                                         : FontWeight.w500,
                                   ),
                                 ),
-                                subtitle: Text(
-                                  DateFormat('dd/MM/yyyy').format(e.fechaInicio) +
-                                      (esUltima ? ' · actual' : ''),
+                                subtitle: Text(_subtituloEval(e)),
+                                trailing: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    if (calificado)
+                                      IconButton(
+                                        tooltip: 'PDF / compartir',
+                                        icon: const Icon(
+                                          Icons.picture_as_pdf_outlined,
+                                        ),
+                                        onPressed: () => _compartirPdf(e),
+                                      ),
+                                    const Icon(Icons.chevron_right),
+                                  ],
                                 ),
-                                trailing: const Icon(Icons.chevron_right),
                                 onTap: () async {
                                   await context.push(
                                     '/directora/portage/evaluacion/${e.id}/alumno/${alumno.id}',
@@ -510,26 +630,6 @@ class _PortageAlumnoHubScreenState extends State<PortageAlumnoHubScreen> {
                               ),
                             );
                           },
-                        ),
-                      ],
-                      if (ultima != null) ...[
-                        const SizedBox(height: 8),
-                        CheckboxListTile(
-                          contentPadding: EdgeInsets.zero,
-                          value: _incluirGraficaPdf,
-                          onChanged: (v) => setState(
-                            () => _incluirGraficaPdf = v ?? true,
-                          ),
-                          title: Text(
-                            'Incluir esta gráfica al imprimir PDF',
-                            style: GoogleFonts.poppins(fontSize: 13),
-                          ),
-                          controlAffinity: ListTileControlAffinity.leading,
-                        ),
-                        OutlinedButton.icon(
-                          onPressed: _compartirPdf,
-                          icon: const Icon(Icons.picture_as_pdf),
-                          label: const Text('Imprimir / compartir PDF (último)'),
                         ),
                       ],
                       const SizedBox(height: 32),

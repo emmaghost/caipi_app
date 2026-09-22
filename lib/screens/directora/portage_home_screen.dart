@@ -123,7 +123,9 @@ class _PortageHomeScreenState extends State<PortageHomeScreen> {
 
       if (!mounted) return;
       setState(() {
-        _listas = listas;
+        // Solo hitos por meses (sin listas de habilidades por áreas).
+        _listas = listas.where((l) => l.mesesEdad != null).toList()
+          ..sort((a, b) => (a.mesesEdad ?? 0).compareTo(b.mesesEdad ?? 0));
         _evaluaciones = evals;
         _alumnos = alumnos;
       });
@@ -145,8 +147,8 @@ class _PortageHomeScreenState extends State<PortageHomeScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text(
-            'No hay listas en este grupo. Ve a «Administrar listas» '
-            'o «Hitos» para cargarlas primero.',
+            'No hay hitos por meses en este grupo. '
+            'Ve a «Hitos» para cargar el catálogo primero.',
           ),
         ),
       );
@@ -611,7 +613,7 @@ class _PortageHomeScreenState extends State<PortageHomeScreen> {
                             },
                             icon: const Icon(Icons.list_alt),
                             label: const Text(
-                              'Administrar listas / plantillas',
+                              'Ver hitos del grupo',
                             ),
                           ),
                           const SizedBox(height: 8),

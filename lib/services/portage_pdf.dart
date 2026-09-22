@@ -1,11 +1,14 @@
 import 'dart:io';
 import 'dart:math' as math;
 import 'dart:typed_data';
+import 'dart:ui' show Offset, Rect;
 
+import 'package:flutter/widgets.dart' show BuildContext, RenderBox;
 import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
+import 'package:printing/printing.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../models/alumno.dart';
@@ -270,13 +273,25 @@ class PortagePdf {
     );
   }
 
+  /// Origen del popover de compartir (obligatorio en iPad/iPhone).
+  static Rect? originDesdeContexto(BuildContext? context) {
+    if (context == null) return null;
+    final box = context.findRenderObject() as RenderBox?;
+    if (box == null || !box.hasSize) return null;
+    return box.localToGlobal(Offset.zero) & box.size;
+  }
+
   static Future<void> compartir({
     required Alumno alumno,
     required PortageEvaluacion evaluacion,
     required List<PortageIndicador> indicadores,
     required List<PortageResultado> resultados,
     List<PortagePuntoSerie>? serieEvolucion,
+    BuildContext? context,
+    Rect? sharePositionOrigin,
   }) async {
+    final origin =
+        sharePositionOrigin ?? originDesdeContexto(context);
     final bytes = await generar(
       alumno: alumno,
       evaluacion: evaluacion,
@@ -286,7 +301,24 @@ class PortagePdf {
     );
     final slug = alumno.nombreCompleto
         .replaceAll(RegExp(r'[^A-Za-z0-9_-]'), '_');
-    final nombre = 'Indicadores_CAIPI_$slug.pdf';
+    final fecha = DateFormat('yyyyMMdd').format(evaluacion.fechaInicio);
+    final nombre = 'Indicadores_CAIPI_${slug}_$fecha.pdf';
+
+    // printing: sheet nativo fiable en iOS (WhatsApp / Imprimir).
+    try {
+      await Printing.sharePdf(
+        bytes: bytes,
+        filename: nombre,
+        subject: 'Indicadores de desarrollo · ${alumno.nombreCompleto}',
+        body:
+            'CAIPI · ${evaluacion.tituloDisplay} · ${alumno.nombreCompleto}',
+        bounds: origin,
+      );
+      return;
+    } catch (_) {
+      // Fallback share_plus
+    }
+
     final dir = await getTemporaryDirectory();
     final archivo = File('${dir.path}${Platform.pathSeparator}$nombre');
     await archivo.writeAsBytes(bytes, flush: true);
@@ -303,6 +335,7 @@ class PortagePdf {
         subject: 'Indicadores de desarrollo · ${alumno.nombreCompleto}',
         text:
             'CAIPI · ${evaluacion.tituloDisplay} · ${alumno.nombreCompleto}',
+        sharePositionOrigin: origin,
       ),
     );
   }

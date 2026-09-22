@@ -549,7 +549,7 @@ class _PagosScreenState extends State<PagosScreen> with SingleTickerProviderStat
     return {_filtroGradoId!};
   }
 
-  /// Alumnos que sí entran al módulo de pagos (solo Kínder 1–3).
+  /// Caja y directora: solo Kínder 1–3 (sin maternal ni estimulación).
   Set<String> _alumnoIdsModuloPagos(List<Alumno> alumnos, List<Grado> grados) {
     final gradosOk = {
       for (final g in grados)
@@ -565,13 +565,18 @@ class _PagosScreenState extends State<PagosScreen> with SingleTickerProviderStat
     return list.map((a) => a.id).toSet();
   }
 
-  List<Grado> _gradosModuloPagos(List<Grado> grados) =>
-      grados.where((g) => g.muestraModuloPagos).toList();
+  List<Grado> _gradosModuloPagos(List<Grado> grados) {
+    final list = grados.where((g) => g.muestraModuloPagos).toList();
+    list.sort((a, b) => a.nombre.compareTo(b.nombre));
+    return list;
+  }
 
   List<Alumno> _alumnosModuloPagos(List<Alumno> alumnos, List<Grado> grados) {
     final ids = _alumnoIdsModuloPagos(alumnos, grados);
     return alumnos.where((a) => ids.contains(a.id)).toList();
   }
+
+  String get _etiquetaTodosGrados => 'Todos (Kínder 1–3)';
 
   String _etiquetaEstadoFiltroCorto() {
     switch (_filtroEstado) {
@@ -592,7 +597,7 @@ class _PagosScreenState extends State<PagosScreen> with SingleTickerProviderStat
     List<Grado> grados,
     Map<String, String> mapaNombres,
   ) {
-    var gradoTxt = 'Todos (Kínder 1–3)';
+    var gradoTxt = _etiquetaTodosGrados;
     if (_filtroGradoId != null) {
       final idx = grados.indexWhere((g) => g.id == _filtroGradoId);
       if (idx >= 0) gradoTxt = grados[idx].nombre;
@@ -708,7 +713,7 @@ class _PagosScreenState extends State<PagosScreen> with SingleTickerProviderStat
                   ),
                 ),
               ),
-            if (esCaja)
+            if (esCaja || usuario?.esDirectora == true)
               Material(
                 color: AppColors.azulOscuro.withOpacity(0.08),
                 child: Padding(
@@ -719,7 +724,7 @@ class _PagosScreenState extends State<PagosScreen> with SingleTickerProviderStat
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(
-                          'Caja solo gestiona pagos de Kínder 1, 2 y 3 (no maternal ni estimulación).',
+                          'Pagos solo de Kínder 1, 2 y 3 (maternal y estimulación no aparecen aquí).',
                           style: GoogleFonts.poppins(
                             fontSize: 12,
                             color: AppColors.azulOscuro,
@@ -776,12 +781,12 @@ class _PagosScreenState extends State<PagosScreen> with SingleTickerProviderStat
                               filled: true,
                               fillColor: Colors.white,
                             ),
-                            hint: Text('Todos (solo Kínder 1–3)',
+                            hint: Text(_etiquetaTodosGrados,
                                 style: GoogleFonts.poppins(fontSize: 14)),
                             items: [
-                              const DropdownMenuItem<String?>(
+                              DropdownMenuItem<String?>(
                                 value: null,
-                                child: Text('Todos (Kínder 1–3)'),
+                                child: Text(_etiquetaTodosGrados),
                               ),
                               ..._gradosModuloPagos(grados).map(
                                 (g) => DropdownMenuItem<String?>(

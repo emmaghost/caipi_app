@@ -475,6 +475,54 @@ class ChatService {
     return enviados;
   }
 
+  /// Texto exacto que se manda al chat al publicar un anuncio (megáfono + chat).
+  static String textoChatDesdeAnuncio({
+    required String titulo,
+    required String mensaje,
+    required bool urgente,
+  }) {
+    final prefijo = urgente ? '📢 Anuncio urgente' : '📢 Anuncio';
+    return '$prefijo: ${titulo.trim()}\n\n${mensaje.trim()}';
+  }
+
+  /// Borra copias del anuncio en chats (mismo texto). Solo directora (RLS).
+  Future<int> eliminarMensajesDeAnuncio({
+    required String titulo,
+    required String mensaje,
+    bool? urgente,
+  }) async {
+    final candidatos = <String>{
+      if (urgente == null || urgente)
+        textoChatDesdeAnuncio(
+          titulo: titulo,
+          mensaje: mensaje,
+          urgente: true,
+        ),
+      if (urgente == null || !urgente)
+        textoChatDesdeAnuncio(
+          titulo: titulo,
+          mensaje: mensaje,
+          urgente: false,
+        ),
+    };
+
+    var borrados = 0;
+    for (final texto in candidatos) {
+      if (texto.trim().isEmpty) continue;
+      try {
+        final res = await _supabase
+            .from('mensajes_chat')
+            .delete()
+            .eq('contenido', texto)
+            .select('id');
+        borrados += (res as List).length;
+      } catch (_) {
+        // Sin permiso RLS o sin filas: continuar.
+      }
+    }
+    return borrados;
+  }
+
   Future<void> marcarMensajesLeidos({
     required String conversacionId,
     required String lectorId,

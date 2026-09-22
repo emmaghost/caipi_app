@@ -62,11 +62,19 @@ class Anuncio {
     final bool paraTodos;
     if (paraTodosRaw is bool) {
       paraTodos = paraTodosRaw;
+    } else if (paraTodosRaw != null &&
+        '$paraTodosRaw'.toLowerCase() == 'true') {
+      paraTodos = true;
+    } else if (paraTodosRaw != null &&
+        '$paraTodosRaw'.toLowerCase() == 'false') {
+      paraTodos = false;
     } else if (grados.isNotEmpty) {
-      // Legacy / dato incompleto: hay grados → no es para toda la escuela
+      // Hay grados destino → no es para toda la escuela
       paraTodos = false;
     } else {
-      paraTodos = true;
+      // Sin flag y sin grados: no filtrar como “toda la escuela”
+      // (antes default true filtraba mal y lo veían otros grupos).
+      paraTodos = false;
     }
     return Anuncio(
       id: json['id']?.toString() ?? '',

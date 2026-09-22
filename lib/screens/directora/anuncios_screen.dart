@@ -7,6 +7,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../config/app_colors.dart';
 import '../../services/auth_service.dart';
+import '../../services/chat_service.dart';
 import '../../services/profesor_grupos_service.dart';
 import '../../widgets/app_drawer.dart';
 import '../../widgets/caipi_app_bar_leading.dart';
@@ -273,6 +274,11 @@ class _AnuncioCard extends StatelessWidget {
     final fecha = _fecha;
     final paraTodos = anuncio['para_todos'] as bool? ?? false;
     final grados = _grados;
+    final esDirectora =
+        context.read<AuthService>().currentUser?.esDirectora == true;
+    final puedeEliminar = esDirectora ||
+        anuncio['creado_por']?.toString() ==
+            context.read<AuthService>().currentUser?.id;
 
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
@@ -346,11 +352,14 @@ class _AnuncioCard extends StatelessWidget {
                           );
                         },
                   ),
-                  IconButton(
-                    icon: const Icon(Icons.delete_outline, color: Colors.red),
-                    tooltip: 'Eliminar',
-                    onPressed: () => _confirmarEliminar(context),
-                  ),
+                  if (puedeEliminar)
+                    IconButton(
+                      icon: const Icon(Icons.delete_outline, color: Colors.red),
+                      tooltip: esDirectora
+                          ? 'Eliminar (megáfono y chat)'
+                          : 'Eliminar',
+                      onPressed: () => _confirmarEliminar(context),
+                    ),
                 ],
               ),
               const SizedBox(height: 12),
@@ -454,12 +463,18 @@ class _AnuncioCard extends StatelessWidget {
   }
 
   Future<void> _confirmarEliminar(BuildContext context) async {
+    final esDirectora =
+        context.read<AuthService>().currentUser?.esDirectora == true;
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: Text('Eliminar anuncio', style: GoogleFonts.fredoka()),
         content: Text(
-          '¿Segura que quieres eliminar “${anuncio['titulo']}”? No se puede deshacer.',
+          esDirectora
+              ? '¿Eliminar “${anuncio['titulo']}”? Se quita del megáfono y, '
+                  'si se envió por chat, también de los chats de los papás.'
+              : '¿Segura que quieres eliminar “${anuncio['titulo']}”? '
+                  'No se puede deshacer.',
           style: GoogleFonts.poppins(),
         ),
         actions: [
@@ -477,16 +492,31 @@ class _AnuncioCard extends StatelessWidget {
     );
     if (ok != true || !context.mounted) return;
     try {
+      final titulo = (anuncio['titulo'] ?? '').toString();
+      final mensaje = (anuncio['mensaje'] ?? '').toString();
+      final urgente = anuncio['prioridad']?.toString() == 'alta';
+      var chatBorrados = 0;
+      if (esDirectora) {
+        chatBorrados = await ChatService().eliminarMensajesDeAnuncio(
+          titulo: titulo,
+          mensaje: mensaje,
+          urgente: urgente,
+        );
+      }
+
       await Supabase.instance.client
           .from('anuncios')
           .delete()
           .eq('id', anuncio['id']);
       if (!context.mounted) return;
       onEliminado?.call();
+      final extra = chatBorrados > 0
+          ? ' · Chat: $chatBorrados mensaje(s)'
+          : '';
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Anuncio eliminado'),
-          backgroundColor: Color(0xFF059669),
+        SnackBar(
+          content: Text('Anuncio eliminado$extra'),
+          backgroundColor: const Color(0xFF059669),
         ),
       );
     } catch (e) {

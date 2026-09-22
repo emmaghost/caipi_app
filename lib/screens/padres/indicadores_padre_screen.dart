@@ -8,6 +8,7 @@ import '../../config/app_colors.dart';
 import '../../models/alumno.dart';
 import '../../models/portage.dart';
 import '../../services/auth_service.dart';
+import '../../services/portage_pdf.dart';
 import '../../services/portage_service.dart';
 import '../../services/supabase_service.dart';
 import '../../utils/portage_stats.dart';
@@ -141,6 +142,9 @@ class _IndicadoresPadreScreenState extends State<IndicadoresPadreScreen> {
   /// Lista seleccionada (si hay varias con datos).
   String? _listaIdSel;
 
+  /// Evaluación mostrada en detalle (por defecto la más reciente calificada).
+  String? _evalIdSel;
+
   List<String> get _listasConDatos {
     final ids = <String>{};
     for (final e in _evals) {
@@ -158,18 +162,32 @@ class _IndicadoresPadreScreenState extends State<IndicadoresPadreScreen> {
     return _evals.where((e) => e.listaId == id).toList();
   }
 
-  PortageEvaluacion? get _ultima {
-    // Más reciente con calificaciones dentro de la lista elegida
-    for (final e in _evalsDeLista) {
-      final res = _resPorEval[e.id] ?? const [];
-      if (res.any((r) => !r.sinCalificar)) return e;
-    }
-    return null;
+  List<PortageEvaluacion> get _evalsCalificadas {
+    return _evalsDeLista
+        .where((e) {
+          final res = _resPorEval[e.id] ?? const [];
+          return res.any((r) => !r.sinCalificar);
+        })
+        .toList();
   }
 
-  List<PortageIndicador> _indsUltima = [];
-  Map<String, PortageResultado> _resUltima = {};
-  PortageConteoEstado? _conteoUltima;
+  PortageEvaluacion? get _evalMostrada {
+    final id = _evalIdSel;
+    if (id != null) {
+      for (final e in _evalsCalificadas) {
+        if (e.id == id) return e;
+      }
+    }
+    return _evalsCalificadas.isEmpty ? null : _evalsCalificadas.first;
+  }
+
+  PortageEvaluacion? get _ultima =>
+      _evalsCalificadas.isEmpty ? null : _evalsCalificadas.first;
+
+  List<PortageIndicador> _indsDetalle = [];
+  Map<String, PortageResultado> _resDetalle = {};
+  PortageConteoEstado? _conteoDetalle;
+  bool _compartiendoPdf = false;
 
   List<PortagePuntoSerie> get _serie => PortageStats.seriePorSeguimientos(
         evaluaciones: _evalsDeLista,
@@ -187,28 +205,70 @@ class _IndicadoresPadreScreenState extends State<IndicadoresPadreScreen> {
     _cargar();
   }
 
-  Future<void> _aplicarUltimaDetalle(PortageEvaluacion? ultima) async {
-    if (ultima == null) {
-      _indsUltima = [];
-      _resUltima = {};
-      _conteoUltima = null;
+  Future<void> _aplicarDetalle(PortageEvaluacion? eval) async {
+    if (eval == null) {
+      _indsDetalle = [];
+      _resDetalle = {};
+      _conteoDetalle = null;
+      _evalIdSel = null;
       return;
     }
-    final inds = await _portage.listarIndicadores(ultima.listaId);
-    final res = _resPorEval[ultima.id] ??
-        await _portage.obtenerResultados(ultima.id, widget.alumnoId);
-    _indsUltima = inds;
-    _resUltima = {for (final r in res) r.indicadorId: r};
-    _conteoUltima = PortageStats.contarPorEstado(
+    final inds = await _portage.listarIndicadores(eval.listaId);
+    final res = _resPorEval[eval.id] ??
+        await _portage.obtenerResultados(eval.id, widget.alumnoId);
+    _indsDetalle = inds;
+    _resDetalle = {for (final r in res) r.indicadorId: r};
+    _conteoDetalle = PortageStats.contarPorEstado(
       resultados: res,
       totalIndicadores: inds.length,
     );
+    _evalIdSel = eval.id;
   }
 
   Future<void> _cambiarLista(String? listaId) async {
-    setState(() => _listaIdSel = listaId);
-    await _aplicarUltimaDetalle(_ultima);
+    setState(() {
+      _listaIdSel = listaId;
+      _evalIdSel = null;
+    });
+    await _aplicarDetalle(_ultima);
     if (mounted) setState(() {});
+  }
+
+  Future<void> _seleccionarEval(PortageEvaluacion e) async {
+    await _aplicarDetalle(e);
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _compartirPdf(PortageEvaluacion e) async {
+    final alumno = _alumno;
+    if (alumno == null || _compartiendoPdf) return;
+    setState(() => _compartiendoPdf = true);
+    try {
+      final inds = e.id == _evalIdSel
+          ? _indsDetalle
+          : await _portage.listarIndicadores(e.listaId);
+      final res = _resPorEval[e.id] ??
+          await _portage.obtenerResultados(e.id, widget.alumnoId);
+      if (!mounted) return;
+      await PortagePdf.compartir(
+        alumno: alumno,
+        evaluacion: e,
+        indicadores: inds,
+        resultados: res,
+        serieEvolucion: _serie.length >= 2 ? _serie : null,
+        context: context,
+      );
+    } catch (err) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('No se pudo compartir el PDF: $err'),
+          backgroundColor: AppColors.rojo,
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _compartiendoPdf = false);
+    }
   }
 
   Future<void> _cargar() async {
@@ -248,9 +308,10 @@ class _IndicadoresPadreScreenState extends State<IndicadoresPadreScreen> {
           _totalesPorEval = {};
           _nombreLista = {};
           _listaIdSel = null;
-          _indsUltima = [];
-          _resUltima = {};
-          _conteoUltima = null;
+          _evalIdSel = null;
+          _indsDetalle = [];
+          _resDetalle = {};
+          _conteoDetalle = null;
           _loading = false;
         });
         return;
@@ -296,7 +357,7 @@ class _IndicadoresPadreScreenState extends State<IndicadoresPadreScreen> {
         }
       }
       _listaIdSel = listaSel;
-      await _aplicarUltimaDetalle(_ultima);
+      await _aplicarDetalle(_ultima);
 
       if (!mounted) return;
       setState(() {
@@ -317,8 +378,7 @@ class _IndicadoresPadreScreenState extends State<IndicadoresPadreScreen> {
   ) {
     final map = <String, List<PortageIndicador>>{};
     for (final i in inds) {
-      // Solo indicadores calificados del último
-      final r = _resUltima[i.id];
+      final r = _resDetalle[i.id];
       if (r == null || r.sinCalificar) continue;
       final key = (i.area == null || i.area!.trim().isEmpty)
           ? 'General'
@@ -373,7 +433,7 @@ class _IndicadoresPadreScreenState extends State<IndicadoresPadreScreen> {
                               'La escuela todavía no habilitó los indicadores '
                                   'para ${_alumno!.nombre}.',
                             )
-                          else if (_ultima == null)
+                          else if (_evalMostrada == null)
                             _estadoCard(
                               Icons.hourglass_empty,
                               'Sin calificaciones todavía',
@@ -385,11 +445,21 @@ class _IndicadoresPadreScreenState extends State<IndicadoresPadreScreen> {
                               _selectorLista(),
                               const SizedBox(height: 12),
                             ],
-                            _resumenUltimo(),
+                            _resumenMostrada(),
+                            const SizedBox(height: 12),
+                            _botonPdf(_evalMostrada!),
                             const SizedBox(height: 16),
                             _seccionGrafica(),
+                            if (_serie.length >= 2) ...[
+                              const SizedBox(height: 16),
+                              _tablaComparativa(),
+                            ],
                             const SizedBox(height: 16),
-                            _seccionDetalleUltimo(),
+                            _seccionDetalleMostrada(),
+                            if (_evalsCalificadas.length > 1) ...[
+                              const SizedBox(height: 20),
+                              _seccionHistorial(),
+                            ],
                           ],
                         ],
                       ),
@@ -470,7 +540,11 @@ class _IndicadoresPadreScreenState extends State<IndicadoresPadreScreen> {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  'Último seguimiento',
+                  _evalMostrada != null &&
+                          _ultima != null &&
+                          _evalMostrada!.id != _ultima!.id
+                      ? 'Historial · seguimiento seleccionado'
+                      : 'Último seguimiento',
                   style: GoogleFonts.poppins(
                     fontSize: 13,
                     color: Colors.white.withOpacity(0.95),
@@ -484,9 +558,10 @@ class _IndicadoresPadreScreenState extends State<IndicadoresPadreScreen> {
     );
   }
 
-  Widget _resumenUltimo() {
-    final c = _conteoUltima!;
-    final fecha = DateFormat('dd/MM/yyyy').format(_ultima!.fechaInicio);
+  Widget _resumenMostrada() {
+    final c = _conteoDetalle!;
+    final eval = _evalMostrada!;
+    final fecha = DateFormat('dd/MM/yyyy').format(eval.fechaInicio);
     return Row(
       children: [
         Expanded(
@@ -501,6 +576,88 @@ class _IndicadoresPadreScreenState extends State<IndicadoresPadreScreen> {
           child: _miniStat('Fecha', fecha, AppColors.morado),
         ),
       ],
+    );
+  }
+
+  Widget _botonPdf(PortageEvaluacion e) {
+    return OutlinedButton.icon(
+      onPressed: _compartiendoPdf ? null : () => _compartirPdf(e),
+      icon: _compartiendoPdf
+          ? const SizedBox(
+              width: 18,
+              height: 18,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            )
+          : const Icon(Icons.picture_as_pdf_outlined),
+      label: Text(
+        'Imprimir / compartir PDF',
+        style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
+      ),
+      style: OutlinedButton.styleFrom(
+        foregroundColor: AppColors.morado,
+        minimumSize: const Size.fromHeight(44),
+        side: BorderSide(color: AppColors.morado.withOpacity(0.45)),
+      ),
+    );
+  }
+
+  Widget _tablaComparativa() {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(14, 14, 14, 10),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Comparativo',
+            style: GoogleFonts.poppins(
+              fontWeight: FontWeight.w700,
+              fontSize: 15,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Logrados en cada seguimiento (más reciente primero).',
+            style: GoogleFonts.poppins(fontSize: 12, color: AppColors.gris),
+          ),
+          const SizedBox(height: 10),
+          ..._serie.reversed.map((p) {
+            final pct =
+                p.total <= 0 ? 0 : ((p.logrados / p.total) * 100).round();
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      DateFormat('dd/MM/yyyy').format(p.fecha),
+                      style: GoogleFonts.poppins(fontSize: 12),
+                    ),
+                  ),
+                  Text(
+                    '${p.logrados}/${p.total} ($pct%)',
+                    style: GoogleFonts.poppins(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.morado,
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }),
+        ],
+      ),
     );
   }
 
@@ -575,16 +732,18 @@ class _IndicadoresPadreScreenState extends State<IndicadoresPadreScreen> {
     );
   }
 
-  Widget _seccionDetalleUltimo() {
-    final areas = _agruparPorArea(_indsUltima);
-    final titulo = _ultima!.tituloDisplay;
-    final fecha = DateFormat('dd/MM/yyyy').format(_ultima!.fechaInicio);
+  Widget _seccionDetalleMostrada() {
+    final areas = _agruparPorArea(_indsDetalle);
+    final eval = _evalMostrada!;
+    final titulo = eval.tituloDisplay;
+    final fecha = DateFormat('dd/MM/yyyy').format(eval.fechaInicio);
+    final esUltima = _ultima != null && eval.id == _ultima!.id;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          'Último seguimiento',
+          esUltima ? 'Último seguimiento' : 'Seguimiento seleccionado',
           style: GoogleFonts.poppins(
             fontWeight: FontWeight.w700,
             fontSize: 15,
@@ -629,7 +788,7 @@ class _IndicadoresPadreScreenState extends State<IndicadoresPadreScreen> {
                     style: GoogleFonts.poppins(fontSize: 11),
                   ),
                   children: e.value.map((ind) {
-                    final r = _resUltima[ind.id];
+                    final r = _resDetalle[ind.id];
                     final logrado = PortageEstado.isLogrado(r?.estado);
                     return ListTile(
                       dense: true,
@@ -667,6 +826,71 @@ class _IndicadoresPadreScreenState extends State<IndicadoresPadreScreen> {
               ),
             );
           }),
+      ],
+    );
+  }
+
+  Widget _seccionHistorial() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Historial',
+          style: GoogleFonts.poppins(
+            fontWeight: FontWeight.w700,
+            fontSize: 15,
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          'Toca uno anterior para ver el detalle o compartir su PDF.',
+          style: GoogleFonts.poppins(fontSize: 12, color: AppColors.gris),
+        ),
+        const SizedBox(height: 10),
+        ..._evalsCalificadas.map((e) {
+          final res = _resPorEval[e.id] ?? const [];
+          final total = _totalesPorEval[e.id] ?? 0;
+          var logrados = 0;
+          var ep = 0;
+          for (final r in res) {
+            if (r.esLogrado) logrados++;
+            if (r.esEnProceso) ep++;
+          }
+          final seleccionada = _evalMostrada?.id == e.id;
+          final esUltima = _ultima?.id == e.id;
+          return Card(
+            margin: const EdgeInsets.only(bottom: 8),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(14),
+              side: seleccionada
+                  ? BorderSide(color: AppColors.morado.withOpacity(0.55), width: 1.5)
+                  : BorderSide.none,
+            ),
+            child: ListTile(
+              title: Text(
+                e.tituloDisplay,
+                style: GoogleFonts.poppins(
+                  fontWeight: seleccionada ? FontWeight.w700 : FontWeight.w500,
+                  fontSize: 14,
+                ),
+              ),
+              subtitle: Text(
+                '${DateFormat('dd/MM/yyyy').format(e.fechaInicio)}'
+                ' · $logrados L · $ep EP'
+                '${total > 0 ? ' · ${logrados + ep}/$total' : ''}'
+                '${esUltima ? ' · más reciente' : ''}',
+                style: GoogleFonts.poppins(fontSize: 12),
+              ),
+              trailing: IconButton(
+                tooltip: 'PDF',
+                icon: const Icon(Icons.picture_as_pdf_outlined),
+                onPressed:
+                    _compartiendoPdf ? null : () => _compartirPdf(e),
+              ),
+              onTap: () => _seleccionarEval(e),
+            ),
+          );
+        }),
       ],
     );
   }

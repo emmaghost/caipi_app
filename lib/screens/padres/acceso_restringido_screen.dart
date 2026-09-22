@@ -83,8 +83,7 @@ class _AccesoRestringidoScreenState extends State<AccesoRestringidoScreen> {
             _Acciones(onChat: () => context.go('/padre/chat')),
             const SizedBox(height: 16),
             Text(
-              'Si ya realizaste tu pago, toca actualizar arriba. '
-              'También puedes escribir a la directora por chat.',
+              'Si ya realizaste tu pago, toca actualizar arriba.',
               textAlign: TextAlign.center,
               style: GoogleFonts.poppins(
                 fontSize: 12,
@@ -102,6 +101,22 @@ class _Encabezado extends StatelessWidget {
   final String? motivo;
 
   const _Encabezado({this.motivo});
+
+  String get _mensaje {
+    final m = (motivo ?? '').trim();
+    if (m.isEmpty) {
+      return 'Tienes colegiaturas pendientes. Regulariza tu pago en la escuela '
+          'para recuperar el acceso completo a la app.';
+    }
+    final lower = m.toLowerCase();
+    if (lower.contains('restring') ||
+        lower.contains('directora') ||
+        lower.contains('escuela restring')) {
+      return 'Tienes colegiaturas pendientes. Regulariza tu pago en la escuela '
+          'para recuperar el acceso completo a la app.';
+    }
+    return m;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -136,8 +151,7 @@ class _Encabezado extends StatelessWidget {
             ),
             const SizedBox(height: 8),
             Text(
-              motivo ??
-                  'Tienes colegiaturas pendientes. Regulariza tu pago en la escuela para recuperar el acceso completo a la app.',
+              _mensaje,
               textAlign: TextAlign.center,
               style: GoogleFonts.poppins(
                 fontSize: 14,
@@ -266,7 +280,8 @@ class _SinDetalle extends StatelessWidget {
         padding: const EdgeInsets.all(20),
         child: Text(
           modo == 'bloqueado'
-              ? 'La escuela restringió el acceso a tu cuenta. Usa el chat para contactar a la directora.'
+              ? 'Tu acceso está limitado. Regulariza tu situación de pago '
+                  'en la escuela y toca actualizar arriba.'
               : 'Consultando adeudos…',
           textAlign: TextAlign.center,
           style: GoogleFonts.poppins(color: Colors.grey[700]),

@@ -713,10 +713,13 @@ class _CrearAnuncioScreenState extends State<CrearAnuncioScreen> {
               'Sin grados destino para el chat. Revisa tus grupos asignados.',
             );
           }
-          final prefijo = _urgente ? '📢 Anuncio urgente' : '📢 Anuncio';
           chatEnviados = await ChatService().enviarMensajeMasivoAPadres(
             remitenteId: usuario.id,
-            contenido: '$prefijo: $titulo\n\n$mensaje',
+            contenido: ChatService.textoChatDesdeAnuncio(
+              titulo: titulo,
+              mensaje: mensaje,
+              urgente: _urgente,
+            ),
             paraTodos: paraTodosChat,
             gradoIds: gradosChat,
             omitirHorario: true,
@@ -778,7 +781,8 @@ class _CrearAnuncioScreenState extends State<CrearAnuncioScreen> {
           ],
         ),
         content: Text(
-          'Esta acción no se puede deshacer. ¿Estás segura de eliminar este anuncio?',
+          'Esta acción no se puede deshacer. Se elimina del megáfono y, '
+          'si también se mandó por chat, se borra de esos chats.',
           style: GoogleFonts.poppins(),
         ),
         actions: [
@@ -806,15 +810,26 @@ class _CrearAnuncioScreenState extends State<CrearAnuncioScreen> {
     setState(() => _cargando = true);
 
     try {
+      final titulo = _tituloController.text.trim();
+      final mensaje = _mensajeController.text.trim();
+      final chatBorrados = await ChatService().eliminarMensajesDeAnuncio(
+        titulo: titulo,
+        mensaje: mensaje,
+        urgente: _urgente,
+      );
+
       await Supabase.instance.client
           .from('anuncios')
           .delete()
           .eq('id', widget.anuncioId!);
 
       if (mounted) {
+        final extra = chatBorrados > 0
+            ? ' · También se quitó del chat ($chatBorrados)'
+            : '';
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('✓ Anuncio eliminado correctamente'),
+          SnackBar(
+            content: Text('✓ Anuncio eliminado$extra'),
             backgroundColor: Colors.green,
           ),
         );
@@ -830,9 +845,7 @@ class _CrearAnuncioScreenState extends State<CrearAnuncioScreen> {
         );
       }
     } finally {
-      if (mounted) {
-        setState(() => _cargando = false);
-      }
+      if (mounted) setState(() => _cargando = false);
     }
   }
 

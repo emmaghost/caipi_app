@@ -37,6 +37,25 @@ class _HitosCatalogoScreenState extends State<HitosCatalogoScreen> {
         u?.esProfesor == true;
   }
 
+  Grado? get _gradoSel {
+    final id = _gradoId;
+    if (id == null) return null;
+    for (final g in _grados) {
+      if (g.id == id) return g;
+    }
+    return null;
+  }
+
+  Set<int> get _mesesSugeridos {
+    final g = _gradoSel;
+    if (g == null) return {};
+    return HitosPlantilla.mesesSugeridosParaGrado(
+      nombreGrado: g.nombre,
+      edadMinima: g.edadMinima,
+      edadMaxima: g.edadMaxima,
+    ).toSet();
+  }
+
   @override
   void initState() {
     super.initState();
@@ -50,16 +69,18 @@ class _HitosCatalogoScreenState extends State<HitosCatalogoScreen> {
     });
     try {
       final grados = await context.read<SupabaseService>().obtenerGrados();
-      // Prioriza maternal / estimulación, pero muestra todos activos.
-      final maternal = grados
-          .where((g) => g.activo && g.esMaternalOBebes)
-          .toList()
-        ..sort((a, b) => a.nombre.compareTo(b.nombre));
-      final otros = grados
-          .where((g) => g.activo && !g.esMaternalOBebes)
-          .toList()
-        ..sort((a, b) => a.nombre.compareTo(b.nombre));
-      final ordenados = [...maternal, ...otros];
+      // Todos los grupos activos: maternal, estimulación y kínder.
+      final ordenados = grados.where((g) => g.activo).toList()
+        ..sort((a, b) {
+          int peso(Grado g) {
+            if (g.esMaternalOBebes) return 0;
+            if (g.esKinder) return 1;
+            return 2;
+          }
+
+          final c = peso(a).compareTo(peso(b));
+          return c != 0 ? c : a.nombre.compareTo(b.nombre);
+        });
       if (!mounted) return;
       setState(() {
         _grados = ordenados;
@@ -86,6 +107,12 @@ class _HitosCatalogoScreenState extends State<HitosCatalogoScreen> {
 
   Set<int> get _mesesCargados =>
       _listas.map((l) => l.mesesEdad).whereType<int>().toSet();
+
+  String _etiquetaGrupo(Grado g) {
+    if (g.esMaternalOBebes) return '${g.nombre} · maternal';
+    if (g.esKinder) return '${g.nombre} · kínder';
+    return g.nombre;
+  }
 
   Future<void> _cargarTramo(int meses) async {
     final gid = _gradoId;
@@ -136,8 +163,31 @@ class _HitosCatalogoScreenState extends State<HitosCatalogoScreen> {
     }
   }
 
+  Future<void> _cargarSugeridos() async {
+    final pendientes = _mesesSugeridos
+        .where((m) => !_mesesCargados.contains(m))
+        .toList()
+      ..sort();
+    if (pendientes.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Este grupo ya tiene todos los tramos sugeridos.'),
+        ),
+      );
+      return;
+    }
+    for (final m in pendientes) {
+      await _cargarTramo(m);
+      if (!mounted) return;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    final sugeridos = _mesesSugeridos;
+    final pendientes = sugeridos.where((m) => !_mesesCargados.contains(m)).length;
+
     return Scaffold(
       backgroundColor: const Color(0xFFF8F5FA),
       drawer: const AppDrawer(),
@@ -168,9 +218,10 @@ class _HitosCatalogoScreenState extends State<HitosCatalogoScreen> {
                       child: Padding(
                         padding: const EdgeInsets.all(14),
                         child: Text(
-                          '1) Elige el grupo (los 2 maternal aparecen primero).\n'
-                          '2) Toca «Cargar» en el tramo de meses que necesitas.\n'
-                          '3) Luego, en cada niño, asigna qué hitos le corresponden.\n\n'
+                          '1) Elige el grupo (maternal, estimulación o kínder).\n'
+                          '2) Carga los tramos por meses (los sugeridos del grupo '
+                          'aparecen marcados).\n'
+                          '3) En cada niño, asigna qué hitos le corresponden.\n\n'
                           'Cargar no asigna a nadie: solo deja el catálogo listo.',
                           style: GoogleFonts.poppins(fontSize: 13, height: 1.35),
                         ),
@@ -194,11 +245,7 @@ class _HitosCatalogoScreenState extends State<HitosCatalogoScreen> {
                             .map(
                               (g) => DropdownMenuItem(
                                 value: g.id,
-                                child: Text(
-                                  g.esMaternalOBebes
-                                      ? '${g.nombre} (maternal)'
-                                      : g.nombre,
-                                ),
+                                child: Text(_etiquetaGrupo(g)),
                               ),
                             )
                             .toList(),
@@ -207,6 +254,24 @@ class _HitosCatalogoScreenState extends State<HitosCatalogoScreen> {
                           await _refrescarListas();
                         },
                       ),
+                    if (_puedeCargar && sugeridos.isNotEmpty) ...[
+                      const SizedBox(height: 12),
+                      FilledButton.icon(
+                        onPressed: _cargandoTramo || pendientes == 0
+                            ? null
+                            : _cargarSugeridos,
+                        icon: const Icon(Icons.library_add_check),
+                        label: Text(
+                          pendientes == 0
+                              ? 'Tramos sugeridos ya cargados'
+                              : 'Cargar $pendientes tramos sugeridos del grupo',
+                        ),
+                        style: FilledButton.styleFrom(
+                          backgroundColor: AppColors.morado,
+                          minimumSize: const Size.fromHeight(46),
+                        ),
+                      ),
+                    ],
                     const SizedBox(height: 16),
                     Text(
                       'Tramos por edad',
@@ -215,15 +280,28 @@ class _HitosCatalogoScreenState extends State<HitosCatalogoScreen> {
                         fontWeight: FontWeight.w600,
                       ),
                     ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Los marcados como «sugerido» encajan con la edad típica '
+                      'del grupo seleccionado.',
+                      style: GoogleFonts.poppins(
+                        fontSize: 12,
+                        color: AppColors.gris,
+                      ),
+                    ),
                     const SizedBox(height: 8),
                     ...HitosPlantilla.tramos.map((t) {
                       final cargado = _mesesCargados.contains(t.meses);
+                      final sugerido = sugeridos.contains(t.meses);
                       final nItems = t.areas.fold<int>(
                         0,
                         (s, a) => s + a.items.length,
                       );
                       return Card(
                         margin: const EdgeInsets.only(bottom: 8),
+                        color: sugerido && !cargado
+                            ? AppColors.rosaClaro.withValues(alpha: 0.35)
+                            : null,
                         child: ListTile(
                           leading: CircleAvatar(
                             backgroundColor: cargado
@@ -247,9 +325,12 @@ class _HitosCatalogoScreenState extends State<HitosCatalogoScreen> {
                             ),
                           ),
                           subtitle: Text(
-                            cargado
-                                ? 'Ya cargado · $nItems ítems · 5 áreas'
-                                : 'Pendiente de cargar · $nItems ítems',
+                            [
+                              if (sugerido) 'Sugerido',
+                              if (cargado) 'Ya cargado',
+                              if (!cargado) 'Pendiente',
+                              '$nItems ítems',
+                            ].join(' · '),
                             style: GoogleFonts.poppins(fontSize: 12),
                           ),
                           trailing: _puedeCargar

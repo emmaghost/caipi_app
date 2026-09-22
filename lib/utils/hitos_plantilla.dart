@@ -500,4 +500,40 @@ class HitosPlantilla {
 
   static List<int> get mesesDisponibles =>
       tramos.map((t) => t.meses).toList(growable: false);
+
+  /// Tramos sugeridos según el nombre / edad del grupo.
+  static List<int> mesesSugeridosParaGrado({
+    required String nombreGrado,
+    int? edadMinima,
+    int? edadMaxima,
+  }) {
+    final n = nombreGrado
+        .toLowerCase()
+        .replaceAll('í', 'i')
+        .replaceAll('á', 'a');
+    int minM;
+    int maxM;
+    if (n.contains('estimul') || n.contains('maternal') || n.contains('bebe')) {
+      minM = 3;
+      maxM = 36;
+    } else if (RegExp(r'kinder\s*1').hasMatch(n)) {
+      minM = 36;
+      maxM = 48;
+    } else if (RegExp(r'kinder\s*2').hasMatch(n)) {
+      minM = 48;
+      maxM = 60;
+    } else if (RegExp(r'kinder\s*3').hasMatch(n)) {
+      minM = 60;
+      maxM = 72;
+    } else if (edadMinima != null || edadMaxima != null) {
+      minM = edadMinima ?? 3;
+      maxM = edadMaxima ?? 72;
+    } else {
+      return List<int>.from(mesesDisponibles);
+    }
+    final out = mesesDisponibles
+        .where((m) => m >= minM && m <= maxM)
+        .toList();
+    return out.isEmpty ? List<int>.from(mesesDisponibles) : out;
+  }
 }

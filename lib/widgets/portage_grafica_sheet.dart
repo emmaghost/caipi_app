@@ -146,6 +146,7 @@ Future<void> mostrarPortageGraficaPdf({
                         indicadores: indicadoresPdf,
                         resultados: resultados,
                         serieEvolucion: incluirGrafica ? serie : null,
+                        context: ctx,
                       );
                     },
                     icon: const Icon(Icons.picture_as_pdf),

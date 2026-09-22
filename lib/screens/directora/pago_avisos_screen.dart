@@ -4,6 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 
 import '../../config/app_colors.dart';
+import '../../models/grado.dart';
 import '../../services/auth_service.dart';
 import '../../services/chat_service.dart';
 import '../../services/pago_avisos_service.dart';
@@ -408,6 +409,7 @@ class _PagoAvisosScreenState extends State<PagoAvisosScreen> {
         if (a.gradoId != null) a.id: a.gradoId!,
     };
     final gradosOk = grados.where((g) => g.muestraModuloPagos).toList();
+    gradosOk.sort((a, b) => a.nombre.compareTo(b.nombre));
     if (!mounted) return null;
 
     String modo = 'todos'; // todos | grupo | varios
