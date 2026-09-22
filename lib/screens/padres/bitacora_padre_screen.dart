@@ -5,6 +5,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../config/app_colors.dart';
 import '../../models/bitacora.dart';
+import '../../widgets/bitacora_incidencia_modal.dart';
 import '../../widgets/caipi_app_bar_leading.dart';
 
 /// Bitácora del hijo: lectura rápida (etiqueta → valor), por día o por mes.
@@ -263,6 +264,19 @@ class _BitacoraPadreScreenState extends State<BitacoraPadreScreen>
                                   fontSize: 15,
                                 ),
                               ),
+                              if (b.huboIncidencia) ...[
+                                const SizedBox(height: 6),
+                                BitacoraIncidenciaBadge(
+                                  bitacora: b,
+                                  compacto: true,
+                                  onTap: () => mostrarModalIncidenciaBitacora(
+                                    context: context,
+                                    bitacora: b,
+                                    puedeEditar: false,
+                                    alumnoNombre: widget.alumnoNombre,
+                                  ),
+                                ),
+                              ],
                               const SizedBox(height: 8),
                               _lineaResumenVisual(b),
                             ],
@@ -551,24 +565,18 @@ class _BitacoraPadreScreenState extends State<BitacoraPadreScreen>
                 style: GoogleFonts.poppins(fontSize: 15),
               ),
             ],
-            if (b.huboIncidencia) ...[
-              const Divider(height: 24),
-              Text(
-                'Incidencia',
-                style: GoogleFonts.poppins(
-                  fontWeight: FontWeight.w700,
-                  fontSize: 12,
-                  color: Colors.orange.shade800,
-                ),
-              ),
-              const SizedBox(height: 6),
-              Text(
-                b.tipoIncidencia?.trim().isNotEmpty == true
-                    ? b.tipoIncidencia!
-                    : 'Sí hubo incidencia',
-                style: GoogleFonts.poppins(fontSize: 15),
-              ),
-            ],
+            const SizedBox(height: 14),
+            BitacoraIncidenciaBadge(
+              bitacora: b,
+              onTap: b.huboIncidencia
+                  ? () => mostrarModalIncidenciaBitacora(
+                        context: context,
+                        bitacora: b,
+                        puedeEditar: false,
+                        alumnoNombre: widget.alumnoNombre,
+                      )
+                  : null,
+            ),
           ],
         ),
       ),
@@ -586,20 +594,6 @@ class _BitacoraPadreScreenState extends State<BitacoraPadreScreen>
       ('Actividades', _iconoSiNo(b.realizoActividades)),
       ('Dientes', _iconoSiNo(b.lavoDientes)),
       ('Siesta', _iconoSiesta(b.siesta)),
-      if (b.huboIncidencia)
-        (
-          'Incidencia',
-          Text(
-            b.tipoIncidencia?.trim().isNotEmpty == true
-                ? b.tipoIncidencia!
-                : 'Sí',
-            style: GoogleFonts.poppins(
-              fontSize: 15,
-              fontWeight: FontWeight.w600,
-              color: Colors.orange.shade800,
-            ),
-          ),
-        ),
     ];
     return filas
         .map(
@@ -654,6 +648,19 @@ class _BitacoraPadreScreenState extends State<BitacoraPadreScreen>
               ),
               const SizedBox(height: 16),
               ..._filas(b),
+              const SizedBox(height: 12),
+              BitacoraIncidenciaBadge(
+                bitacora: b,
+                onTap: () {
+                  Navigator.pop(ctx);
+                  mostrarModalIncidenciaBitacora(
+                    context: context,
+                    bitacora: b,
+                    puedeEditar: false,
+                    alumnoNombre: widget.alumnoNombre,
+                  );
+                },
+              ),
               if (b.observaciones != null &&
                   b.observaciones!.trim().isNotEmpty) ...[
                 const SizedBox(height: 16),

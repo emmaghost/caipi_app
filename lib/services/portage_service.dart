@@ -408,6 +408,21 @@ class PortageService {
   // --- Alumno / grado auxiliares ---
 
   Future<void> setPortageVisiblePadre(String alumnoId, bool visible) async {
+    // Solo la directora debe cambiar esto (UI + refuerzo aquí).
+    final uid = _supabase.auth.currentUser?.id;
+    if (uid == null) {
+      throw StateError('Sesión no válida');
+    }
+    final rol = await _supabase
+        .from('usuarios')
+        .select('rol')
+        .eq('id', uid)
+        .maybeSingle();
+    if (rol?['rol']?.toString() != 'directora') {
+      throw StateError(
+        'Solo la directora puede mostrar u ocultar indicadores a los padres.',
+      );
+    }
     await _supabase
         .from('alumnos')
         .update({'portage_visible_padre': visible})

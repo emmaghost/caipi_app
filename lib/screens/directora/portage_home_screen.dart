@@ -513,8 +513,10 @@ class _PortageHomeScreenState extends State<PortageHomeScreen> {
                                   ),
                                   title: Text(a.nombreCompleto),
                                   subtitle: Text(
-                                    a.portageVisiblePadre
-                                        ? 'Padre puede ver indicadores'
+                                    _esDirectora
+                                        ? (a.portageVisiblePadre
+                                            ? 'Padre puede ver indicadores'
+                                            : 'Padre no ve indicadores · toca ficha')
                                         : 'Toca para calificar / ver seguimiento',
                                     style: GoogleFonts.poppins(fontSize: 11),
                                   ),

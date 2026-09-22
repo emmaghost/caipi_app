@@ -160,6 +160,18 @@ class _PortageAlumnoHubScreenState extends State<PortageAlumnoHubScreen> {
   Future<void> _asignarHitos() async {
     final alumno = _alumno;
     if (alumno == null || alumno.gradoId == null) return;
+    if (!_esDirectora) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Solo la directora asigna hitos / listas y la visibilidad a padres.',
+          ),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
     final user = context.read<AuthService>().currentUser;
     final disponibles =
         await _portage.listarListasPorGrado(alumno.gradoId!);
@@ -429,13 +441,23 @@ class _PortageAlumnoHubScreenState extends State<PortageAlumnoHubScreen> {
                                   value: alumno.portageVisiblePadre,
                                   onChanged: (_) => _toggleVisiblePadre(),
                                 ),
+                                const SizedBox(height: 8),
+                                OutlinedButton.icon(
+                                  onPressed: _asignarHitos,
+                                  icon: const Icon(Icons.playlist_add_check),
+                                  label: const Text('Asignar hitos a este niño'),
+                                ),
+                              ] else ...[
+                                const SizedBox(height: 8),
+                                Text(
+                                  'La directora decide qué hitos se asignan y si '
+                                  'el padre los ve. Tú solo calificas el seguimiento.',
+                                  style: GoogleFonts.poppins(
+                                    fontSize: 12,
+                                    color: AppColors.gris,
+                                  ),
+                                ),
                               ],
-                              const SizedBox(height: 8),
-                              OutlinedButton.icon(
-                                onPressed: _asignarHitos,
-                                icon: const Icon(Icons.playlist_add_check),
-                                label: const Text('Asignar hitos a este niño'),
-                              ),
                             ],
                           ),
                         ),

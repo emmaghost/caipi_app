@@ -10,6 +10,7 @@ import '../../models/bitacora.dart';
 import '../../models/grado.dart';
 import '../../services/auth_service.dart';
 import '../../widgets/app_drawer.dart';
+import '../../widgets/bitacora_incidencia_modal.dart';
 import '../../widgets/caipi_app_bar_leading.dart';
 
 class BitacorasScreen extends StatefulWidget {
@@ -699,25 +700,30 @@ class _BitacoraCard extends StatelessWidget {
                     label: 'Siesta',
                     valor: bitacora.siesta,
                   ),
-                  if (bitacora.huboIncidencia)
-                    Chip(
-                      avatar: Icon(Icons.report_problem,
-                          size: 16, color: Colors.orange.shade800),
-                      label: Text(
-                        bitacora.tipoIncidencia?.trim().isNotEmpty == true
-                            ? bitacora.tipoIncidencia!
-                            : 'Incidencia',
-                        style: GoogleFonts.poppins(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                          color: Colors.orange.shade900,
-                        ),
-                      ),
-                      backgroundColor: Colors.orange.shade50,
-                      side: BorderSide(color: Colors.orange.shade300),
-                    ),
                 ],
               ),
+              if (bitacora.huboIncidencia) ...[
+                const SizedBox(height: 12),
+                BitacoraIncidenciaBadge(
+                  bitacora: bitacora,
+                  compacto: true,
+                  onTap: () async {
+                    String? nombre;
+                    try {
+                      final a = await _cargarAlumno(bitacora.alumnoId);
+                      nombre =
+                          '${a['nombre'] ?? ''} ${a['apellidos'] ?? ''}'.trim();
+                    } catch (_) {}
+                    if (!context.mounted) return;
+                    await mostrarModalIncidenciaBitacora(
+                      context: context,
+                      bitacora: bitacora,
+                      puedeEditar: true,
+                      alumnoNombre: nombre,
+                    );
+                  },
+                ),
+              ],
               if (bitacora.observaciones != null &&
                   bitacora.observaciones!.isNotEmpty) ...[
                 const SizedBox(height: 12),
@@ -920,6 +926,29 @@ class _BitacoraCard extends StatelessWidget {
                         : 'Sí')
                     : 'No',
               ),
+              if (bitacora.huboIncidencia) ...[
+                const SizedBox(height: 4),
+                TextButton.icon(
+                  onPressed: () async {
+                    Navigator.of(context).pop();
+                    String? nombre;
+                    try {
+                      final a = await _cargarAlumno(bitacora.alumnoId);
+                      nombre =
+                          '${a['nombre'] ?? ''} ${a['apellidos'] ?? ''}'.trim();
+                    } catch (_) {}
+                    if (!context.mounted) return;
+                    await mostrarModalIncidenciaBitacora(
+                      context: context,
+                      bitacora: bitacora,
+                      puedeEditar: true,
+                      alumnoNombre: nombre,
+                    );
+                  },
+                  icon: const Icon(Icons.open_in_new, size: 18),
+                  label: const Text('Ver / editar incidencia'),
+                ),
+              ],
               if (bitacora.observaciones != null &&
                   bitacora.observaciones!.isNotEmpty)
                 _buildDetalleItem('Observaciones', bitacora.observaciones!),
