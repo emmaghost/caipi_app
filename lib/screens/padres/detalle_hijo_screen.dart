@@ -529,10 +529,19 @@ class DetalleHijoScreen extends StatelessWidget {
 
 // ==================== SECCIÓN INCIDENTES ====================
 
-class _SeccionIncidentes extends StatelessWidget {
+enum _FiltroIncPadre { todas, nuevas, pasadas }
+
+class _SeccionIncidentes extends StatefulWidget {
   final String alumnoId;
 
   const _SeccionIncidentes({required this.alumnoId});
+
+  @override
+  State<_SeccionIncidentes> createState() => _SeccionIncidentesState();
+}
+
+class _SeccionIncidentesState extends State<_SeccionIncidentes> {
+  _FiltroIncPadre _filtro = _FiltroIncPadre.todas;
 
   @override
   Widget build(BuildContext context) {
@@ -543,21 +552,49 @@ class _SeccionIncidentes extends StatelessWidget {
           children: [
             const Icon(Icons.warning_amber_rounded, color: Colors.orange),
             const SizedBox(width: 8),
-            Text(
-              'Incidentes y Reportes',
-              style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                fontWeight: FontWeight.bold,
+            Expanded(
+              child: Text(
+                'Incidentes y Reportes',
+                style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.bold,
+                    ),
               ),
             ),
           ],
         ),
+        const SizedBox(height: 8),
+        SegmentedButton<_FiltroIncPadre>(
+          segments: const [
+            ButtonSegment(
+              value: _FiltroIncPadre.todas,
+              label: Text('Todas'),
+            ),
+            ButtonSegment(
+              value: _FiltroIncPadre.nuevas,
+              label: Text('Nuevas'),
+              icon: Icon(Icons.mark_email_unread, size: 16),
+            ),
+            ButtonSegment(
+              value: _FiltroIncPadre.pasadas,
+              label: Text('Pasadas'),
+              icon: Icon(Icons.mark_email_read, size: 16),
+            ),
+          ],
+          selected: {_filtro},
+          onSelectionChanged: (s) => setState(() => _filtro = s.first),
+          style: ButtonStyle(
+            visualDensity: VisualDensity.compact,
+            textStyle: WidgetStatePropertyAll(
+              GoogleFonts.poppins(fontSize: 12),
+            ),
+          ),
+        ),
         const SizedBox(height: 12),
-        
         StreamBuilder<List<Map<String, dynamic>>>(
           stream: Supabase.instance.client
               .from('incidentes')
               .stream(primaryKey: ['id'])
-              .eq('alumno_id', alumnoId)
+              .eq('alumno_id', widget.alumnoId)
               .order('fecha', ascending: false),
           builder: (context, snapshot) {
             if (snapshot.connectionState == ConnectionState.waiting) {
@@ -566,58 +603,28 @@ class _SeccionIncidentes extends StatelessWidget {
 
             if (!snapshot.hasData || snapshot.data!.isEmpty) {
               return Card(
-                elevation: 3,
+                elevation: 2,
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(15),
                 ),
-                child: Container(
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(15),
-                    gradient: LinearGradient(
-                      colors: [
-                        Colors.green[400]!.withOpacity(0.2),
-                        Colors.green[100]!.withOpacity(0.1),
-                      ],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                    ),
-                  ),
+                child: Padding(
                   padding: const EdgeInsets.all(20),
                   child: Row(
                     children: [
-                      Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: Colors.green[600],
-                          shape: BoxShape.circle,
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.green.withOpacity(0.4),
-                              blurRadius: 8,
-                              spreadRadius: 2,
-                            ),
-                          ],
-                        ),
-                        child: const Icon(
-                          Icons.check_circle,
-                          color: Colors.white,
-                          size: 32,
-                        ),
-                      ),
+                      Icon(Icons.check_circle, color: Colors.green[600], size: 36),
                       const SizedBox(width: 16),
                       Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              '¡Todo bien! 🎉',
+                              '¡Todo bien!',
                               style: GoogleFonts.fredoka(
                                 fontSize: 18,
                                 fontWeight: FontWeight.bold,
                                 color: Colors.green[800],
                               ),
                             ),
-                            const SizedBox(height: 4),
                             Text(
                               'No hay incidentes reportados',
                               style: GoogleFonts.poppins(
@@ -634,55 +641,84 @@ class _SeccionIncidentes extends StatelessWidget {
               );
             }
 
-            final incidentesData = snapshot.data!;
-            final incidentes = incidentesData
+            var incidentes = snapshot.data!
                 .map((json) => Incidente.fromJson(json))
                 .toList();
 
-            // Contar por nivel
-            final graves = incidentes.where((i) => i.nivel >= 4).length;
+            if (_filtro == _FiltroIncPadre.nuevas) {
+              incidentes = incidentes.where((i) => i.esNueva).toList();
+            } else if (_filtro == _FiltroIncPadre.pasadas) {
+              incidentes = incidentes.where((i) => !i.esNueva).toList();
+            }
+
+            if (incidentes.isEmpty) {
+              return Padding(
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                child: Text(
+                  _filtro == _FiltroIncPadre.nuevas
+                      ? 'No hay incidentes nuevos'
+                      : 'No hay incidentes en este filtro',
+                  style: GoogleFonts.poppins(color: AppColors.gris),
+                ),
+              );
+            }
+
+            final nuevasCount = snapshot.data!
+                .map((j) => Incidente.fromJson(j))
+                .where((i) => i.esNueva)
+                .length;
 
             return Column(
               children: [
-                // Resumen si hay incidentes graves
-                if (graves > 0)
+                if (nuevasCount > 0 && _filtro != _FiltroIncPadre.pasadas)
                   Container(
                     margin: const EdgeInsets.only(bottom: 12),
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
-                      color: Colors.red[50],
+                      color: Colors.orange[50],
                       borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: Colors.red, width: 2),
+                      border: Border.all(color: Colors.orange),
                     ),
                     child: Row(
                       children: [
-                        const Icon(Icons.notifications_active, color: Colors.red),
+                        const Icon(Icons.notifications_active,
+                            color: Colors.orange),
                         const SizedBox(width: 12),
                         Expanded(
                           child: Text(
-                            '$graves incidente${graves > 1 ? 's' : ''} grave${graves > 1 ? 's' : ''}',
+                            '$nuevasCount incidente${nuevasCount > 1 ? 's' : ''} sin leer · comunícate con la directora',
                             style: TextStyle(
-                              color: Colors.red[900],
-                              fontWeight: FontWeight.bold,
+                              color: Colors.orange[900],
+                              fontWeight: FontWeight.w600,
+                              fontSize: 13,
                             ),
                           ),
+                        ),
+                        TextButton(
+                          onPressed: () => context.push('/padre/chat'),
+                          child: const Text('Chat'),
                         ),
                       ],
                     ),
                   ),
-
-                // Lista de incidentes
                 ...incidentes.map((incidente) {
                   final colorNivel = _getColorNivel(incidente.nivel);
-                  
+                  final esNueva = incidente.esNueva;
+
                   return Card(
                     margin: const EdgeInsets.only(bottom: 8),
-                    elevation: incidente.nivel >= 4 ? 3 : 1,
+                    elevation: esNueva ? 3 : 1,
+                    color: esNueva ? const Color(0xFFFFF7ED) : null,
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12),
-                      side: incidente.nivel >= 4
-                          ? BorderSide(color: colorNivel, width: 2)
-                          : BorderSide.none,
+                      side: BorderSide(
+                        color: esNueva
+                            ? const Color(0xFFFDBA74)
+                            : (incidente.nivel >= 4
+                                ? colorNivel
+                                : Colors.transparent),
+                        width: esNueva || incidente.nivel >= 4 ? 2 : 0,
+                      ),
                     ),
                     child: ListTile(
                       leading: Container(
@@ -699,9 +735,36 @@ class _SeccionIncidentes extends StatelessWidget {
                           ),
                         ),
                       ),
-                      title: Text(
-                        incidente.titulo,
-                        style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
+                      title: Row(
+                        children: [
+                          if (esNueva) ...[
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 6, vertical: 1),
+                              decoration: BoxDecoration(
+                                color: Colors.orange,
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: const Text(
+                                'NUEVA',
+                                style: TextStyle(
+                                  fontSize: 9,
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 6),
+                          ],
+                          Expanded(
+                            child: Text(
+                              incidente.titulo,
+                              style: GoogleFonts.poppins(
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                       subtitle: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -713,52 +776,27 @@ class _SeccionIncidentes extends StatelessWidget {
                             overflow: TextOverflow.ellipsis,
                           ),
                           const SizedBox(height: 4),
-                          Row(
-                            children: [
-                              Icon(Icons.calendar_today, size: 12, color: Colors.grey[600]),
-                              const SizedBox(width: 4),
-                              Text(
-                                DateFormat('dd/MM/yyyy HH:mm', 'es_MX').format(incidente.fecha),
-                                style: TextStyle(
-                                  fontSize: 11,
-                                  color: Colors.grey[600],
-                                ),
-                              ),
-                            ],
+                          Text(
+                            DateFormat('dd/MM/yyyy HH:mm', 'es_MX')
+                                .format(incidente.fecha),
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: Colors.grey[600],
+                            ),
                           ),
                         ],
                       ),
-                      trailing: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 8,
-                              vertical: 4,
-                            ),
-                            decoration: BoxDecoration(
-                              color: colorNivel.withOpacity(0.2),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: Text(
-                              'N${incidente.nivel}',
-                              style: TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.bold,
-                                color: colorNivel,
-                              ),
-                            ),
-                          ),
-                          if (incidente.padreNotificado)
-                            const Icon(Icons.notifications_active, 
-                                color: Colors.orange, size: 16),
-                        ],
+                      trailing: Icon(
+                        esNueva
+                            ? Icons.mark_email_unread
+                            : Icons.mark_email_read,
+                        color: esNueva ? Colors.orange : Colors.green,
                       ),
                       isThreeLine: true,
                       onTap: () => _mostrarDetalleIncidente(context, incidente),
                     ),
                   );
-                }).toList(),
+                }),
               ],
             );
           },
@@ -784,19 +822,36 @@ class _SeccionIncidentes extends StatelessWidget {
     }
   }
 
+  Future<void> _setLeido(String id, bool leido) async {
+    try {
+      await Supabase.instance.client
+          .from('incidentes')
+          .update({'leido_padre': leido})
+          .eq('id', id);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('No se pudo actualizar: $e')),
+        );
+      }
+    }
+  }
+
   void _mostrarDetalleIncidente(BuildContext context, Incidente incidente) {
+    // Al abrir, marcar como leída si estaba nueva.
+    if (incidente.esNueva) {
+      _setLeido(incidente.id, true);
+    }
+
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (dialogCtx) => AlertDialog(
         title: Row(
           children: [
             Text(incidente.emoji),
             const SizedBox(width: 8),
             Expanded(
-              child: Text(
-                incidente.titulo,
-                style: GoogleFonts.fredoka(),
-              ),
+              child: Text(incidente.titulo, style: GoogleFonts.fredoka()),
             ),
           ],
         ),
@@ -830,36 +885,41 @@ class _SeccionIncidentes extends StatelessWidget {
                   Colors.black87,
                 ),
               ],
-              if (incidente.padreNotificado) ...[
-                const Divider(),
-                Container(
-                  margin: const EdgeInsets.only(top: 8),
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: Colors.orange[50],
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.notifications_active, color: Colors.orange, size: 20),
-                      const SizedBox(width: 8),
-                      Text(
-                        'Fue notificado',
-                        style: TextStyle(
-                          color: Colors.orange[700],
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ],
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: Colors.blue[50],
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  'Si tienes dudas, comunícate con la directora por el chat de la escuela.',
+                  style: GoogleFonts.poppins(
+                    fontSize: 12,
+                    color: Colors.blue[900],
                   ),
                 ),
-              ],
+              ),
             ],
           ),
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.of(context).pop(),
+            onPressed: () async {
+              await _setLeido(incidente.id, false);
+              if (dialogCtx.mounted) Navigator.of(dialogCtx).pop();
+            },
+            child: const Text('Marcar no leída'),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.of(dialogCtx).pop();
+              context.push('/padre/chat');
+            },
+            child: const Text('Chat directora'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(dialogCtx).pop(),
             child: const Text('Cerrar'),
           ),
         ],
@@ -880,14 +940,9 @@ class _SeccionIncidentes extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 4),
-        Text(
-          valor,
-          style: TextStyle(
-            fontSize: 14,
-            color: color,
-          ),
-        ),
+        Text(valor, style: TextStyle(fontSize: 14, color: color)),
       ],
     );
   }
 }
+

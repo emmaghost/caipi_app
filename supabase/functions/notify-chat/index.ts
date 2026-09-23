@@ -67,6 +67,18 @@ Deno.serve(async (req) => {
       return json({ ok: true, ...result });
     }
 
+    // Nuevo incidente → avisar papás y pedir que contacten a la directora
+    if (body.tipo === "incidente_nuevo" && body.alumno_id) {
+      const result = await handleIncidenteNuevo(admin, sa, {
+        alumno_id: body.alumno_id,
+        titulo: (body as { titulo?: string }).titulo,
+        descripcion: (body as { descripcion?: string }).descripcion,
+        nivel: (body as { nivel?: number }).nivel,
+        incidente_id: (body as { incidente_id?: string }).incidente_id,
+      });
+      return json({ ok: true, ...result });
+    }
+
     // Modo manual: { title, body, usuario_ids } o { tokens }
     if (body.title && (body.tokens?.length || body.usuario_ids?.length)) {
       const tokens = body.tokens?.length
@@ -96,13 +108,89 @@ Deno.serve(async (req) => {
 
     return json({
       error:
-        "Payload no reconocido. Tablas: mensajes_chat | solicitudes_recogida | abonos | tipo=entrega_completada",
+        "Payload no reconocido. Tablas: mensajes_chat | solicitudes_recogida | abonos | tipo=entrega_completada | tipo=incidente_nuevo",
     }, 400);
   } catch (e) {
     console.error(e);
     return json({ error: String(e) }, 500);
   }
 });
+
+async function handleIncidenteNuevo(
+  admin: ReturnType<typeof createClient>,
+  sa: ServiceAccount,
+  args: {
+    alumno_id: string;
+    titulo?: string;
+    descripcion?: string;
+    nivel?: number;
+    incidente_id?: string;
+  },
+) {
+  const alumnoId = args.alumno_id?.trim();
+  if (!alumnoId) return { sent: 0, reason: "sin alumno_id" };
+
+  const { data: alumno } = await admin
+    .from("alumnos")
+    .select("id, nombre, apellidos, padre_id")
+    .eq("id", alumnoId)
+    .maybeSingle();
+
+  if (!alumno) return { sent: 0, reason: "alumno no encontrado" };
+
+  const nombreAlumno =
+    `${alumno.nombre ?? ""} ${alumno.apellidos ?? ""}`.trim() || "tu hijo/a";
+
+  const padresIds = new Set<string>();
+  if (alumno.padre_id) padresIds.add(alumno.padre_id as string);
+  try {
+    const { data: ap } = await admin
+      .from("alumnos_padres")
+      .select("padre_id")
+      .eq("alumno_id", alumnoId);
+    for (const row of ap ?? []) {
+      if (row.padre_id) padresIds.add(row.padre_id as string);
+    }
+  } catch (_) {
+    // tabla opcional
+  }
+
+  const ids = [...padresIds];
+  if (ids.length === 0) {
+    return { sent: 0, reason: "sin padres", alumno_id: alumnoId };
+  }
+
+  const tokens = await tokensDeUsuarios(admin, ids);
+  if (tokens.length === 0) {
+    return {
+      sent: 0,
+      reason: "sin tokens",
+      padres: ids.length,
+      alumno_id: alumnoId,
+    };
+  }
+
+  const tituloInc = (args.titulo ?? "Incidente").trim().slice(0, 80);
+  const nivel = typeof args.nivel === "number" ? args.nivel : 0;
+  const nivelTxt = nivel > 0 ? ` (nivel ${nivel})` : "";
+  const title = `Incidente: ${nombreAlumno}`;
+  const body =
+    `${tituloInc}${nivelTxt}. Por favor comunícate con la directora por el chat de la escuela.`;
+
+  const sent = await sendFcm(sa, tokens, title, body, {
+    tipo: "incidente",
+    alumno_id: alumnoId,
+    incidente_id: args.incidente_id ?? "",
+    ruta: "/padre/chat",
+  });
+
+  return {
+    sent,
+    padres: ids.length,
+    tokens: tokens.length,
+    alumno_id: alumnoId,
+  };
+}
 
 function cors() {
   return {

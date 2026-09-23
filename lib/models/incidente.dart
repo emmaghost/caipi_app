@@ -10,6 +10,7 @@ class Incidente {
   final bool atendido;
   final bool padreNotificado;
   final DateTime? fechaNotificacion;
+  final bool leidoPadre;
   final String? fotoUrl;
   final String? observaciones;
   final DateTime createdAt;
@@ -26,6 +27,7 @@ class Incidente {
     this.atendido = false,
     this.padreNotificado = false,
     this.fechaNotificacion,
+    this.leidoPadre = false,
     this.fotoUrl,
     this.observaciones,
     required this.createdAt,
@@ -46,6 +48,7 @@ class Incidente {
       fechaNotificacion: json['fecha_notificacion'] != null
           ? DateTime.parse(json['fecha_notificacion'])
           : null,
+      leidoPadre: json['leido_padre'] as bool? ?? false,
       fotoUrl: json['foto_url'] as String?,
       observaciones: json['observaciones'] as String?,
       createdAt: DateTime.parse(json['created_at']),
@@ -65,10 +68,14 @@ class Incidente {
       'atendido': atendido,
       'padre_notificado': padreNotificado,
       'fecha_notificacion': fechaNotificacion?.toIso8601String(),
+      'leido_padre': leidoPadre,
       'foto_url': fotoUrl,
       'observaciones': observaciones,
     };
   }
+
+  /// Nueva = el papá aún no la leyó.
+  bool get esNueva => !leidoPadre;
 
   // Getter para saber si requiere notificar al padre
   bool get requiereNotificarPadre => nivel >= 4;

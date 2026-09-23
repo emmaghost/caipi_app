@@ -1246,6 +1246,17 @@ class SupabaseService {
         .eq('id', incidenteId);
   }
 
+  Future<void> setIncidenteLeidoPadre(String incidenteId, bool leido) async {
+    await _supabase
+        .from('incidentes')
+        .update({'leido_padre': leido})
+        .eq('id', incidenteId);
+  }
+
+  Future<void> borrarIncidente(String incidenteId) async {
+    await _supabase.from('incidentes').delete().eq('id', incidenteId);
+  }
+
   // ==================== ANUNCIOS ====================
 
   Stream<List<Anuncio>> getAnuncios() {

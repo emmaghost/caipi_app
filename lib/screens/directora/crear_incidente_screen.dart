@@ -9,6 +9,7 @@ import '../../config/app_colors.dart';
 import '../../widgets/app_drawer.dart';
 import '../../models/alumno.dart';
 import '../../models/tipo_incidente.dart';
+import '../../services/incidente_aviso_service.dart';
 import '../../widgets/caipi_app_bar_leading.dart';
 
 class CrearIncidenteScreen extends StatefulWidget {
@@ -102,8 +103,10 @@ class _CrearIncidenteScreenState extends State<CrearIncidenteScreen> {
         _horaSeleccionada.minute,
       );
 
+      final incidenteId = const Uuid().v4();
+      final ahora = DateTime.now().toUtc();
       final incidenteData = {
-        'id': const Uuid().v4(),
+        'id': incidenteId,
         'alumno_id': _alumnoSeleccionado!.id,
         'tipo_incidente_id': _tipoSeleccionado!.id,
         'nivel': _tipoSeleccionado!.nivel,
@@ -112,24 +115,33 @@ class _CrearIncidenteScreenState extends State<CrearIncidenteScreen> {
         'fecha': fechaHora.toIso8601String(),
         'reportado_por': usuarioId,
         'atendido': false,
-        'padre_notificado': false, // El trigger lo manejará si nivel >= 4
+        'padre_notificado': true,
+        'fecha_notificacion': ahora.toIso8601String(),
+        'leido_padre': false,
         'observaciones': _observacionesController.text.trim().isEmpty
             ? null
             : _observacionesController.text.trim(),
-        'created_at': DateTime.now().toIso8601String(),
+        'created_at': ahora.toIso8601String(),
       };
 
       await Supabase.instance.client
           .from('incidentes')
           .insert(incidenteData);
 
+      // Siempre avisar al papá y pedirle que contacte a la directora.
+      await IncidenteAvisoService().avisarPadresNuevoIncidente(
+        alumnoId: _alumnoSeleccionado!.id,
+        titulo: _tipoSeleccionado!.nombre,
+        descripcion: _descripcionController.text.trim(),
+        nivel: _tipoSeleccionado!.nivel,
+        incidenteId: incidenteId,
+      );
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
+          const SnackBar(
             content: Text(
-              _tipoSeleccionado!.nivel >= 4
-                  ? '✅ Incidente creado. Padre será notificado.'
-                  : '✅ Incidente creado correctamente',
+              'Incidente creado. Se avisó al papá para que contacte a la directora.',
             ),
             backgroundColor: Colors.green,
           ),
@@ -431,9 +443,7 @@ class _CrearIncidenteScreenState extends State<CrearIncidenteScreen> {
                       child: ElevatedButton(
                         onPressed: _guardarIncidente,
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: _tipoSeleccionado != null && _tipoSeleccionado!.nivel >= 4
-                              ? Colors.red[700]
-                              : AppColors.azulOscuro,
+                          backgroundColor: AppColors.azulOscuro,
                           foregroundColor: Colors.white,
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(12),
@@ -442,14 +452,10 @@ class _CrearIncidenteScreenState extends State<CrearIncidenteScreen> {
                         child: Row(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            if (_tipoSeleccionado != null && _tipoSeleccionado!.nivel >= 4)
-                              const Icon(Icons.notifications_active),
-                            if (_tipoSeleccionado != null && _tipoSeleccionado!.nivel >= 4)
-                              const SizedBox(width: 8),
+                            const Icon(Icons.notifications_active),
+                            const SizedBox(width: 8),
                             Text(
-                              _tipoSeleccionado != null && _tipoSeleccionado!.nivel >= 4
-                                  ? 'Registrar y Notificar Padre'
-                                  : 'Registrar Incidente',
+                              'Registrar y avisar al papá',
                               style: GoogleFonts.fredoka(
                                 fontSize: 18,
                                 fontWeight: FontWeight.bold,
@@ -460,32 +466,30 @@ class _CrearIncidenteScreenState extends State<CrearIncidenteScreen> {
                       ),
                     ),
 
-                    if (_tipoSeleccionado != null && _tipoSeleccionado!.nivel >= 4) ...[
-                      const SizedBox(height: 16),
-                      Container(
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          color: Colors.orange[50],
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: Colors.orange, width: 2),
-                        ),
-                        child: Row(
-                          children: [
-                            const Icon(Icons.info_outline, color: Colors.orange),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Text(
-                                'Este incidente notificará automáticamente al padre del alumno.',
-                                style: TextStyle(
-                                  color: Colors.orange[900],
-                                  fontSize: 12,
-                                ),
+                    const SizedBox(height: 16),
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: Colors.orange[50],
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.orange, width: 2),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.info_outline, color: Colors.orange),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Text(
+                              'Se notificará al papá y se le pedirá que se comunique con la directora por el chat.',
+                              style: TextStyle(
+                                color: Colors.orange[900],
+                                fontSize: 12,
                               ),
                             ),
-                          ],
-                        ),
+                          ),
+                        ],
                       ),
-                    ],
+                    ),
                   ],
                 ),
               ),

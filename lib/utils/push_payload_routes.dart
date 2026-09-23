@@ -12,6 +12,8 @@ String rutaDesdePayloadPush(String raw) {
       return '/directora/pagos';
     case 'incidentes':
       return '/directora/incidentes';
+    case 'incidente':
+      return '/padre/chat';
     case 'anuncios':
       return '/directora/anuncios';
     case 'eventos':
