@@ -549,11 +549,19 @@ class _PagosScreenState extends State<PagosScreen> with SingleTickerProviderStat
     return {_filtroGradoId!};
   }
 
-  /// Caja y directora: solo Kínder 1–3 (sin maternal ni estimulación).
+  bool get _directoraVeMaternal =>
+      context.read<AuthService>().currentUser?.esDirectora == true;
+
+  /// Kínder 1–3 para todos. Maternal y estimulación solo si es la directora.
+  bool _gradoEntraEnPagos(Grado g) {
+    if (g.muestraModuloPagos) return true;
+    return _directoraVeMaternal && g.esMaternalOBebes;
+  }
+
   Set<String> _alumnoIdsModuloPagos(List<Alumno> alumnos, List<Grado> grados) {
     final gradosOk = {
       for (final g in grados)
-        if (g.muestraModuloPagos) g.id,
+        if (_gradoEntraEnPagos(g)) g.id,
     };
     var list = alumnos.where(
       (a) => a.gradoId != null && gradosOk.contains(a.gradoId),
@@ -566,7 +574,7 @@ class _PagosScreenState extends State<PagosScreen> with SingleTickerProviderStat
   }
 
   List<Grado> _gradosModuloPagos(List<Grado> grados) {
-    final list = grados.where((g) => g.muestraModuloPagos).toList();
+    final list = grados.where(_gradoEntraEnPagos).toList();
     list.sort((a, b) => a.nombre.compareTo(b.nombre));
     return list;
   }
@@ -576,7 +584,9 @@ class _PagosScreenState extends State<PagosScreen> with SingleTickerProviderStat
     return alumnos.where((a) => ids.contains(a.id)).toList();
   }
 
-  String get _etiquetaTodosGrados => 'Todos (Kínder 1–3)';
+  String get _etiquetaTodosGrados => _directoraVeMaternal
+      ? 'Todos (Kínder y maternal)'
+      : 'Todos (Kínder 1–3)';
 
   String _etiquetaEstadoFiltroCorto() {
     switch (_filtroEstado) {
@@ -724,7 +734,9 @@ class _PagosScreenState extends State<PagosScreen> with SingleTickerProviderStat
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(
-                          'Pagos solo de Kínder 1, 2 y 3 (maternal y estimulación no aparecen aquí).',
+                          usuario?.esDirectora == true
+                              ? 'Ves Kínder y maternal. Caja solo ve Kínder 1, 2 y 3.'
+                              : 'Pagos solo de Kínder 1, 2 y 3 (maternal no aparece en caja).',
                           style: GoogleFonts.poppins(
                             fontSize: 12,
                             color: AppColors.azulOscuro,
@@ -1026,9 +1038,7 @@ class _PagosScreenState extends State<PagosScreen> with SingleTickerProviderStat
 
     final grados = await service.obtenerGrados();
     if (!context.mounted) return;
-    final gradosKinder =
-        grados.where((g) => g.muestraModuloPagos).toList()
-          ..sort((a, b) => a.nombre.compareTo(b.nombre));
+    final gradosKinder = _gradosModuloPagos(grados);
 
     final todosPagos = await service.obtenerPagos();
     if (!context.mounted) return;
@@ -1370,13 +1380,13 @@ class _PagosScreenState extends State<PagosScreen> with SingleTickerProviderStat
                             value: gradoId,
                             isExpanded: true,
                             decoration: const InputDecoration(
-                              labelText: 'Grado / Kínder',
+                              labelText: 'Grado',
                               border: OutlineInputBorder(),
                             ),
                             items: [
                               const DropdownMenuItem<String?>(
                                 value: null,
-                                child: Text('Todos los grados (Kínder)'),
+                                child: Text(_etiquetaTodosGrados),
                               ),
                               ...gradosKinder.map(
                                 (g) => DropdownMenuItem<String?>(
@@ -3206,8 +3216,8 @@ class _PagosScreenState extends State<PagosScreen> with SingleTickerProviderStat
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text(
-            'No hay alumnos de Kínder. Ejecuta FIX_CAJA_VER_ALUMNOS_Y_PAGOS.sql '
-            'en Supabase si eres caja.',
+            'No hay alumnos en los grupos de pagos. Si eres caja, '
+            'ejecuta FIX_CAJA_VER_ALUMNOS_Y_PAGOS.sql en Supabase.',
           ),
           backgroundColor: AppColors.rojo,
         ),

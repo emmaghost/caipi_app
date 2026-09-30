@@ -4,6 +4,8 @@ import 'package:go_router/go_router.dart';
 import '../services/auth_service.dart';
 import '../services/acceso_padre_service.dart';
 import '../screens/login_screen.dart';
+import '../screens/actualizar_app_screen.dart';
+import '../services/app_actualizacion_service.dart';
 import '../screens/cambiar_contrasena_screen.dart';
 import '../screens/directora/dashboard_directora.dart';
 import '../screens/directora/alumnos_screen.dart';
@@ -76,16 +78,28 @@ import '../screens/chat/chat_padre_screen.dart';
 GoRouter createRouter({
   required AuthService authService,
   required AccesoPadreService accesoPadreService,
+  required AppActualizacionService actualizacion,
 }) {
   return GoRouter(
     initialLocation: '/login',
-    refreshListenable: Listenable.merge([authService, accesoPadreService]),
+    refreshListenable: Listenable.merge([
+      authService,
+      accesoPadreService,
+      actualizacion,
+    ]),
     redirect: (context, state) async {
+      final loc = state.matchedLocation;
+      if (actualizacion.bloqueada) {
+        return loc == '/actualizar' ? null : '/actualizar';
+      }
+      if (loc == '/actualizar') {
+        return '/login';
+      }
+
       final isLoggedIn = authService.isLoggedIn;
       final isStaff = authService.esStaff;
       final isPadre = authService.esPadre;
 
-      final loc = state.matchedLocation;
       final isGoingToLogin = loc == '/login';
       final isGoingToRoot = loc == '/' || loc.isEmpty;
       final isRutaPadre = loc == '/padre' || loc.startsWith('/padre/');
@@ -214,6 +228,12 @@ GoRouter createRouter({
     GoRoute(
       path: '/login',
       builder: (context, state) => const LoginScreen(),
+    ),
+    GoRoute(
+      path: '/actualizar',
+      builder: (context, state) => ActualizarAppScreen(
+        actualizacion: actualizacion,
+      ),
     ),
     GoRoute(
       path: '/cambiar-contrasena',

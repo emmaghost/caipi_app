@@ -789,11 +789,11 @@ class _CrearAlumnoScreenState extends State<CrearAlumnoScreen> {
                           ),
                           DropdownMenuItem(
                             value: 11,
-                            child: Text('11 meses (Agosto - Junio)'),
+                            child: Text('11 meses (Septiembre - Julio)'),
                           ),
                           DropdownMenuItem(
                             value: 10,
-                            child: Text('10 meses (Agosto - Mayo)'),
+                            child: Text('10 meses (Septiembre - Junio)'),
                           ),
                         ],
                         onChanged: (value) {

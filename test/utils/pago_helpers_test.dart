@@ -93,14 +93,34 @@ void main() {
       expect(ids, ['p1']);
     });
 
-    test('plan 11 va de agosto a junio', () {
+    test('plan 11 va de septiembre a julio', () {
       final fechas = PagoHelpers.fechasMensualidadesPlan(
         planPagos: 11,
         fechaIngreso: DateTime(2025, 8, 1),
       );
       expect(fechas.length, 11);
-      expect(fechas.first, DateTime(2025, 8, 5));
+      expect(fechas.first, DateTime(2025, 9, 5));
+      expect(fechas.last, DateTime(2026, 7, 5));
+    });
+
+    test('plan 10 va de septiembre a junio', () {
+      final fechas = PagoHelpers.fechasMensualidadesPlan(
+        planPagos: 10,
+        fechaIngreso: DateTime(2025, 8, 1),
+      );
+      expect(fechas.length, 10);
+      expect(fechas.first, DateTime(2025, 9, 5));
       expect(fechas.last, DateTime(2026, 6, 5));
+    });
+
+    test('plan 12 sigue de agosto a julio', () {
+      final fechas = PagoHelpers.fechasMensualidadesPlan(
+        planPagos: 12,
+        fechaIngreso: DateTime(2025, 8, 1),
+      );
+      expect(fechas.length, 12);
+      expect(fechas.first, DateTime(2025, 8, 5));
+      expect(fechas.last, DateTime(2026, 7, 5));
     });
 
     test('totalPlanMostrado no suma inscripción ni seguro por default', () {

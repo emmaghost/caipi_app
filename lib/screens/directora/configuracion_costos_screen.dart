@@ -748,7 +748,7 @@ class _ConfiguracionCostosScreenState extends State<ConfiguracionCostosScreen> {
             final narrow = constraints.maxWidth < 720;
             final card12 = _buildPlanCard(
               titulo: 'Pago anual · 12 meses',
-              subtitulo: 'Agosto - Julio',
+              subtitulo: PagoHelpers.etiquetaRangoPlan(12),
               mensualidad: mensualidad12,
               meses: 12,
               subtotalMensualidades: subMeses12,
@@ -760,7 +760,7 @@ class _ConfiguracionCostosScreenState extends State<ConfiguracionCostosScreen> {
             );
             final card11 = _buildPlanCard(
               titulo: 'Dividido a 11 meses',
-              subtitulo: 'Agosto - Junio',
+              subtitulo: PagoHelpers.etiquetaRangoPlan(11),
               mensualidad: mensualidad11,
               meses: 11,
               subtotalMensualidades: subMeses11,
@@ -772,7 +772,7 @@ class _ConfiguracionCostosScreenState extends State<ConfiguracionCostosScreen> {
             );
             final card10 = _buildPlanCard(
               titulo: 'Dividido a 10 meses',
-              subtitulo: 'Agosto - Mayo',
+              subtitulo: PagoHelpers.etiquetaRangoPlan(10),
               mensualidad: mensualidad10,
               meses: 10,
               subtotalMensualidades: subMeses10,

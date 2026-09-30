@@ -17,6 +17,7 @@ import 'services/notification_service.dart';
 import 'services/push_notification_service.dart';
 import 'services/app_realtime_notifications.dart';
 import 'services/acceso_padre_service.dart';
+import 'services/app_actualizacion_service.dart';
 import 'routes/app_router.dart';
 import 'utils/push_payload_routes.dart';
 import 'utils/mexico_time.dart';
@@ -76,15 +77,32 @@ class _BootstrapApp extends StatefulWidget {
   State<_BootstrapApp> createState() => _BootstrapAppState();
 }
 
-class _BootstrapAppState extends State<_BootstrapApp> {
+class _BootstrapAppState extends State<_BootstrapApp>
+    with WidgetsBindingObserver {
   String? _error;
   Widget? _app;
+  final _actualizacion = AppActualizacionService();
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     // Tras el primer frame, inicializar (nunca antes de pintar)
     WidgetsBinding.instance.addPostFrameCallback((_) => _iniciar());
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _actualizacion.dispose();
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && _app != null) {
+      _actualizacion.revisar();
+    }
   }
 
   Future<void> _iniciar() async {
@@ -103,9 +121,11 @@ class _BootstrapAppState extends State<_BootstrapApp> {
 
       final authService = AuthService();
       final accesoPadreService = AccesoPadreService();
+      await _actualizacion.revisar();
       appRouter = createRouter(
         authService: authService,
         accesoPadreService: accesoPadreService,
+        actualizacion: _actualizacion,
       );
 
       PushNotificationService.instance.onOpenRuta = (ruta) {

@@ -23,7 +23,7 @@ ALTER TABLE public.configuracion_costos
   ALTER COLUMN costo_mensualidad_11 SET NOT NULL;
 
 COMMENT ON COLUMN public.configuracion_costos.costo_mensualidad_11 IS
-  'Cuota mensual del plan 11 meses (Agosto–Junio)';
+  'Cuota mensual del plan 11 meses (Septiembre–Julio)';
 
 -- 2) Permitir plan_pagos = 11
 DO $$

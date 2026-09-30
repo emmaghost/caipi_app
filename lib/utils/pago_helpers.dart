@@ -136,12 +136,21 @@ class PagoHelpers {
     return 12;
   }
 
-  /// Último mes calendario del ciclo: 10→Mayo, 11→Junio, 12→Julio.
+  /// Primer mes del ciclo: 12 empieza en agosto; 10 y 11 en septiembre.
+  static int primerMesPlan(int planPagos) {
+    switch (normalizarPlan(planPagos)) {
+      case 10:
+      case 11:
+        return 9;
+      default:
+        return 8;
+    }
+  }
+
+  /// Último mes calendario: 10→junio, 11 y 12→julio.
   static int ultimoMesPlan(int planPagos) {
     switch (normalizarPlan(planPagos)) {
       case 10:
-        return 5;
-      case 11:
         return 6;
       default:
         return 7;
@@ -152,9 +161,9 @@ class PagoHelpers {
   static String etiquetaRangoPlan(int planPagos) {
     switch (normalizarPlan(planPagos)) {
       case 10:
-        return 'Agosto - Mayo';
+        return 'Septiembre - Junio';
       case 11:
-        return 'Agosto - Junio';
+        return 'Septiembre - Julio';
       default:
         return 'Agosto - Julio';
     }
@@ -219,9 +228,10 @@ class PagoHelpers {
   }) {
     final startYear = anioInicioCiclo(fechaIngreso);
     final fechas = <DateTime>[];
+    final primerMes = primerMesPlan(planPagos);
     final ultimoMes = ultimoMesPlan(planPagos);
 
-    for (var m = 8; m <= 12; m++) {
+    for (var m = primerMes; m <= 12; m++) {
       fechas.add(DateTime(startYear, m, 5));
     }
     for (var m = 1; m <= ultimoMes; m++) {
