@@ -1384,7 +1384,7 @@ class _PagosScreenState extends State<PagosScreen> with SingleTickerProviderStat
                               border: OutlineInputBorder(),
                             ),
                             items: [
-                              const DropdownMenuItem<String?>(
+                              DropdownMenuItem<String?>(
                                 value: null,
                                 child: Text(_etiquetaTodosGrados),
                               ),
