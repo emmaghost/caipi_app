@@ -585,7 +585,7 @@ class _PagosScreenState extends State<PagosScreen> with SingleTickerProviderStat
   }
 
   String get _etiquetaTodosGrados => _directoraVeMaternal
-      ? 'Todos (Kínder y maternal)'
+      ? 'Todos (Kínder, maternal y estimulación)'
       : 'Todos (Kínder 1–3)';
 
   String _etiquetaEstadoFiltroCorto() {
@@ -735,8 +735,8 @@ class _PagosScreenState extends State<PagosScreen> with SingleTickerProviderStat
                       Expanded(
                         child: Text(
                           usuario?.esDirectora == true
-                              ? 'Ves Kínder y maternal. Caja solo ve Kínder 1, 2 y 3.'
-                              : 'Pagos solo de Kínder 1, 2 y 3 (maternal no aparece en caja).',
+                              ? 'Ves Kínder, maternal y estimulación. Estimulación se cobra a mano (por clase, 4, 6 u 8). Caja solo ve Kínder.'
+                              : 'Pagos solo de Kínder 1, 2 y 3 (maternal y estimulación no aparecen en caja).',
                           style: GoogleFonts.poppins(
                             fontSize: 12,
                             color: AppColors.azulOscuro,

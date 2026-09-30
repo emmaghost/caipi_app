@@ -87,7 +87,7 @@ class _CrearAnuncioScreenState extends State<CrearAnuncioScreen> {
       setState(() {
         _gradosPermitidos = ids;
         _paraTodos = false;
-        if (!_esEdicion && ids.isNotEmpty) {
+        if (!_esEdicion && ids.length == 1) {
           _gradosSeleccionados = List<String>.from(ids);
         }
         _cargandoAlcance = false;
@@ -723,6 +723,8 @@ class _CrearAnuncioScreenState extends State<CrearAnuncioScreen> {
             paraTodos: paraTodosChat,
             gradoIds: gradosChat,
             omitirHorario: true,
+            canal: usuario.esDirectora ? 'directora' : 'profesor',
+            staffId: usuario.esDirectora ? null : usuario.id,
           );
         }
 

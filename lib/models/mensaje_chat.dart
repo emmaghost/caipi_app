@@ -1,6 +1,9 @@
 import '../utils/mexico_time.dart';
 
 class MensajeChat {
+  /// Marca un mensaje que es solo imagen (la URL va después). Sin columna extra.
+  static const marcadorFoto = '[[foto]]';
+
   final String id;
   final String conversacionId;
   final String remitenteId;
@@ -26,5 +29,24 @@ class MensajeChat {
       leido: json['leido'] as bool? ?? false,
       createdAt: MexicoTime.parse(json['created_at'] as String),
     );
+  }
+
+  bool get esFoto {
+    final t = contenido.trim();
+    return t.startsWith(marcadorFoto);
+  }
+
+  /// URL pública de la imagen, si el mensaje es una foto.
+  String? get urlFoto {
+    if (!esFoto) return null;
+    final url = contenido.trim().substring(marcadorFoto.length).trim();
+    if (!url.startsWith('http')) return null;
+    return url;
+  }
+
+  static String vistaPreviaDe(String? contenido) {
+    final t = (contenido ?? '').trim();
+    if (t.startsWith(marcadorFoto)) return 'Imagen';
+    return t;
   }
 }

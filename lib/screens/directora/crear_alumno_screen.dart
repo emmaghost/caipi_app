@@ -752,6 +752,8 @@ class _CrearAlumnoScreenState extends State<CrearAlumnoScreen> {
                         ),
                         ..._grados
                             .where((grado) =>
+                                context.read<AuthService>().currentUser?.esDirectora ==
+                                    true ||
                                 !grado.esEstimulacion ||
                                 grado.id == _gradoSeleccionado)
                             .map((grado) {
@@ -825,7 +827,9 @@ class _CrearAlumnoScreenState extends State<CrearAlumnoScreen> {
                                   child: Text(
                                     _gradoSeleccionado == null
                                         ? 'Sin grado: cobro por clase'
-                                        : 'Maternal / por clase',
+                                        : _gradoSeleccionadoObj?.esEstimulacion == true
+                                            ? 'Estimulación: cobro manual'
+                                            : 'Maternal / por clase',
                                     style: GoogleFonts.poppins(
                                       fontWeight: FontWeight.w700,
                                       fontSize: 14,
@@ -838,7 +842,9 @@ class _CrearAlumnoScreenState extends State<CrearAlumnoScreen> {
                             Text(
                               _gradoSeleccionado == null
                                   ? 'Asigna el grado para definir el plan. Mientras tanto no se generan colegiaturas automáticas.'
-                                  : 'Este grado se cobra por clase. No se generan costos automáticos; los cargos se agregan manualmente en Pagos.',
+                                  : _gradoSeleccionadoObj?.esEstimulacion == true
+                                      ? 'No se generan colegiaturas. El cargo se registra a mano en Pagos: por clase, 4 clases, 6 clases u 8 clases.'
+                                      : 'Este grado se cobra por clase. No se generan costos automáticos; los cargos se agregan manualmente en Pagos.',
                               style: GoogleFonts.poppins(fontSize: 12, height: 1.35),
                             ),
                           ],

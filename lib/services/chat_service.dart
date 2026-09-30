@@ -210,6 +210,20 @@ class ChatService {
 
     if (gradoIds.isEmpty) return contactos;
 
+    // Estimulación: el papá solo habla con la directora, no con maestra de grupo.
+    final gradosRows = await _supabase
+        .from('grados')
+        .select('id, nombre')
+        .inFilter('id', gradoIds.toList());
+    final gradoIdsMaestra = <String>{};
+    for (final row in gradosRows as List) {
+      final id = row['id'] as String?;
+      final nombre = (row['nombre'] as String? ?? '').toLowerCase();
+      if (id == null || nombre.contains('estimul')) continue;
+      gradoIdsMaestra.add(id);
+    }
+    if (gradoIdsMaestra.isEmpty) return contactos;
+
     try {
       // Sin !inner: si RLS aún no deja leer perfiles, igual listamos contactos.
       final profesores = await _supabase
@@ -222,7 +236,7 @@ class ChatService {
         final junc = await _supabase
             .from('profesores_grados')
             .select('profesor_id')
-            .inFilter('grado_id', gradoIds.toList());
+            .inFilter('grado_id', gradoIdsMaestra.toList());
         profesorIdsEnGrados = {
           for (final r in junc as List)
             if (r['profesor_id'] != null) r['profesor_id'] as String,
@@ -234,7 +248,7 @@ class ChatService {
         final map = Map<String, dynamic>.from(row as Map);
         final profesorId = map['id'] as String?;
         final gid = map['grado_id'] as String?;
-        final enGrado = (gid != null && gradoIds.contains(gid)) ||
+        final enGrado = (gid != null && gradoIdsMaestra.contains(gid)) ||
             (profesorId != null && profesorIdsEnGrados.contains(profesorId));
         if (!enGrado) continue;
         final usuarioId = map['usuario_id'] as String?;
@@ -269,7 +283,7 @@ class ChatService {
         final map = Map<String, dynamic>.from(row as Map);
         final profesorId = map['id'] as String?;
         final gid = map['grado_id'] as String?;
-        final enGrado = (gid != null && gradoIds.contains(gid)) ||
+        final enGrado = (gid != null && gradoIdsMaestra.contains(gid)) ||
             (profesorId != null && profesorIdsEnGrados.contains(profesorId));
         if (!enGrado) continue;
 
@@ -417,7 +431,10 @@ class ChatService {
     return ids.toList();
   }
 
-  /// Envía el mismo texto a muchos padres (crea conversación canal directora).
+  /// Envía el mismo texto a muchos padres.
+  ///
+  /// [canal] `directora` = hilo de dirección (toda la escuela solo si [paraTodos]).
+  /// [canal] `profesor` + [staffId] = hilo de esa profesora; el aviso no sale de su grupo.
   Future<int> enviarMensajeMasivoAPadres({
     required String remitenteId,
     required String contenido,
@@ -425,9 +442,23 @@ class ChatService {
     List<String> gradoIds = const [],
     List<String>? soloPadreIds,
     bool omitirHorario = true,
+    String canal = 'directora',
+    String? staffId,
   }) async {
     final texto = contenido.trim();
     if (texto.isEmpty) return 0;
+
+    final canalEnvio = canal == 'profesor' ? 'profesor' : 'directora';
+    if (canalEnvio == 'profesor' &&
+        (staffId == null || staffId.isEmpty)) {
+      throw StateError('Falta la profesora del hilo');
+    }
+    // Una profesora nunca manda a toda la escuela, aunque el llamador pida paraTodos.
+    if (canalEnvio == 'profesor' && paraTodos) {
+      throw StateError(
+        'Una profesora no puede avisar a toda la escuela. Elige su grupo.',
+      );
+    }
 
     var padreIds = soloPadreIds ??
         await idsPadresDestino(paraTodos: paraTodos, gradoIds: gradoIds);
@@ -453,7 +484,8 @@ class ChatService {
       try {
         final conv = await obtenerOCrearConversacion(
           padreId,
-          canal: 'directora',
+          canal: canalEnvio,
+          staffId: canalEnvio == 'profesor' ? staffId : null,
         );
         await enviarMensaje(
           conversacionId: conv.id,

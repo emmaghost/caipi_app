@@ -5,6 +5,8 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'auth_service.dart';
 import 'notification_service.dart';
+import 'profesor_grupos_service.dart';
+import '../models/mensaje_chat.dart';
 
 /// Escucha mensajes de chat y solicitudes de recogida; muestra notificación local.
 class AppRealtimeNotifications extends StatefulWidget {
@@ -32,8 +34,9 @@ class _AppRealtimeNotificationsState extends State<AppRealtimeNotifications> {
   bool _solicitudPrimeraCarga = true;
   String? _usuarioId;
   bool _esEscuela = false;
-  // Para profesores: solo notificar solicitudes del grado asignado
-  String? _gradoIdProfesor;
+  bool _esDirectora = false;
+  /// Grados de la profesora. Vacío = no avisar solicitudes de otros grupos.
+  Set<String>? _gradoIdsProfesor;
 
   @override
   void initState() {
@@ -57,7 +60,8 @@ class _AppRealtimeNotificationsState extends State<AppRealtimeNotifications> {
     _solicitudesConocidas.clear();
     _chatPrimeraCarga = true;
     _solicitudPrimeraCarga = true;
-    _gradoIdProfesor = null;
+    _gradoIdsProfesor = null;
+    _esDirectora = false;
 
     final user = widget.authService.currentUser;
     if (user == null) {
@@ -66,6 +70,7 @@ class _AppRealtimeNotificationsState extends State<AppRealtimeNotifications> {
     }
 
     _usuarioId = user.id;
+    _esDirectora = user.esDirectora;
     _esEscuela = user.esDirectora ||
         user.esProfesorAdmin ||
         (user.esProfesor && !user.esMaestraIngles);
@@ -80,30 +85,21 @@ class _AppRealtimeNotificationsState extends State<AppRealtimeNotifications> {
     }
 
     if (_esEscuela) {
-      if (user.esProfesor) {
-        // Cargar grado PRIMERO, luego suscribir al stream
-        // para evitar race condition (notificar de grados ajenos)
-        _cargarGradoYSuscribir(user.id);
-      } else {
-        // Directora: suscribir de inmediato sin filtro
+      if (user.esDirectora) {
         _suscribirSolicitudes();
+      } else if (user.esProfesor) {
+        _cargarGradosYSuscribir(user.id);
       }
     }
   }
 
-  Future<void> _cargarGradoYSuscribir(String usuarioId) async {
+  Future<void> _cargarGradosYSuscribir(String usuarioId) async {
     try {
-      final rows = await Supabase.instance.client
-          .from('profesores')
-          .select('grado_id')
-          .eq('usuario_id', usuarioId)
-          .eq('activo', true)
-          .limit(1);
-      final list = List<Map<String, dynamic>>.from(rows as List);
-      _gradoIdProfesor =
-          list.isEmpty ? null : list.first['grado_id'] as String?;
-    } catch (_) {}
-    // Suscribir después de tener el grado
+      final ids = await ProfesorGruposService().gradoIdsDeUsuario(usuarioId);
+      _gradoIdsProfesor = ids.toSet();
+    } catch (_) {
+      _gradoIdsProfesor = {};
+    }
     _suscribirSolicitudes();
   }
 
@@ -164,9 +160,11 @@ class _AppRealtimeNotificationsState extends State<AppRealtimeNotifications> {
         continue;
       }
 
-      final contenido = (row['contenido'] as String?) ?? 'Nuevo mensaje';
-      final preview =
-          contenido.length > 80 ? '${contenido.substring(0, 80)}…' : contenido;
+      final raw = (row['contenido'] as String?) ?? 'Nuevo mensaje';
+      final previewTexto = MensajeChat.vistaPreviaDe(raw);
+      final preview = previewTexto.length > 80
+          ? '${previewTexto.substring(0, 80)}…'
+          : previewTexto;
 
       final soyEscuela =
           user?.esDirectora == true || user?.esProfesor == true;
@@ -181,6 +179,7 @@ class _AppRealtimeNotificationsState extends State<AppRealtimeNotifications> {
 
   Future<void> _onSolicitudes(List<Map<String, dynamic>> rows) async {
     if (!_esEscuela) return;
+    final user = widget.authService.currentUser;
 
     for (final row in rows) {
       final id = row['id']?.toString();
@@ -195,18 +194,26 @@ class _AppRealtimeNotificationsState extends State<AppRealtimeNotifications> {
       final alumnoId = row['alumno_id']?.toString();
       if (alumnoId == null) continue;
 
-      // Si es profesor, solo notificar si el alumno es de su grado
-      if (_gradoIdProfesor != null) {
-        try {
-          final alumnoRow = await Supabase.instance.client
-              .from('alumnos')
-              .select('grado_id')
-              .eq('id', alumnoId)
-              .maybeSingle();
-          final gradoAlumno = alumnoRow?['grado_id'] as String?;
-          if (gradoAlumno != _gradoIdProfesor) continue;
-        } catch (_) {
-          continue;
+      // Si es profesora, solo su(s) grupo(s). Sin grupos asignados: no avisar a todos.
+      if (!_esDirectora) {
+        final grupos = _gradoIdsProfesor;
+        final adminSinGrupo = user?.esProfesorAdmin == true &&
+            (grupos == null || grupos.isEmpty);
+        if (!adminSinGrupo) {
+          if (grupos == null || grupos.isEmpty) continue;
+          try {
+            final alumnoRow = await Supabase.instance.client
+                .from('alumnos')
+                .select('grado_id')
+                .eq('id', alumnoId)
+                .maybeSingle();
+            final gradoAlumno = alumnoRow?['grado_id'] as String?;
+            if (gradoAlumno == null || !grupos.contains(gradoAlumno)) {
+              continue;
+            }
+          } catch (_) {
+            continue;
+          }
         }
       }
 

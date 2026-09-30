@@ -214,7 +214,10 @@ async function handleChatMessage(
 ) {
   const conversacionId = record.conversacion_id as string;
   const remitenteId = record.remitente_id as string;
-  const contenido = String(record.contenido ?? "").slice(0, 120);
+  const raw = String(record.contenido ?? "");
+  const contenido = raw.startsWith("[[foto]]")
+    ? "Te envió una imagen"
+    : raw.slice(0, 120);
 
   const { data: conv } = await admin
     .from("conversaciones")

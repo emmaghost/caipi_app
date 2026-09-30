@@ -9,6 +9,7 @@ import '../../models/mensaje_chat.dart';
 import '../../services/auth_service.dart';
 import '../../services/chat_horario_service.dart';
 import '../../services/chat_service.dart';
+import '../../services/storage_service.dart';
 import '../../utils/mexico_time.dart';
 
 class ChatConversacionScreen extends StatefulWidget {
@@ -30,6 +31,7 @@ class ChatConversacionScreen extends StatefulWidget {
 class _ChatConversacionScreenState extends State<ChatConversacionScreen> {
   final ChatService _chatService = ChatService();
   final ChatHorarioService _horarioService = ChatHorarioService();
+  final StorageService _storage = StorageService();
   final TextEditingController _mensajeController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   bool _enviando = false;
@@ -129,6 +131,90 @@ class _ChatConversacionScreenState extends State<ChatConversacionScreen> {
     }
   }
 
+  bool _puedeAdjuntarFoto() {
+    final usuario = context.read<AuthService>().currentUser;
+    if (usuario == null || usuario.esPadre) return false;
+    return usuario.esProfesor || usuario.esDirectora;
+  }
+
+  Future<void> _enviarContenido(String contenido) async {
+    final usuario = context.read<AuthService>().currentUser;
+    if (usuario == null) return;
+    await _chatService.enviarMensaje(
+      conversacionId: widget.conversacionId,
+      remitenteId: usuario.id,
+      contenido: contenido,
+    );
+  }
+
+  Future<void> _adjuntarImagen() async {
+    final usuario = context.read<AuthService>().currentUser;
+    if (usuario == null || _enviando || !_puedeEnviar) return;
+    if (!_puedeAdjuntarFoto()) return;
+
+    final origen = await showModalBottomSheet<String>(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.photo_library_outlined),
+              title: const Text('Elegir de la galería'),
+              onTap: () => Navigator.pop(ctx, 'galeria'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.photo_camera_outlined),
+              title: const Text('Tomar foto'),
+              onTap: () => Navigator.pop(ctx, 'camara'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (origen == null || !mounted) return;
+
+    final archivo = origen == 'camara'
+        ? await _storage.tomarFoto()
+        : await _storage.seleccionarImagenGaleria();
+    if (archivo == null || !mounted) return;
+
+    final caption = _mensajeController.text.trim();
+    setState(() => _enviando = true);
+    _mensajeController.clear();
+
+    try {
+      final url = await _storage.subirFotoChat(archivo, usuario.id);
+      if (url == null || url.isEmpty) {
+        throw StateError('No se pudo subir la imagen');
+      }
+      await _enviarContenido('${MensajeChat.marcadorFoto}$url');
+      if (caption.isNotEmpty) {
+        await _enviarContenido(caption);
+      }
+      if (mounted) {
+        await _marcarLeidos();
+        if (_scrollController.hasClients) {
+          _scrollController.jumpTo(0);
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        if (caption.isNotEmpty) {
+          _mensajeController.text = caption;
+        }
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('No se pudo enviar la imagen: $e'),
+            backgroundColor: AppColors.rojo,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _enviando = false);
+    }
+  }
+
   Future<void> _enviarMensaje() async {
     final usuario = context.read<AuthService>().currentUser;
     if (usuario == null || _enviando || !_puedeEnviar) return;
@@ -140,11 +226,7 @@ class _ChatConversacionScreenState extends State<ChatConversacionScreen> {
     _mensajeController.clear();
 
     try {
-      await _chatService.enviarMensaje(
-        conversacionId: widget.conversacionId,
-        remitenteId: usuario.id,
-        contenido: texto,
-      );
+      await _enviarContenido(texto);
       if (mounted) {
         await _marcarLeidos();
         // reverse:true ancla el mensaje nuevo abajo (offset 0).
@@ -416,6 +498,15 @@ class _ChatConversacionScreenState extends State<ChatConversacionScreen> {
             ),
             child: Row(
               children: [
+                if (_puedeAdjuntarFoto())
+                  IconButton(
+                    onPressed: (cerrado || _enviando) ? null : _adjuntarImagen,
+                    tooltip: 'Enviar imagen',
+                    icon: Icon(
+                      Icons.image_outlined,
+                      color: cerrado ? Colors.grey : AppColors.morado,
+                    ),
+                  ),
                 Expanded(
                   child: TextField(
                     controller: _mensajeController,
@@ -538,6 +629,31 @@ class _SeparadorFecha extends StatelessWidget {
   }
 }
 
+void _verFoto(BuildContext context, String url) {
+  showDialog<void>(
+    context: context,
+    builder: (ctx) => Dialog(
+      backgroundColor: Colors.black,
+      insetPadding: const EdgeInsets.all(12),
+      child: Stack(
+        children: [
+          InteractiveViewer(
+            child: Image.network(url, fit: BoxFit.contain),
+          ),
+          Positioned(
+            right: 0,
+            top: 0,
+            child: IconButton(
+              onPressed: () => Navigator.pop(ctx),
+              icon: const Icon(Icons.close, color: Colors.white),
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
 class _MensajeBubble extends StatelessWidget {
   final MensajeChat mensaje;
   final bool esMio;
@@ -573,13 +689,33 @@ class _MensajeBubble extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              mensaje.contenido,
-              style: GoogleFonts.poppins(
-                color: esMio ? Colors.white : AppColors.negro,
-                fontSize: 14,
+            if (mensaje.urlFoto != null)
+              GestureDetector(
+                onTap: () => _verFoto(context, mensaje.urlFoto!),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(10),
+                  child: Image.network(
+                    mensaje.urlFoto!,
+                    width: 220,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) => Text(
+                      'No se pudo cargar la imagen',
+                      style: GoogleFonts.poppins(
+                        color: esMio ? Colors.white : AppColors.negro,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ),
+                ),
+              )
+            else
+              Text(
+                mensaje.contenido,
+                style: GoogleFonts.poppins(
+                  color: esMio ? Colors.white : AppColors.negro,
+                  fontSize: 14,
+                ),
               ),
-            ),
             const SizedBox(height: 4),
             Text(
               etiqueta,

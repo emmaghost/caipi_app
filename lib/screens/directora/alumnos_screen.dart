@@ -135,6 +135,8 @@ class _AlumnosScreenState extends State<AlumnosScreen> {
   Widget build(BuildContext context) {
     final puedeEditar =
         context.watch<AuthService>().currentUser?.puedeEditarAlumnos ?? false;
+    final esDirectora =
+        context.watch<AuthService>().currentUser?.esDirectora == true;
 
     return Scaffold(
       appBar: AppBar(
@@ -201,7 +203,7 @@ class _AlumnosScreenState extends State<AlumnosScreen> {
                           onTap: () => setState(() => _filtroGrado = 'Todos'),
                         ),
                       ..._grados
-                          .where((g) => !g.esEstimulacion)
+                          .where((g) => esDirectora || !g.esEstimulacion)
                           .where((g) =>
                               _gradoIdsPermitidos == null ||
                               _gradoIdsPermitidos!.contains(g.id))
@@ -308,12 +310,7 @@ class _AlumnosScreenState extends State<AlumnosScreen> {
     }
 
     if (_filtroGrado != 'Todos') {
-      final ids = <String>{_filtroGrado};
-      final seleccionado = _grados.where((g) => g.id == _filtroGrado);
-      if (seleccionado.isNotEmpty && seleccionado.first.esMaternal) {
-        ids.addAll(_grados.where((g) => g.esEstimulacion).map((g) => g.id));
-      }
-      alumnos = alumnos.where((a) => ids.contains(a.gradoId)).toList();
+      alumnos = alumnos.where((a) => a.gradoId == _filtroGrado).toList();
     }
 
     if (_busqueda.isNotEmpty) {

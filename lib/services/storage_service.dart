@@ -76,6 +76,36 @@ class StorageService {
     }
   }
 
+  /// Foto de chat (tarea). Comprimida antes de subir. Solo guarda la URL en el mensaje.
+  Future<String?> subirFotoChat(File file, String usuarioId) async {
+    try {
+      final bytes = await file.readAsBytes();
+      final rawExt = file.path.split('.').last.toLowerCase();
+      final fileExt =
+          (rawExt == 'png' || rawExt == 'webp' || rawExt == 'jpeg')
+              ? rawExt
+              : 'jpg';
+      final stamp = DateTime.now().millisecondsSinceEpoch;
+      final fileName = 'chat/$usuarioId/$stamp.$fileExt';
+      final contentType = fileExt == 'png'
+          ? 'image/png'
+          : fileExt == 'webp'
+              ? 'image/webp'
+              : 'image/jpeg';
+
+      await _supabase.storage.from('fotos').uploadBinary(
+            fileName,
+            bytes,
+            fileOptions: FileOptions(contentType: contentType),
+          );
+
+      return _supabase.storage.from('fotos').getPublicUrl(fileName);
+    } catch (e) {
+      print('Error subiendo foto de chat: $e');
+      return null;
+    }
+  }
+
   // Eliminar archivo
   Future<void> eliminarArchivo(String path) async {
     try {

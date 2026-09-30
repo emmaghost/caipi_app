@@ -8,6 +8,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../config/app_colors.dart';
 import '../../models/conversacion.dart';
 import '../../models/grado.dart';
+import '../../models/mensaje_chat.dart';
 import '../../services/auth_service.dart';
 import '../../services/chat_service.dart';
 import '../../services/profesor_grupos_service.dart';
@@ -49,7 +50,7 @@ class _ChatListaEscuelaScreenState extends State<ChatListaEscuelaScreen> {
           await client.from('grados').select().eq('activo', true).order('nombre');
       _grados = (gradosRaw as List)
           .map((e) => Grado.fromJson(Map<String, dynamic>.from(e as Map)))
-          .where((g) => !g.esEstimulacion)
+          .where((g) => user?.esDirectora == true || !g.esEstimulacion)
           .toList();
 
       final alumnosRaw = await client
@@ -496,8 +497,14 @@ class _ChatListaEscuelaScreenState extends State<ChatListaEscuelaScreen> {
                                         ),
                                       ),
                                       subtitle: Text(
-                                        conv?.ultimoMensaje ??
-                                            'Toca para iniciar conversación',
+                                        MensajeChat.vistaPreviaDe(
+                                                  conv?.ultimoMensaje,
+                                                )
+                                                .isEmpty
+                                            ? 'Toca para iniciar conversación'
+                                            : MensajeChat.vistaPreviaDe(
+                                                conv?.ultimoMensaje,
+                                              ),
                                         maxLines: 1,
                                         overflow: TextOverflow.ellipsis,
                                         style: GoogleFonts.poppins(
@@ -685,12 +692,40 @@ class _ChatListaEscuelaScreenState extends State<ChatListaEscuelaScreen> {
 
     if (!mounted) return;
 
-    if (destinatarios.isEmpty) {
+    final esDirectora = usuario.esDirectora;
+    // Profesora o supervisora: hay que elegir un grupo. "Todos" no avisa a la escuela.
+    if (!esDirectora && _filtroGrado == 'Todos' && _puedeElegirGrado) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text(
-            'No hay papás activos para este filtro. '
-            'Elige “Todos los grupos” o otro grado.',
+            'Elige un grupo. El aviso solo llega a los papás de ese grupo.',
+          ),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+    if (!esDirectora &&
+        _padreIdsPermitidos == null &&
+        _filtroGrado == 'Todos') {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Elige un grupo. Avisar a toda la escuela solo lo hace la directora.',
+          ),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    if (destinatarios.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            esDirectora
+                ? 'No hay papás activos para este filtro. Elige un grupo o “Todos los grupos”.'
+                : 'No hay papás activos en este grupo.',
           ),
           backgroundColor: Colors.orange,
         ),
@@ -809,6 +844,8 @@ class _ChatListaEscuelaScreenState extends State<ChatListaEscuelaScreen> {
                               paraTodos: false,
                               soloPadreIds: destinatarios,
                               omitirHorario: true,
+                              canal: esDirectora ? 'directora' : 'profesor',
+                              staffId: esDirectora ? null : usuario.id,
                             );
                             if (!ctx.mounted) return;
                             Navigator.of(ctx).pop();
