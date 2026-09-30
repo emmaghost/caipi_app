@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -9,9 +11,11 @@ import 'package:provider/provider.dart';
 
 import '../../config/app_colors.dart';
 import '../../models/grado.dart';
+import '../../models/mensaje_chat.dart';
 import '../../services/auth_service.dart';
 import '../../services/chat_service.dart';
 import '../../services/profesor_grupos_service.dart';
+import '../../services/storage_service.dart';
 import '../../widgets/app_drawer.dart';
 import '../../widgets/caipi_app_bar_leading.dart';
 
@@ -34,6 +38,9 @@ class _CrearAnuncioScreenState extends State<CrearAnuncioScreen> {
   bool _urgente = false;
   bool _enviarComoChat = true;
   List<String> _gradosSeleccionados = [];
+  final StorageService _storage = StorageService();
+  File? _fotoArchivo;
+  String? _fotoUrl;
 
   /// Si no es null, la maestra solo puede anunciar a estos grados.
   List<String>? _gradosPermitidos;
@@ -133,9 +140,12 @@ class _CrearAnuncioScreenState extends State<CrearAnuncioScreen> {
         }
       }
 
+      final rawMensaje = response['mensaje'] as String? ?? '';
       setState(() {
         _tituloController.text = response['titulo'] as String? ?? '';
-        _mensajeController.text = response['mensaje'] as String? ?? '';
+        _mensajeController.text = MensajeChat.textoSinFoto(rawMensaje);
+        _fotoUrl = MensajeChat.urlFotoEn(rawMensaje);
+        _fotoArchivo = null;
         _fecha = fechaRaw != null
             ? (DateTime.tryParse(fechaRaw.toString()) ?? DateTime.now())
             : DateTime.now();
@@ -294,6 +304,11 @@ class _CrearAnuncioScreenState extends State<CrearAnuncioScreen> {
                                 return null;
                               },
                             ),
+                            if (context.watch<AuthService>().currentUser?.esPadre !=
+                                true) ...[
+                              const SizedBox(height: 16),
+                              _buildFotoTarea(),
+                            ],
                             const SizedBox(height: 16),
                             InkWell(
                               onTap: _seleccionarFecha,
@@ -578,6 +593,98 @@ class _CrearAnuncioScreenState extends State<CrearAnuncioScreen> {
     );
   }
 
+  Widget _buildFotoTarea() {
+    final tieneFoto = _fotoArchivo != null ||
+        (_fotoUrl != null && _fotoUrl!.isNotEmpty);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            Icon(Icons.photo_camera_outlined, color: AppColors.azulOscuro),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                'Foto de la tarea',
+                style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 4),
+        Text(
+          'Opcional. El papá la ve en el anuncio y, si envías el chat, también ahí. Los papás no pueden subir fotos.',
+          style: GoogleFonts.poppins(fontSize: 12, color: AppColors.gris),
+        ),
+        const SizedBox(height: 10),
+        if (tieneFoto)
+          Stack(
+            alignment: Alignment.topRight,
+            children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: ColoredBox(
+                  color: const Color(0xFFF3F0FA),
+                  child: SizedBox(
+                    height: 280,
+                    width: double.infinity,
+                    child: _fotoArchivo != null
+                        ? Image.file(
+                            _fotoArchivo!,
+                            fit: BoxFit.contain,
+                          )
+                        : Image.network(
+                            _fotoUrl!,
+                            fit: BoxFit.contain,
+                          ),
+                  ),
+                ),
+              ),
+              IconButton(
+                onPressed: () => setState(() {
+                  _fotoArchivo = null;
+                  _fotoUrl = null;
+                }),
+                icon: const Icon(Icons.close, color: Colors.white),
+                style: IconButton.styleFrom(backgroundColor: Colors.black54),
+              ),
+            ],
+          ),
+        if (tieneFoto) const SizedBox(height: 10),
+        Row(
+          children: [
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: _cargando ? null : () => _elegirFoto(false),
+                icon: const Icon(Icons.photo_library_outlined),
+                label: const Text('Galería'),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: _cargando ? null : () => _elegirFoto(true),
+                icon: const Icon(Icons.photo_camera_outlined),
+                label: const Text('Cámara'),
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Future<void> _elegirFoto(bool camara) async {
+    final usuario = context.read<AuthService>().currentUser;
+    if (usuario == null || usuario.esPadre) return;
+    final archivo = camara
+        ? await _storage.tomarFoto()
+        : await _storage.seleccionarImagenGaleria();
+    if (archivo == null || !mounted) return;
+    setState(() => _fotoArchivo = archivo);
+  }
+
   Widget _buildSeccionTitulo(String titulo) {
     return Row(
       children: [
@@ -661,6 +768,21 @@ class _CrearAnuncioScreenState extends State<CrearAnuncioScreen> {
       final usuario = context.read<AuthService>().currentUser;
       final titulo = _tituloController.text.trim();
       final mensaje = _mensajeController.text.trim();
+      var fotoUrl = _fotoUrl;
+      if (usuario?.esPadre == true) {
+        fotoUrl = null;
+      }
+      if (_fotoArchivo != null && usuario?.esPadre != true) {
+        if (usuario == null) {
+          throw StateError('Sesión no disponible para subir la foto');
+        }
+        final subida = await _storage.subirFotoChat(_fotoArchivo!, usuario.id);
+        if (subida == null || subida.isEmpty) {
+          throw StateError('No se pudo subir la foto');
+        }
+        fotoUrl = subida;
+      }
+      final mensajeGuardado = MensajeChat.conFoto(mensaje, fotoUrl);
       final fechaIso = DateTime(
         _fecha.year,
         _fecha.month,
@@ -672,7 +794,7 @@ class _CrearAnuncioScreenState extends State<CrearAnuncioScreen> {
       // Columnas canónicas (SQL_MAESTRO). No usar fecha/grados legacy.
       final Map<String, dynamic> anuncioData = {
         'titulo': titulo,
-        'mensaje': mensaje,
+        'mensaje': mensajeGuardado,
         'fecha_publicacion': fechaIso,
         'para_todos': _paraTodos,
         'para_grados':
@@ -726,6 +848,17 @@ class _CrearAnuncioScreenState extends State<CrearAnuncioScreen> {
             canal: usuario.esDirectora ? 'directora' : 'profesor',
             staffId: usuario.esDirectora ? null : usuario.id,
           );
+          if (fotoUrl != null && fotoUrl.isNotEmpty) {
+            await ChatService().enviarMensajeMasivoAPadres(
+              remitenteId: usuario.id,
+              contenido: '${MensajeChat.marcadorFoto}$fotoUrl',
+              paraTodos: paraTodosChat,
+              gradoIds: gradosChat,
+              omitirHorario: true,
+              canal: usuario.esDirectora ? 'directora' : 'profesor',
+              staffId: usuario.esDirectora ? null : usuario.id,
+            );
+          }
         }
 
         if (mounted) {
@@ -813,7 +946,10 @@ class _CrearAnuncioScreenState extends State<CrearAnuncioScreen> {
 
     try {
       final titulo = _tituloController.text.trim();
-      final mensaje = _mensajeController.text.trim();
+      final mensaje = MensajeChat.conFoto(
+        _mensajeController.text.trim(),
+        _fotoUrl,
+      );
       final chatBorrados = await ChatService().eliminarMensajesDeAnuncio(
         titulo: titulo,
         mensaje: mensaje,

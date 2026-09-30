@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../config/app_colors.dart';
+import '../../models/mensaje_chat.dart';
 import '../../services/auth_service.dart';
 import '../../services/chat_service.dart';
 import '../../services/profesor_grupos_service.dart';
@@ -371,14 +372,39 @@ class _AnuncioCard extends StatelessWidget {
                   color: Colors.grey[50],
                   borderRadius: BorderRadius.circular(8),
                 ),
-                child: Text(
-                  anuncio['mensaje'] as String,
-                  style: GoogleFonts.poppins(
-                    fontSize: 14,
-                    color: Colors.grey[800],
-                  ),
-                  maxLines: 3,
-                  overflow: TextOverflow.ellipsis,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (MensajeChat.urlFotoEn(anuncio['mensaje'] as String?) !=
+                        null) ...[
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(8),
+                        child: ColoredBox(
+                          color: const Color(0xFFF3F0FA),
+                          child: SizedBox(
+                            height: 220,
+                            width: double.infinity,
+                            child: Image.network(
+                              MensajeChat.urlFotoEn(
+                                anuncio['mensaje'] as String?,
+                              )!,
+                              fit: BoxFit.contain,
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                    ],
+                    Text(
+                      MensajeChat.textoSinFoto(anuncio['mensaje'] as String? ?? ''),
+                      style: GoogleFonts.poppins(
+                        fontSize: 14,
+                        color: Colors.grey[800],
+                      ),
+                      maxLines: 3,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
                 ),
               ),
               const SizedBox(height: 12),
@@ -559,7 +585,28 @@ class _AnuncioCard extends StatelessWidget {
                 DateFormat('dd/MM/yyyy HH:mm', 'es_MX').format(fecha),
               ),
               const Divider(),
-              _buildDetalleItem('Mensaje', anuncio['mensaje'] as String),
+              _buildDetalleItem(
+                'Mensaje',
+                MensajeChat.textoSinFoto(anuncio['mensaje'] as String? ?? ''),
+              ),
+              if (MensajeChat.urlFotoEn(anuncio['mensaje'] as String?) !=
+                  null) ...[
+                const SizedBox(height: 8),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: ColoredBox(
+                    color: const Color(0xFFF3F0FA),
+                    child: SizedBox(
+                      height: 320,
+                      width: double.infinity,
+                      child: Image.network(
+                        MensajeChat.urlFotoEn(anuncio['mensaje'] as String?)!,
+                        fit: BoxFit.contain,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
               const Divider(),
               _buildDetalleItem(
                 'Destinatarios',

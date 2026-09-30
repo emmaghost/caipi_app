@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'mensaje_chat.dart';
+
 enum PrioridadAnuncio {
   alta,
   normal,
@@ -33,6 +35,10 @@ class Anuncio {
   bool fueLeidoPor(String usuarioId) {
     return leidoPor.contains(usuarioId);
   }
+
+  String get mensajeVisible => MensajeChat.textoSinFoto(mensaje);
+
+  String? get urlFoto => MensajeChat.urlFotoEn(mensaje);
 
   Color get prioridadColor {
     return prioridad == PrioridadAnuncio.alta

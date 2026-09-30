@@ -133,8 +133,8 @@ class _ChatConversacionScreenState extends State<ChatConversacionScreen> {
 
   bool _puedeAdjuntarFoto() {
     final usuario = context.read<AuthService>().currentUser;
-    if (usuario == null || usuario.esPadre) return false;
-    return usuario.esProfesor || usuario.esDirectora;
+    if (usuario == null) return false;
+    return !usuario.esPadre;
   }
 
   Future<void> _enviarContenido(String contenido) async {
@@ -221,6 +221,15 @@ class _ChatConversacionScreenState extends State<ChatConversacionScreen> {
 
     final texto = _mensajeController.text.trim();
     if (texto.isEmpty) return;
+    if (usuario.esPadre && texto.contains(MensajeChat.marcadorFoto)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Los papás no pueden enviar fotos'),
+          backgroundColor: AppColors.rojo,
+        ),
+      );
+      return;
+    }
 
     setState(() => _enviando = true);
     _mensajeController.clear();
@@ -694,15 +703,21 @@ class _MensajeBubble extends StatelessWidget {
                 onTap: () => _verFoto(context, mensaje.urlFoto!),
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(10),
-                  child: Image.network(
-                    mensaje.urlFoto!,
-                    width: 220,
-                    fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) => Text(
-                      'No se pudo cargar la imagen',
-                      style: GoogleFonts.poppins(
-                        color: esMio ? Colors.white : AppColors.negro,
-                        fontSize: 13,
+                  child: ColoredBox(
+                    color: const Color(0xFFF3F0FA),
+                    child: SizedBox(
+                      width: 240,
+                      height: 320,
+                      child: Image.network(
+                        mensaje.urlFoto!,
+                        fit: BoxFit.contain,
+                        errorBuilder: (_, __, ___) => Text(
+                          'No se pudo cargar la imagen',
+                          style: GoogleFonts.poppins(
+                            color: esMio ? Colors.white : AppColors.negro,
+                            fontSize: 13,
+                          ),
+                        ),
                       ),
                     ),
                   ),

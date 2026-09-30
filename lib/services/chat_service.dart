@@ -349,6 +349,17 @@ class ChatService {
       throw ArgumentError('El mensaje no puede estar vacío');
     }
 
+    if (texto.contains(MensajeChat.marcadorFoto)) {
+      final row = await _supabase
+          .from('usuarios')
+          .select('rol')
+          .eq('id', remitenteId)
+          .maybeSingle();
+      if (row?['rol']?.toString() == 'padre') {
+        throw StateError('Los papás no pueden enviar fotos');
+      }
+    }
+
     if (!omitirHorario) {
       try {
         final puede = await _supabase.rpc(
@@ -514,7 +525,8 @@ class ChatService {
     required bool urgente,
   }) {
     final prefijo = urgente ? '📢 Anuncio urgente' : '📢 Anuncio';
-    return '$prefijo: ${titulo.trim()}\n\n${mensaje.trim()}';
+    final cuerpo = MensajeChat.textoSinFoto(mensaje);
+    return '$prefijo: ${titulo.trim()}\n\n$cuerpo';
   }
 
   /// Borra copias del anuncio en chats (mismo texto). Solo directora (RLS).
@@ -537,6 +549,10 @@ class ChatService {
           urgente: false,
         ),
     };
+    final foto = MensajeChat.urlFotoEn(mensaje);
+    if (foto != null) {
+      candidatos.add('${MensajeChat.marcadorFoto}$foto');
+    }
 
     var borrados = 0;
     for (final texto in candidatos) {

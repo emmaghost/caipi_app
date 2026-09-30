@@ -98,7 +98,7 @@ class AnuncioCard extends StatelessWidget {
 
               // Mensaje preview
               Text(
-                anuncio.mensaje,
+                anuncio.mensajeVisible,
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
@@ -106,6 +106,24 @@ class AnuncioCard extends StatelessWidget {
                   color: Colors.grey[700],
                 ),
               ),
+              if (anuncio.urlFoto != null) ...[
+                const SizedBox(height: 8),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: ColoredBox(
+                    color: const Color(0xFFF3F0FA),
+                    child: SizedBox(
+                      height: 220,
+                      width: double.infinity,
+                      child: Image.network(
+                        anuncio.urlFoto!,
+                        fit: BoxFit.contain,
+                        errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
 
               // Fecha del evento si existe
               if (anuncio.fechaEvento != null) ...[
@@ -163,7 +181,24 @@ class AnuncioCard extends StatelessWidget {
                   style: TextStyle(fontSize: 12, color: Colors.grey[600]),
                 ),
                 const SizedBox(height: 12),
-                Text(anuncio.mensaje),
+                if (anuncio.urlFoto != null) ...[
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: ColoredBox(
+                      color: const Color(0xFFF3F0FA),
+                      child: SizedBox(
+                        height: 320,
+                        width: double.infinity,
+                        child: Image.network(
+                          anuncio.urlFoto!,
+                          fit: BoxFit.contain,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                ],
+                Text(anuncio.mensajeVisible),
                 if (anuncio.fechaEvento != null) ...[
                   const SizedBox(height: 16),
                   const Divider(),
