@@ -37,8 +37,11 @@ class _ConfiguracionCostosScreenState extends State<ConfiguracionCostosScreen> {
 
   ConfiguracionCostos? _configActual;
   bool _cargando = true;
+  bool _guardando = false;
   bool _sumarInscripcion = false;
   bool _sumarSeguro = false;
+  bool _faltanColumnasDescuento = false;
+  String? _resumenGuardado;
 
   void _refrescarVista() => setState(() {});
 
@@ -95,8 +98,24 @@ class _ConfiguracionCostosScreenState extends State<ConfiguracionCostosScreen> {
     super.dispose();
   }
 
+  Future<void> _revisarColumnasDescuento() async {
+    try {
+      await _supabase
+          .from('configuracion_costos')
+          .select('costo_anticipado_12')
+          .limit(1);
+      _faltanColumnasDescuento = false;
+    } catch (e) {
+      final t = e.toString();
+      _faltanColumnasDescuento = t.contains('42703') ||
+          t.contains('costo_anticipado') ||
+          t.contains('schema cache');
+    }
+  }
+
   Future<void> _cargarConfiguracion() async {
     try {
+      await _revisarColumnasDescuento();
       final response = await _supabase
           .from('configuracion_costos')
           .select()
@@ -133,6 +152,7 @@ class _ConfiguracionCostosScreenState extends State<ConfiguracionCostosScreen> {
 
   Future<void> _guardarConfiguracion() async {
     if (!_formKey.currentState!.validate()) return;
+    setState(() => _guardando = true);
 
     try {
       final data = {
@@ -152,36 +172,71 @@ class _ConfiguracionCostosScreenState extends State<ConfiguracionCostosScreen> {
         'vigencia_desde': DateTime.now().toIso8601String().split('T')[0],
       };
 
+      var extrasOk = true;
       try {
         await _persistirConfig(data);
-      } catch (_) {
-        // Columnas nuevas aún no existen en Supabase: guarda el resto.
+      } catch (e) {
+        final t = e.toString();
+        final faltan = t.contains('42703') ||
+            t.contains('costo_anticipado') ||
+            t.contains('costo_recargo') ||
+            t.contains('schema cache');
+        if (!faltan) rethrow;
+        extrasOk = false;
         final sinPlanesExtra = Map<String, dynamic>.from(data)
           ..removeWhere((k, _) =>
               k.startsWith('costo_anticipado_') || k.startsWith('costo_recargo_'));
         await _persistirConfig(sinPlanesExtra);
       }
 
-      if (mounted) {
+      if (!extrasOk) {
+        if (!mounted) return;
+        setState(() {
+          _faltanColumnasDescuento = true;
+          _resumenGuardado = null;
+        });
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Configuración guardada'),
-            backgroundColor: Colors.green,
+            content: Text(
+              'La mensualidad sí se guardó. El descuento y el recargo no: '
+              'todavía no existen en el sistema. El recuadro naranja dice qué falta.',
+            ),
+            backgroundColor: Colors.orange,
+            duration: Duration(seconds: 7),
           ),
         );
-        // go() deja sin stack: pop() → pantalla negra
-        if (Navigator.of(context).canPop()) {
-          Navigator.of(context).pop();
-        } else {
-          context.go('/directora');
-        }
+        return;
       }
+
+      await _cargarConfiguracion();
+      if (!mounted) return;
+
+      final c = _configActual;
+      setState(() {
+        _resumenGuardado = c == null
+            ? 'Guardado. Vuelve a abrir esta pantalla para ver los montos.'
+            : 'Sí quedó guardado.\n'
+                'Descuento por mes 12/11/10: ${_lineaPlan(c.costoAnticipado12, 12)} · '
+                '${_lineaPlan(c.costoAnticipado11, 11)} · '
+                '${_lineaPlan(c.costoAnticipado10, 10)}\n'
+                'Recargo por mes 12/11/10: ${_lineaPlan(c.costoRecargo12, 12)} · '
+                '${_lineaPlan(c.costoRecargo11, 11)} · '
+                '${_lineaPlan(c.costoRecargo10, 10)}';
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Configuración guardada. Revisa el recuadro verde abajo.'),
+          backgroundColor: Colors.green,
+        ),
+      );
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Error: $e')),
         );
       }
+    } finally {
+      if (mounted) setState(() => _guardando = false);
     }
   }
 
@@ -201,6 +256,11 @@ class _ConfiguracionCostosScreenState extends State<ConfiguracionCostosScreen> {
   static String _fmtOpcional(double? v) {
     if (v == null || v <= 0) return '';
     return v.toString();
+  }
+
+  static String _lineaPlan(double? porMes, int meses) {
+    if (porMes == null || porMes <= 0) return 'sin cambio';
+    return '${_fmt(porMes)} (ciclo ${_fmt(porMes * meses)})';
   }
 
   static double? _montoOpcional(String raw) {
@@ -388,77 +448,11 @@ class _ConfiguracionCostosScreenState extends State<ConfiguracionCostosScreen> {
                       ],
                       validator: _validarMonto,
                     ),
-                    const SizedBox(height: 22),
-                    Text(
-                      'Pago anticipado (pago único)',
-                      style: GoogleFonts.fredoka(
-                        fontSize: 17,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.azulOscuro,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      'Si lo dejas vacío se usa mensualidad × meses. Se muestra en Pagos para cotizar a los papás.',
-                      style: GoogleFonts.poppins(fontSize: 13, color: AppColors.gris),
-                    ),
                     const SizedBox(height: 14),
-                    _campoMontoOpcional(
-                      controller: _anticipado12Controller,
-                      label: 'Pago anticipado a 12 meses',
-                      icon: Icons.payments_outlined,
-                      hintCalculado: _hintCalculado(_mensualidad12Controller, 12),
-                    ),
-                    const SizedBox(height: 14),
-                    _campoMontoOpcional(
-                      controller: _anticipado11Controller,
-                      label: 'Pago anticipado a 11 meses',
-                      icon: Icons.payments_outlined,
-                      hintCalculado: _hintCalculado(_mensualidad11Controller, 11),
-                    ),
-                    const SizedBox(height: 14),
-                    _campoMontoOpcional(
-                      controller: _anticipado10Controller,
-                      label: 'Pago anticipado a 10 meses',
-                      icon: Icons.payments_outlined,
-                      hintCalculado: _hintCalculado(_mensualidad10Controller, 10),
-                    ),
-                    const SizedBox(height: 22),
-                    Text(
-                      'Pago con recargo (mes a mes)',
-                      style: GoogleFonts.fredoka(
-                        fontSize: 17,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.azulOscuro,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      'Total del ciclo si pagan mensualidad por mensualidad. Vacío = mensualidad × meses.',
-                      style: GoogleFonts.poppins(fontSize: 13, color: AppColors.gris),
-                    ),
-                    const SizedBox(height: 14),
-                    _campoMontoOpcional(
-                      controller: _recargo12Controller,
-                      label: 'Pago con recargo a 12 meses',
-                      icon: Icons.event_repeat_outlined,
-                      hintCalculado: _hintCalculado(_mensualidad12Controller, 12),
-                    ),
-                    const SizedBox(height: 14),
-                    _campoMontoOpcional(
-                      controller: _recargo11Controller,
-                      label: 'Pago con recargo a 11 meses',
-                      icon: Icons.event_repeat_outlined,
-                      hintCalculado: _hintCalculado(_mensualidad11Controller, 11),
-                    ),
-                    const SizedBox(height: 14),
-                    _campoMontoOpcional(
-                      controller: _recargo10Controller,
-                      label: 'Pago con recargo a 10 meses',
-                      icon: Icons.event_repeat_outlined,
-                      hintCalculado: _hintCalculado(_mensualidad10Controller, 10),
-                    ),
-                    const SizedBox(height: 14),
+                    if (_faltanColumnasDescuento) ...[
+                      _avisoColumnasFaltantes(),
+                      const SizedBox(height: 14),
+                    ],
                     TextFormField(
                       controller: _notasController,
                       decoration: _fieldDecoration(
@@ -473,9 +467,39 @@ class _ConfiguracionCostosScreenState extends State<ConfiguracionCostosScreen> {
                     ),
                     const SizedBox(height: 28),
                     _buildComparativaSection(),
+                    if (_resumenGuardado != null) ...[
+                      const SizedBox(height: 16),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(14),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFE8F8F0),
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(color: AppColors.exitoPago.withValues(alpha: 0.4)),
+                        ),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Icon(Icons.check_circle, color: Color(0xFF166534)),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Text(
+                                _resumenGuardado!,
+                                style: GoogleFonts.poppins(
+                                  fontSize: 13,
+                                  height: 1.4,
+                                  color: const Color(0xFF166534),
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                     const SizedBox(height: 28),
                     FilledButton.icon(
-                      onPressed: _guardarConfiguracion,
+                      onPressed: _guardando ? null : _guardarConfiguracion,
                       style: FilledButton.styleFrom(
                         backgroundColor: AppColors.morado,
                         foregroundColor: Colors.white,
@@ -487,7 +511,7 @@ class _ConfiguracionCostosScreenState extends State<ConfiguracionCostosScreen> {
                       ),
                       icon: const Icon(Icons.save_rounded, size: 22),
                       label: Text(
-                        'Guardar configuración',
+                        _guardando ? 'Guardando…' : 'Guardar configuración',
                         style: GoogleFonts.poppins(
                           fontSize: 16,
                           fontWeight: FontWeight.w700,
@@ -515,29 +539,35 @@ class _ConfiguracionCostosScreenState extends State<ConfiguracionCostosScreen> {
     return null;
   }
 
-  String _hintCalculado(TextEditingController mensualidad, int meses) {
-    final m = double.tryParse(mensualidad.text) ?? 0;
-    return _fmt(PagoHelpers.totalColegiaturas(m, meses));
-  }
-
-  Widget _campoMontoOpcional({
-    required TextEditingController controller,
-    required String label,
-    required IconData icon,
-    required String hintCalculado,
-  }) {
-    return TextFormField(
-      controller: controller,
-      decoration: _fieldDecoration(
-        label: label,
-        icon: icon,
-        hintText: hintCalculado,
+  Widget _avisoColumnasFaltantes() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFF7ED),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFFDBA74)),
       ),
-      style: GoogleFonts.poppins(fontSize: 16, fontWeight: FontWeight.w500),
-      keyboardType: const TextInputType.numberWithOptions(decimal: true),
-      inputFormatters: [
-        FilteringTextInputFormatter.allow(RegExp(r'^\d+\.?\d{0,2}')),
-      ],
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(Icons.warning_amber_rounded, color: Color(0xFFC2410C)),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              'El descuento y el recargo se calculan aquí, pero todavía no se guardan. '
+              'Hay que activar esas columnas una sola vez y volver a picar Guardar. '
+              'Si sales de esta pantalla, lo escrito en descuento y recargo se pierde.',
+              style: GoogleFonts.poppins(
+                fontSize: 13,
+                height: 1.4,
+                color: const Color(0xFF9A3412),
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -708,7 +738,8 @@ class _ConfiguracionCostosScreenState extends State<ConfiguracionCostosScreen> {
         ),
         const SizedBox(height: 6),
         Text(
-          'Por default el total es solo colegiaturas. Enciende inscripción o seguro si un papá quiere ver el costo completo.',
+          'En cada plan escribe el monto por mes del descuento (1 día antes) y del recargo (desde el día 11). '
+          'Abajo se ve al instante cuánto queda el mes y cuánto el ciclo. Vacío = se cobra la mensualidad.',
           style: GoogleFonts.poppins(fontSize: 13, color: AppColors.gris),
         ),
         const SizedBox(height: 12),
@@ -747,7 +778,7 @@ class _ConfiguracionCostosScreenState extends State<ConfiguracionCostosScreen> {
           builder: (context, constraints) {
             final narrow = constraints.maxWidth < 720;
             final card12 = _buildPlanCard(
-              titulo: 'Pago anual · 12 meses',
+              titulo: 'Dividido a 12 meses',
               subtitulo: PagoHelpers.etiquetaRangoPlan(12),
               mensualidad: mensualidad12,
               meses: 12,
@@ -755,6 +786,10 @@ class _ConfiguracionCostosScreenState extends State<ConfiguracionCostosScreen> {
               inscripcion: inscripcion,
               seguro: seguro,
               total: totalPlan12,
+              descuentoController: _anticipado12Controller,
+              recargoController: _recargo12Controller,
+              hintDescuento: '2400',
+              hintRecargo: '2650',
               accent: AppColors.exitoPago,
               lightAccent: const Color(0xFFE8F8F0),
             );
@@ -767,6 +802,10 @@ class _ConfiguracionCostosScreenState extends State<ConfiguracionCostosScreen> {
               inscripcion: inscripcion,
               seguro: seguro,
               total: totalPlan11,
+              descuentoController: _anticipado11Controller,
+              recargoController: _recargo11Controller,
+              hintDescuento: '2622',
+              hintRecargo: '2898',
               accent: AppColors.azul,
               lightAccent: const Color(0xFFE8F4FC),
             );
@@ -779,6 +818,10 @@ class _ConfiguracionCostosScreenState extends State<ConfiguracionCostosScreen> {
               inscripcion: inscripcion,
               seguro: seguro,
               total: totalPlan10,
+              descuentoController: _anticipado10Controller,
+              recargoController: _recargo10Controller,
+              hintDescuento: '2885',
+              hintRecargo: '3187',
               accent: AppColors.purpura,
               lightAccent: const Color(0xFFF3EEFF),
             );
@@ -821,6 +864,10 @@ class _ConfiguracionCostosScreenState extends State<ConfiguracionCostosScreen> {
     required double inscripcion,
     required double seguro,
     required double total,
+    required TextEditingController descuentoController,
+    required TextEditingController recargoController,
+    required String hintDescuento,
+    required String hintRecargo,
     required Color accent,
     required Color lightAccent,
   }) {
@@ -902,6 +949,22 @@ class _ConfiguracionCostosScreenState extends State<ConfiguracionCostosScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   _miniRow('$meses × mensualidad', _fmt(subtotalMensualidades)),
+                  _bloqueMonto(
+                    titulo: 'Con descuento (1 día antes)',
+                    controller: descuentoController,
+                    meses: meses,
+                    mensualidad: mensualidad,
+                    hint: hintDescuento,
+                    esDescuento: true,
+                  ),
+                  _bloqueMonto(
+                    titulo: 'Con recargo (desde día 11)',
+                    controller: recargoController,
+                    meses: meses,
+                    mensualidad: mensualidad,
+                    hint: hintRecargo,
+                    esDescuento: false,
+                  ),
                   if (_sumarInscripcion)
                     _miniRow('Inscripción', _fmt(inscripcion)),
                   if (_sumarSeguro) _miniRow('Seguro + credencial', _fmt(seguro)),
@@ -948,7 +1011,122 @@ class _ConfiguracionCostosScreenState extends State<ConfiguracionCostosScreen> {
     );
   }
 
-  Widget _miniRow(String k, String v) {
+  double? _guardado(bool esDescuento, int meses) {
+    final actual = _configActual;
+    if (actual == null) return null;
+    if (esDescuento) return actual.anticipadoMensualDePlan(meses);
+    return actual.recargoMensualDePlan(meses);
+  }
+
+  Widget _bloqueMonto({
+    required String titulo,
+    required TextEditingController controller,
+    required int meses,
+    required double mensualidad,
+    required String hint,
+    required bool esDescuento,
+  }) {
+    final capturado = _montoOpcional(controller.text);
+    final porMes = capturado ?? mensualidad;
+    final ciclo = porMes * meses;
+    final normal = mensualidad * meses;
+    final diferencia = (normal - ciclo).abs();
+    final hay = capturado != null;
+    final guardado = _guardado(esDescuento, meses);
+    final igualGuardado = (capturado == null && (guardado == null || guardado <= 0)) ||
+        (capturado != null &&
+            guardado != null &&
+            (capturado - guardado).abs() < 0.009);
+
+    late final String estado;
+    late final Color estadoColor;
+    if (_faltanColumnasDescuento && hay) {
+      estado = 'Escrito aquí, pero todavía no se puede guardar';
+      estadoColor = const Color(0xFFC2410C);
+    } else if (!hay) {
+      estado = esDescuento
+          ? 'Sin descuento: se cobra la mensualidad'
+          : 'Sin recargo: se cobra la mensualidad';
+      estadoColor = AppColors.gris;
+    } else if (igualGuardado && !_faltanColumnasDescuento) {
+      estado = 'Guardado';
+      estadoColor = const Color(0xFF166534);
+    } else {
+      estado = 'Todavía no está guardado';
+      estadoColor = const Color(0xFFC2410C);
+    }
+
+    final nombre = esDescuento ? 'descuento' : 'recargo';
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 8, bottom: 2),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            titulo,
+            style: GoogleFonts.poppins(
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              color: AppColors.azulOscuro,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            estado,
+            style: GoogleFonts.poppins(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              color: estadoColor,
+            ),
+          ),
+          const SizedBox(height: 6),
+          TextFormField(
+            controller: controller,
+            decoration: InputDecoration(
+              isDense: true,
+              filled: true,
+              fillColor: const Color(0xFFF8F7FC),
+              labelText: 'Por mes',
+              hintText: hint,
+              prefixText: r'$ ',
+              labelStyle: GoogleFonts.poppins(fontSize: 12, color: AppColors.gris),
+              hintStyle: GoogleFonts.poppins(fontSize: 13, color: Colors.grey.shade400),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide: BorderSide(color: Colors.grey.shade300),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide: const BorderSide(color: AppColors.morado, width: 1.6),
+              ),
+            ),
+            style: GoogleFonts.poppins(fontSize: 15, fontWeight: FontWeight.w600),
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            inputFormatters: [
+              FilteringTextInputFormatter.allow(RegExp(r'^\d+\.?\d{0,2}')),
+            ],
+          ),
+          const SizedBox(height: 6),
+          _miniRow(
+            '$meses × $nombre',
+            _fmt(ciclo),
+            valueColor: hay ? (esDescuento ? const Color(0xFF166534) : const Color(0xFFC2410C)) : null,
+          ),
+          if (hay && diferencia >= 0.01)
+            _miniRow(
+              esDescuento ? 'Ahorro en el ciclo' : 'De más en el ciclo',
+              _fmt(diferencia),
+              valueColor: esDescuento ? const Color(0xFF166534) : const Color(0xFFC2410C),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _miniRow(String k, String v, {Color? valueColor}) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 6),
       child: Row(
@@ -965,7 +1143,7 @@ class _ConfiguracionCostosScreenState extends State<ConfiguracionCostosScreen> {
             style: GoogleFonts.poppins(
               fontSize: 12,
               fontWeight: FontWeight.w600,
-              color: AppColors.negro,
+              color: valueColor ?? AppColors.negro,
             ),
           ),
         ],

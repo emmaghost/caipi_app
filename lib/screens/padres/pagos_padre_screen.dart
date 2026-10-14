@@ -361,6 +361,35 @@ class _PagosPadreScreenState extends State<PagosPadreScreen> {
                 'Límite: $fechaTxt',
                 style: GoogleFonts.poppins(fontSize: 12),
               ),
+            if (pago.descuento > 0) ...[
+              Text(
+                'Antes \$${pago.montoBruto.toStringAsFixed(0)}',
+                style: GoogleFonts.poppins(
+                  fontSize: 12,
+                  color: Colors.grey[700],
+                  decoration: TextDecoration.lineThrough,
+                ),
+              ),
+              Text(
+                'Descuento \$${pago.descuento.toStringAsFixed(0)} · '
+                'a cobrar \$${pago.monto.toStringAsFixed(0)}',
+                style: GoogleFonts.poppins(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  color: const Color(0xFF166534),
+                ),
+              ),
+            ],
+            if (pago.notas != null && pago.notas!.trim().isNotEmpty)
+              Text(
+                pago.notas!,
+                maxLines: 3,
+                overflow: TextOverflow.ellipsis,
+                style: GoogleFonts.poppins(
+                  fontSize: 12,
+                  color: Colors.grey[800],
+                ),
+              ),
             if (pago.estaParcial)
               Text(
                 'Pagado: ${pago.montoPagadoFormateado} de ${pago.montoFormateado}',

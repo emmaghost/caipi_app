@@ -1,19 +1,19 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:cached_network_image/cached_network_image.dart';
-import 'package:intl/intl.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../models/alumno.dart';
 import '../../models/grado.dart';
-// Calificaciones (no implementado): ver historial en git si se reactiva
 import '../../models/incidente.dart';
 import '../../config/app_colors.dart';
 import '../../widgets/app_drawer.dart';
 import '../../widgets/solicitud_recogida_padre_card.dart';
 import '../../widgets/ligas_padre_vista.dart';
 import '../../widgets/caipi_app_bar_leading.dart';
+import '../../widgets/campana_anuncios_padre.dart';
+import '../../widgets/menu_padre_tile.dart';
 
 class DetalleHijoScreen extends StatelessWidget {
   final String alumnoId;
@@ -71,6 +71,7 @@ class DetalleHijoScreen extends StatelessWidget {
             backgroundColor: const Color(0xFFEC407A), // Rosa pastel (igual que vista padre)
             foregroundColor: Colors.white,
             actions: [
+              const CampanaAnunciosPadre(),
               IconButton(
                 icon: const Icon(Icons.home),
                 onPressed: () => context.go('/padre'),
@@ -217,308 +218,106 @@ class DetalleHijoScreen extends StatelessWidget {
               ),
               const SizedBox(height: 16),
 
-              // —— Bitácora (antes que pagos) ——
-              Card(
-                elevation: 2,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                child: InkWell(
-                  onTap: () => context.push(
-                    '/padre/hijo/${alumno.id}/bitacora',
-                    extra: {'alumnoNombre': alumno.nombreCompleto},
-                  ),
-                  borderRadius: BorderRadius.circular(16),
-                  child: Container(
-                    padding: const EdgeInsets.all(20),
-                    decoration: BoxDecoration(
-                      color: AppColors.morado.withOpacity(0.08),
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(
-                        color: AppColors.morado.withOpacity(0.35),
-                        width: 1,
-                      ),
-                    ),
-                    child: Row(
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.all(14),
-                          decoration: BoxDecoration(
-                            color: AppColors.morado,
-                            shape: BoxShape.circle,
-                          ),
-                          child: const Icon(
-                            Icons.assignment_outlined,
-                            color: Colors.white,
-                            size: 28,
-                          ),
-                        ),
-                        const SizedBox(width: 16),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'Bitácora',
-                                style: GoogleFonts.fredoka(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.bold,
-                                  color: AppColors.morado,
-                                ),
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                'Cómo le fue por día o por mes',
-                                style: GoogleFonts.poppins(
-                                  fontSize: 14,
-                                  color: AppColors.grisOscuro,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        Icon(Icons.arrow_forward_ios,
-                            color: AppColors.morado, size: 18),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 12),
-
-              LigasPadreVista(alumnoId: alumno.id),
-              const SizedBox(height: 12),
-
-              // Indicadores de desarrollo → pantalla dedicada
-              Card(
-                elevation: 2,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                child: InkWell(
-                  onTap: () => context.push(
-                    '/padre/hijo/${alumno.id}/indicadores',
-                  ),
-                  borderRadius: BorderRadius.circular(16),
-                  child: Container(
-                    padding: const EdgeInsets.all(20),
-                    decoration: BoxDecoration(
-                      color: AppColors.moradoClaro,
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(
-                        color: AppColors.morado.withOpacity(0.35),
-                        width: 1,
-                      ),
-                    ),
-                    child: Row(
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.all(14),
-                          decoration: const BoxDecoration(
-                            color: AppColors.morado,
-                            shape: BoxShape.circle,
-                          ),
-                          child: const Icon(
-                            Icons.auto_graph,
-                            color: Colors.white,
-                            size: 28,
-                          ),
-                        ),
-                        const SizedBox(width: 16),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'Indicadores',
-                                style: GoogleFonts.fredoka(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.bold,
-                                  color: AppColors.morado,
-                                ),
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                'Último seguimiento y gráfica de evolución',
-                                style: GoogleFonts.poppins(
-                                  fontSize: 14,
-                                  color: AppColors.grisOscuro,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        Icon(Icons.arrow_forward_ios,
-                            color: AppColors.morado, size: 18),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 12),
-
-              // Pagos solo Kínder 1–3 (no estimulación / maternal)
-              FutureBuilder<Grado?>(
-                future: _cargarGrado(alumno.gradoId),
-                builder: (context, gradoSnap) {
-                  final grado = gradoSnap.data;
-                  if (grado == null || !grado.muestraModuloPagos) {
-                    return const SizedBox.shrink();
-                  }
-                  return Card(
-                    elevation: 2,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                    child: InkWell(
-                      onTap: () => context.push(
-                        '/padre/hijo/${alumno.id}/pagos',
-                        extra: {'alumnoNombre': alumno.nombreCompleto},
-                      ),
-                      borderRadius: BorderRadius.circular(16),
-                      child: Container(
-                        padding: const EdgeInsets.all(20),
-                        decoration: BoxDecoration(
-                          color: Colors.orange.shade50,
-                          borderRadius: BorderRadius.circular(16),
-                          border: Border.all(
-                              color: Colors.orange.shade200, width: 1),
-                        ),
-                        child: Row(
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.all(14),
-                              decoration: BoxDecoration(
-                                color: Colors.orange.shade700,
-                                shape: BoxShape.circle,
-                              ),
-                              child: const Icon(
-                                Icons.payments_outlined,
-                                color: Colors.white,
-                                size: 28,
-                              ),
-                            ),
-                            const SizedBox(width: 16),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    'Pagos',
-                                    style: GoogleFonts.fredoka(
-                                      fontSize: 18,
-                                      fontWeight: FontWeight.bold,
-                                      color: Colors.orange.shade900,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    'Pendientes o pagados · solo ver',
-                                    style: GoogleFonts.poppins(
-                                      fontSize: 14,
-                                      color: AppColors.grisOscuro,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            Icon(Icons.arrow_forward_ios,
-                                color: Colors.orange.shade800, size: 18),
-                          ],
-                        ),
-                      ),
-                    ),
-                  );
-                },
-              ),
-              const SizedBox(height: 16),
-
-              // Personas Autorizadas (mismo estilo que ¡Todo bien!)
-              const SizedBox(height: 16),
-
               SolicitudRecogidaPadreCard(
                 alumnoId: alumno.id,
                 alumnoNombre: alumno.nombreCompleto,
               ),
               const SizedBox(height: 16),
 
-              Card(
-                elevation: 2,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                child: InkWell(
-                  onTap: () => context.push(
-                    '/padre/hijo/${alumno.id}/personas-autorizadas',
-                    extra: {'alumnoNombre': alumno.nombreCompleto},
-                  ),
-                  borderRadius: BorderRadius.circular(16),
-                  child: Container(
-                    padding: const EdgeInsets.all(20),
-                    decoration: BoxDecoration(
-                      color: Colors.green[50],
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(color: Colors.green[200]!, width: 1),
-                    ),
-                    child: Row(
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.all(14),
-                          decoration: BoxDecoration(
-                            color: Colors.green[600],
-                            shape: BoxShape.circle,
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.green.withOpacity(0.4),
-                                blurRadius: 8,
-                                spreadRadius: 2,
-                              ),
-                            ],
-                          ),
-                          child: const Icon(
-                            Icons.verified_user,
-                            color: Colors.white,
-                            size: 28,
-                          ),
-                        ),
-                        const SizedBox(width: 16),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'Personas Autorizadas',
-                                style: GoogleFonts.fredoka(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.green[800],
-                                ),
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                'Gestiona quién puede recoger a tu hijo/a',
-                                style: GoogleFonts.poppins(
-                                  fontSize: 14,
-                                  color: AppColors.grisOscuro,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        Icon(Icons.arrow_forward_ios, color: Colors.green[700], size: 18),
-                      ],
-                    ),
-                  ),
+              Text(
+                'Menú',
+                style: GoogleFonts.fredoka(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.azulOscuro,
                 ),
               ),
-              const SizedBox(height: 24),
+              const SizedBox(height: 10),
+              FutureBuilder<Grado?>(
+                future: _cargarGrado(alumno.gradoId),
+                builder: (context, gradoSnap) {
+                  final muestraPagos =
+                      gradoSnap.data?.muestraModuloPagos == true;
+                  return StreamBuilder<List<Map<String, dynamic>>>(
+                    stream: Supabase.instance.client
+                        .from('incidentes')
+                        .stream(primaryKey: ['id'])
+                        .eq('alumno_id', alumno.id),
+                    builder: (context, incSnap) {
+                      final nuevas = (incSnap.data ?? const [])
+                          .map((j) => Incidente.fromJson(j))
+                          .where((i) => i.esNueva)
+                          .length;
+                      return GridView.count(
+                        crossAxisCount: 2,
+                        shrinkWrap: true,
+                        physics: const NeverScrollableScrollPhysics(),
+                        mainAxisSpacing: 12,
+                        crossAxisSpacing: 12,
+                        childAspectRatio: 1.22,
+                        children: [
+                          if (muestraPagos)
+                            MenuPadreTile(
+                              titulo: 'Pagos',
+                              subtitulo: 'Pendientes o pagados',
+                              icono: Icons.payments_outlined,
+                              color: Colors.orange.shade800,
+                              onTap: () => context.push(
+                                '/padre/hijo/${alumno.id}/pagos',
+                                extra: {'alumnoNombre': alumno.nombreCompleto},
+                              ),
+                            ),
+                          MenuPadreTile(
+                            titulo: 'Incidentes',
+                            subtitulo: nuevas > 0
+                                ? '$nuevas sin leer'
+                                : 'Avisos de tu hijo',
+                            icono: Icons.favorite_outline,
+                            color: Colors.amber.shade800,
+                            badge: nuevas,
+                            onTap: () => context.push(
+                              '/padre/hijo/${alumno.id}/incidentes',
+                              extra: {'alumnoNombre': alumno.nombreCompleto},
+                            ),
+                          ),
+                          MenuPadreTile(
+                            titulo: 'Personas',
+                            subtitulo: 'Quién puede recogerlo',
+                            icono: Icons.verified_user,
+                            color: Colors.green.shade700,
+                            onTap: () => context.push(
+                              '/padre/hijo/${alumno.id}/personas-autorizadas',
+                              extra: {'alumnoNombre': alumno.nombreCompleto},
+                            ),
+                          ),
+                          MenuPadreTile(
+                            titulo: 'Bitácora',
+                            subtitulo: 'Cómo le fue en el día',
+                            icono: Icons.assignment_outlined,
+                            color: AppColors.morado,
+                            onTap: () => context.push(
+                              '/padre/hijo/${alumno.id}/bitacora',
+                              extra: {'alumnoNombre': alumno.nombreCompleto},
+                            ),
+                          ),
+                          MenuPadreTile(
+                            titulo: 'Indicadores',
+                            subtitulo: 'Seguimiento del grado',
+                            icono: Icons.auto_graph,
+                            color: AppColors.purpura,
+                            onTap: () => context.push(
+                              '/padre/hijo/${alumno.id}/indicadores',
+                            ),
+                          ),
+                        ],
+                      );
+                    },
+                  );
+                },
+              ),
+              const SizedBox(height: 12),
 
-              // Calificaciones — oculto hasta implementar
-              // _SeccionCalificaciones(alumnoId: alumnoId),
-              // const SizedBox(height: 24),
-
-              // Incidentes
-              _SeccionIncidentes(alumnoId: alumnoId),
+              LigasPadreVista(alumnoId: alumno.id),
             ],
           ),
         );
@@ -526,423 +325,3 @@ class DetalleHijoScreen extends StatelessWidget {
     );
   }
 }
-
-// ==================== SECCIÓN INCIDENTES ====================
-
-enum _FiltroIncPadre { todas, nuevas, pasadas }
-
-class _SeccionIncidentes extends StatefulWidget {
-  final String alumnoId;
-
-  const _SeccionIncidentes({required this.alumnoId});
-
-  @override
-  State<_SeccionIncidentes> createState() => _SeccionIncidentesState();
-}
-
-class _SeccionIncidentesState extends State<_SeccionIncidentes> {
-  _FiltroIncPadre _filtro = _FiltroIncPadre.todas;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            const Icon(Icons.warning_amber_rounded, color: Colors.orange),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                'Incidentes y Reportes',
-                style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                      fontWeight: FontWeight.bold,
-                    ),
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 8),
-        SegmentedButton<_FiltroIncPadre>(
-          segments: const [
-            ButtonSegment(
-              value: _FiltroIncPadre.todas,
-              label: Text('Todas'),
-            ),
-            ButtonSegment(
-              value: _FiltroIncPadre.nuevas,
-              label: Text('Nuevas'),
-              icon: Icon(Icons.mark_email_unread, size: 16),
-            ),
-            ButtonSegment(
-              value: _FiltroIncPadre.pasadas,
-              label: Text('Pasadas'),
-              icon: Icon(Icons.mark_email_read, size: 16),
-            ),
-          ],
-          selected: {_filtro},
-          onSelectionChanged: (s) => setState(() => _filtro = s.first),
-          style: ButtonStyle(
-            visualDensity: VisualDensity.compact,
-            textStyle: WidgetStatePropertyAll(
-              GoogleFonts.poppins(fontSize: 12),
-            ),
-          ),
-        ),
-        const SizedBox(height: 12),
-        StreamBuilder<List<Map<String, dynamic>>>(
-          stream: Supabase.instance.client
-              .from('incidentes')
-              .stream(primaryKey: ['id'])
-              .eq('alumno_id', widget.alumnoId)
-              .order('fecha', ascending: false),
-          builder: (context, snapshot) {
-            if (snapshot.connectionState == ConnectionState.waiting) {
-              return const Center(child: CircularProgressIndicator());
-            }
-
-            if (!snapshot.hasData || snapshot.data!.isEmpty) {
-              return Card(
-                elevation: 2,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(15),
-                ),
-                child: Padding(
-                  padding: const EdgeInsets.all(20),
-                  child: Row(
-                    children: [
-                      Icon(Icons.check_circle, color: Colors.green[600], size: 36),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              '¡Todo bien!',
-                              style: GoogleFonts.fredoka(
-                                fontSize: 18,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.green[800],
-                              ),
-                            ),
-                            Text(
-                              'No hay incidentes reportados',
-                              style: GoogleFonts.poppins(
-                                fontSize: 14,
-                                color: AppColors.grisOscuro,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              );
-            }
-
-            var incidentes = snapshot.data!
-                .map((json) => Incidente.fromJson(json))
-                .toList();
-
-            if (_filtro == _FiltroIncPadre.nuevas) {
-              incidentes = incidentes.where((i) => i.esNueva).toList();
-            } else if (_filtro == _FiltroIncPadre.pasadas) {
-              incidentes = incidentes.where((i) => !i.esNueva).toList();
-            }
-
-            if (incidentes.isEmpty) {
-              return Padding(
-                padding: const EdgeInsets.symmetric(vertical: 16),
-                child: Text(
-                  _filtro == _FiltroIncPadre.nuevas
-                      ? 'No hay incidentes nuevos'
-                      : 'No hay incidentes en este filtro',
-                  style: GoogleFonts.poppins(color: AppColors.gris),
-                ),
-              );
-            }
-
-            final nuevasCount = snapshot.data!
-                .map((j) => Incidente.fromJson(j))
-                .where((i) => i.esNueva)
-                .length;
-
-            return Column(
-              children: [
-                if (nuevasCount > 0 && _filtro != _FiltroIncPadre.pasadas)
-                  Container(
-                    margin: const EdgeInsets.only(bottom: 12),
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: Colors.orange[50],
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: Colors.orange),
-                    ),
-                    child: Row(
-                      children: [
-                        const Icon(Icons.notifications_active,
-                            color: Colors.orange),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Text(
-                            '$nuevasCount incidente${nuevasCount > 1 ? 's' : ''} sin leer · comunícate con la directora',
-                            style: TextStyle(
-                              color: Colors.orange[900],
-                              fontWeight: FontWeight.w600,
-                              fontSize: 13,
-                            ),
-                          ),
-                        ),
-                        TextButton(
-                          onPressed: () => context.push('/padre/chat'),
-                          child: const Text('Chat'),
-                        ),
-                      ],
-                    ),
-                  ),
-                ...incidentes.map((incidente) {
-                  final colorNivel = _getColorNivel(incidente.nivel);
-                  final esNueva = incidente.esNueva;
-
-                  return Card(
-                    margin: const EdgeInsets.only(bottom: 8),
-                    elevation: esNueva ? 3 : 1,
-                    color: esNueva ? const Color(0xFFFFF7ED) : null,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      side: BorderSide(
-                        color: esNueva
-                            ? const Color(0xFFFDBA74)
-                            : (incidente.nivel >= 4
-                                ? colorNivel
-                                : Colors.transparent),
-                        width: esNueva || incidente.nivel >= 4 ? 2 : 0,
-                      ),
-                    ),
-                    child: ListTile(
-                      leading: Container(
-                        width: 40,
-                        height: 40,
-                        decoration: BoxDecoration(
-                          color: colorNivel,
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Center(
-                          child: Text(
-                            incidente.emoji,
-                            style: const TextStyle(fontSize: 20),
-                          ),
-                        ),
-                      ),
-                      title: Row(
-                        children: [
-                          if (esNueva) ...[
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 6, vertical: 1),
-                              decoration: BoxDecoration(
-                                color: Colors.orange,
-                                borderRadius: BorderRadius.circular(4),
-                              ),
-                              child: const Text(
-                                'NUEVA',
-                                style: TextStyle(
-                                  fontSize: 9,
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 6),
-                          ],
-                          Expanded(
-                            child: Text(
-                              incidente.titulo,
-                              style: GoogleFonts.poppins(
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                      subtitle: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const SizedBox(height: 4),
-                          Text(
-                            incidente.descripcion,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            DateFormat('dd/MM/yyyy HH:mm', 'es_MX')
-                                .format(incidente.fecha),
-                            style: TextStyle(
-                              fontSize: 11,
-                              color: Colors.grey[600],
-                            ),
-                          ),
-                        ],
-                      ),
-                      trailing: Icon(
-                        esNueva
-                            ? Icons.mark_email_unread
-                            : Icons.mark_email_read,
-                        color: esNueva ? Colors.orange : Colors.green,
-                      ),
-                      isThreeLine: true,
-                      onTap: () => _mostrarDetalleIncidente(context, incidente),
-                    ),
-                  );
-                }),
-              ],
-            );
-          },
-        ),
-      ],
-    );
-  }
-
-  Color _getColorNivel(int nivel) {
-    switch (nivel) {
-      case 1:
-        return Colors.green;
-      case 2:
-        return Colors.yellow[700]!;
-      case 3:
-        return Colors.orange;
-      case 4:
-        return Colors.deepOrange;
-      case 5:
-        return Colors.red[900]!;
-      default:
-        return Colors.grey;
-    }
-  }
-
-  Future<void> _setLeido(String id, bool leido) async {
-    try {
-      await Supabase.instance.client
-          .from('incidentes')
-          .update({'leido_padre': leido})
-          .eq('id', id);
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('No se pudo actualizar: $e')),
-        );
-      }
-    }
-  }
-
-  void _mostrarDetalleIncidente(BuildContext context, Incidente incidente) {
-    // Al abrir, marcar como leída si estaba nueva.
-    if (incidente.esNueva) {
-      _setLeido(incidente.id, true);
-    }
-
-    showDialog(
-      context: context,
-      builder: (dialogCtx) => AlertDialog(
-        title: Row(
-          children: [
-            Text(incidente.emoji),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(incidente.titulo, style: GoogleFonts.fredoka()),
-            ),
-          ],
-        ),
-        content: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              _buildDetalleItem(
-                'Nivel',
-                '${incidente.nivel} - ${incidente.nivelLabel}',
-                _getColorNivel(incidente.nivel),
-              ),
-              const Divider(),
-              _buildDetalleItem(
-                'Descripción',
-                incidente.descripcion,
-                Colors.black87,
-              ),
-              const Divider(),
-              _buildDetalleItem(
-                'Fecha',
-                DateFormat('dd/MM/yyyy HH:mm', 'es_MX').format(incidente.fecha),
-                Colors.black87,
-              ),
-              if (incidente.observaciones != null) ...[
-                const Divider(),
-                _buildDetalleItem(
-                  'Observaciones',
-                  incidente.observaciones!,
-                  Colors.black87,
-                ),
-              ],
-              const SizedBox(height: 12),
-              Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: Colors.blue[50],
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Text(
-                  'Si tienes dudas, comunícate con la directora por el chat de la escuela.',
-                  style: GoogleFonts.poppins(
-                    fontSize: 12,
-                    color: Colors.blue[900],
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () async {
-              await _setLeido(incidente.id, false);
-              if (dialogCtx.mounted) Navigator.of(dialogCtx).pop();
-            },
-            child: const Text('Marcar no leída'),
-          ),
-          TextButton(
-            onPressed: () {
-              Navigator.of(dialogCtx).pop();
-              context.push('/padre/chat');
-            },
-            child: const Text('Chat directora'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.of(dialogCtx).pop(),
-            child: const Text('Cerrar'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildDetalleItem(String label, String valor, Color color) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          label,
-          style: TextStyle(
-            fontSize: 12,
-            color: Colors.grey[600],
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-        const SizedBox(height: 4),
-        Text(valor, style: TextStyle(fontSize: 14, color: color)),
-      ],
-    );
-  }
-}
-

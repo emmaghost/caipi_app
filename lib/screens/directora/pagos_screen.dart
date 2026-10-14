@@ -102,6 +102,13 @@ class _PagosScreenState extends State<PagosScreen> with SingleTickerProviderStat
   }
 
   Future<void> _refrescarPagosPendientes(SupabaseService s) async {
+    if (mounted) {
+      setState(() {
+        _pagosFutureService = s;
+        _pagosPendientesFuture = null;
+        _pagosListaEpoch++;
+      });
+    }
     try {
       final list = await s.obtenerTodosPagosList();
       if (!mounted) return;
@@ -109,7 +116,6 @@ class _PagosScreenState extends State<PagosScreen> with SingleTickerProviderStat
         _pagosFutureService = s;
         _pagosPendientesFuture = Future.value(list);
         _pagosListaEpoch++;
-        // Releer alumnos por si RLS/datos cambiaron tras el SQL.
         _alumnosGradosFutureService = s;
         _alumnosGradosFuture =
             Future.wait([s.obtenerAlumnos(), s.obtenerGrados()]);
@@ -2193,6 +2199,32 @@ class _PagosScreenState extends State<PagosScreen> with SingleTickerProviderStat
                           'Monto \$${_formatoMonto(pago.monto)}',
                           style: GoogleFonts.poppins(fontSize: 14, color: Colors.grey[600]),
                         ),
+                      if (pago.descuento > 0) ...[
+                        const SizedBox(height: 6),
+                        Text(
+                          'Descuento \$${_formatoMonto(pago.descuento)} · '
+                          'bruto \$${_formatoMonto(pago.montoBruto)}',
+                          style: GoogleFonts.poppins(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: const Color(0xFF166534),
+                          ),
+                        ),
+                      ],
+                      if (pago.notas != null &&
+                          pago.notas!.trim().isNotEmpty) ...[
+                        const SizedBox(height: 4),
+                        Text(
+                          pago.notas!,
+                          maxLines: 3,
+                          overflow: TextOverflow.ellipsis,
+                          style: GoogleFonts.poppins(
+                            fontSize: 11,
+                            color: Colors.grey[700],
+                            height: 1.3,
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                 ),
@@ -2405,6 +2437,15 @@ class _PagosScreenState extends State<PagosScreen> with SingleTickerProviderStat
     if (confirmar != true || !mounted) return;
 
     try {
+      final actuales = await _futurePagosPendientes(service);
+      if (mounted) {
+        setState(() {
+          _pagosPendientesFuture = Future.value(
+            actuales.where((p) => p.id != pago.id).toList(),
+          );
+          _pagosListaEpoch++;
+        });
+      }
       if (tieneAbonos) {
         await service.eliminarPagoForzado(pago.id);
       } else {
@@ -3106,11 +3147,16 @@ class _PagosScreenState extends State<PagosScreen> with SingleTickerProviderStat
         notas: notas.isEmpty ? null : notas,
       );
       if (!context.mounted) return;
+      setState(() => _filtroEstado = 'todos');
       await _refrescarPagosPendientes(service);
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Monto actualizado'),
+        SnackBar(
+          content: Text(
+            desc > 0
+                ? 'Monto actualizado · descuento \$${_formatoMonto(desc)}'
+                : 'Monto actualizado',
+          ),
           backgroundColor: AppColors.verde,
         ),
       );
@@ -3812,14 +3858,21 @@ class _PagosScreenState extends State<PagosScreen> with SingleTickerProviderStat
         notas: notas.isEmpty ? null : notas,
       );
       if (!context.mounted) return;
+      setState(() => _filtroEstado = 'todos');
       await _refrescarPagosPendientes(supabaseService);
       if (!context.mounted) return;
+      final neto = PagoHelpers.montoNeto(montoBruto: bruto, descuento: desc);
+      final extra = desc > 0
+          ? ' · descuento \$${_formatoMonto(desc)} · a cobrar \$${_formatoMonto(neto)}'
+          : ' · \$${_formatoMonto(neto)}';
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            'Cargo creado: $concepto · ${PagoHelpers.etiquetaPeriodo(fechaPeriodo)}',
+            'Cargo guardado: $concepto · '
+            '${PagoHelpers.etiquetaPeriodo(fechaPeriodo)}$extra',
           ),
           backgroundColor: AppColors.verde,
+          duration: const Duration(seconds: 5),
         ),
       );
     } catch (e) {

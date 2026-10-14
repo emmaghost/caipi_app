@@ -257,6 +257,13 @@ class _AppDrawerState extends State<AppDrawer> {
                               ),
                               _buildMenuItem(
                                 context: context,
+                                icon: Icons.campaign_outlined,
+                                title: 'Anuncios',
+                                ruta: '/padre/anuncios',
+                                tienePermiso: true,
+                              ),
+                              _buildMenuItem(
+                                context: context,
                                 icon: Icons.auto_graph,
                                 title: 'Indicadores de desarrollo',
                                 ruta: '/padre/indicadores',

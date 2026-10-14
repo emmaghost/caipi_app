@@ -7,9 +7,9 @@ import '../../services/auth_service.dart';
 import '../../services/supabase_service.dart';
 import '../../models/alumno.dart';
 import '../../widgets/hijo_card.dart';
-import '../../widgets/anuncios_padre_section.dart';
 import '../../widgets/app_drawer.dart';
-import '../../config/app_colors.dart';
+import '../../widgets/campana_anuncios_padre.dart';
+import '../../widgets/menu_padre_tile.dart';
 
 class DashboardPadre extends StatelessWidget {
   const DashboardPadre({super.key});
@@ -38,6 +38,7 @@ class DashboardPadre extends StatelessWidget {
         foregroundColor: Colors.white,
         elevation: 0,
         actions: [
+          const CampanaAnunciosPadre(),
           IconButton(
             icon: const Icon(Icons.logout),
             onPressed: () async {
@@ -66,6 +67,40 @@ class DashboardPadre extends StatelessWidget {
               color: Colors.grey[600],
             ),
           ),
+          const SizedBox(height: 20),
+
+          AnunciosSinLeerBuilder(
+            builder: (context, sinLeer) {
+              return GridView.count(
+                crossAxisCount: 2,
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                mainAxisSpacing: 12,
+                crossAxisSpacing: 12,
+                childAspectRatio: 1.28,
+                children: [
+                  MenuPadreTile(
+                    titulo: 'Anuncios',
+                    subtitulo: sinLeer > 0
+                        ? '$sinLeer sin leer'
+                        : 'Avisos de la escuela',
+                    icono: Icons.campaign_outlined,
+                    color: const Color(0xFF7C4DFF),
+                    badge: sinLeer,
+                    onTap: () => context.push('/padre/anuncios'),
+                  ),
+                  MenuPadreTile(
+                    titulo: 'Eventos',
+                    subtitulo: 'Actividades de la escuela',
+                    icono: Icons.event,
+                    color: const Color(0xFFE91E63),
+                    onTap: () => context.go('/padre/eventos'),
+                  ),
+                ],
+              );
+            },
+          ),
+
           const SizedBox(height: 24),
 
           // Mis hijos
@@ -127,71 +162,6 @@ class DashboardPadre extends StatelessWidget {
             },
           ),
 
-          const SizedBox(height: 32),
-
-          // Botón de eventos
-          Card(
-            elevation: 2,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: InkWell(
-              onTap: () => context.go('/padre/eventos'),
-              borderRadius: BorderRadius.circular(16),
-              child: Container(
-                padding: const EdgeInsets.all(20),
-                decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    colors: [Color(0xFFEC407A), Color(0xFFE91E63)],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                  ),
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                child: Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.2),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: const Icon(Icons.event, color: Colors.white, size: 32),
-                    ),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Ver Próximos Eventos',
-                            style: GoogleFonts.fredoka(
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.white,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            'Eventos escolares y actividades',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: Colors.white.withOpacity(0.9),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const Icon(Icons.arrow_forward_ios, color: Colors.white, size: 20),
-                  ],
-                ),
-              ),
-            ),
-          ),
-
-          const SizedBox(height: 24),
-
-          AnunciosPadreSection(usuarioId: usuario.id),
         ],
       ),
     );

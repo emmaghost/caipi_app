@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 
 import 'mensaje_chat.dart';
@@ -32,8 +34,44 @@ class Anuncio {
     this.paraGrados = const [],
   });
 
+  bool visibleParaPadre(Set<String> gradoIdsHijos) {
+    if (paraTodos) return true;
+    if (paraGrados.isEmpty) return false;
+    return paraGrados.any(gradoIdsHijos.contains);
+  }
+
   bool fueLeidoPor(String usuarioId) {
-    return leidoPor.contains(usuarioId);
+    final id = usuarioId.trim();
+    if (id.isEmpty) return false;
+    return leidoPor.any((e) => e.trim() == id);
+  }
+
+  /// Acepta list, JSON o texto `{uuid,uuid}` de Postgres.
+  static List<String> parseLeidoPor(dynamic raw) {
+    if (raw == null) return const [];
+    if (raw is List) {
+      return raw
+          .map((e) => e.toString().trim())
+          .where((e) => e.isNotEmpty)
+          .toList();
+    }
+    final t = raw.toString().trim();
+    if (t.isEmpty || t == '{}' || t == '[]') return const [];
+    if (t.startsWith('{') && t.endsWith('}')) {
+      return t
+          .substring(1, t.length - 1)
+          .split(',')
+          .map((e) => e.trim().replaceAll('"', ''))
+          .where((e) => e.isNotEmpty)
+          .toList();
+    }
+    if (t.startsWith('[') && t.endsWith(']')) {
+      try {
+        final decoded = jsonDecode(t);
+        if (decoded is List) return parseLeidoPor(decoded);
+      } catch (_) {}
+    }
+    return const [];
   }
 
   String get mensajeVisible => MensajeChat.textoSinFoto(mensaje);
@@ -93,9 +131,7 @@ class Anuncio {
       fechaEvento: json['fecha_evento'] != null
           ? DateTime.tryParse(json['fecha_evento'].toString())
           : null,
-      leidoPor: json['leido_por'] != null
-          ? List<String>.from(json['leido_por'] as List)
-          : const [],
+      leidoPor: parseLeidoPor(json['leido_por']),
       creadoPor: json['creado_por']?.toString() ?? '',
       paraTodos: paraTodos,
       paraGrados: grados,

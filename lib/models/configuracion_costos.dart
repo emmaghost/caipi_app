@@ -7,11 +7,11 @@ class ConfiguracionCostos {
   final double costoMensualidad12;
   final double costoMensualidad11;
   final double costoMensualidad10;
-  /// Pago único del ciclo (si es null, se usa mensualidad × meses).
+  /// Monto por mes si pagan 1 día antes. Null = misma mensualidad.
   final double? costoAnticipado12;
   final double? costoAnticipado11;
   final double? costoAnticipado10;
-  /// Total si se paga mes a mes (si es null, se usa mensualidad × meses).
+  /// Monto por mes desde el día 11. Null = misma mensualidad.
   final double? costoRecargo12;
   final double? costoRecargo11;
   final double? costoRecargo10;
@@ -119,28 +119,34 @@ class ConfiguracionCostos {
 
   double get totalPlan10 => PagoHelpers.totalColegiaturas(costoMensualidad10, 10);
 
-  double anticipadoDePlan(int meses) {
-    return PagoHelpers.montoPlanOCalculado(
-      configurado: switch (meses) {
-        10 => costoAnticipado10,
-        11 => costoAnticipado11,
-        _ => costoAnticipado12,
-      },
-      mensualidad: mensualidadDePlan(meses),
-      meses: meses,
-    );
+  double? anticipadoMensualDePlan(int meses) {
+    return switch (meses) {
+      10 => costoAnticipado10,
+      11 => costoAnticipado11,
+      _ => costoAnticipado12,
+    };
   }
 
+  double? recargoMensualDePlan(int meses) {
+    return switch (meses) {
+      10 => costoRecargo10,
+      11 => costoRecargo11,
+      _ => costoRecargo12,
+    };
+  }
+
+  /// Total del ciclo con descuento. Si no hay monto, mensualidad × meses.
+  double anticipadoDePlan(int meses) {
+    final porMes = anticipadoMensualDePlan(meses);
+    if (porMes != null && porMes > 0) return porMes * meses;
+    return PagoHelpers.totalColegiaturas(mensualidadDePlan(meses), meses);
+  }
+
+  /// Total del ciclo con recargo. Si no hay monto, mensualidad × meses.
   double recargoDePlan(int meses) {
-    return PagoHelpers.montoPlanOCalculado(
-      configurado: switch (meses) {
-        10 => costoRecargo10,
-        11 => costoRecargo11,
-        _ => costoRecargo12,
-      },
-      mensualidad: mensualidadDePlan(meses),
-      meses: meses,
-    );
+    final porMes = recargoMensualDePlan(meses);
+    if (porMes != null && porMes > 0) return porMes * meses;
+    return PagoHelpers.totalColegiaturas(mensualidadDePlan(meses), meses);
   }
 
   double totalMostrado({

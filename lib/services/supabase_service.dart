@@ -1276,21 +1276,29 @@ class SupabaseService {
   }
 
   Future<void> marcarAnuncioLeido(String anuncioId, String usuarioId) async {
-    // Obtener anuncio actual
+    try {
+      await _supabase.rpc(
+        'marcar_anuncio_leido',
+        params: {'p_anuncio_id': anuncioId},
+      );
+      return;
+    } catch (_) {
+      // RPC aún no existe o falló: intento directo (requiere política de papá).
+    }
+
     final response = await _supabase
         .from('anuncios')
         .select('leido_por')
         .eq('id', anuncioId)
         .single();
-    
-    List<String> leidoPor = List<String>.from(response['leido_por'] ?? []);
-    if (!leidoPor.contains(usuarioId)) {
-      leidoPor.add(usuarioId);
-      await _supabase
-          .from('anuncios')
-          .update({'leido_por': leidoPor})
-          .eq('id', anuncioId);
-    }
+
+    final leidoPor = Anuncio.parseLeidoPor(response['leido_por']).toList();
+    if (leidoPor.contains(usuarioId)) return;
+    leidoPor.add(usuarioId);
+    await _supabase
+        .from('anuncios')
+        .update({'leido_por': leidoPor})
+        .eq('id', anuncioId);
   }
 
   Future<void> eliminarAnuncio(String anuncioId) async {

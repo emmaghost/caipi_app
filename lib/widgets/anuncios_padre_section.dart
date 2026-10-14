@@ -5,232 +5,203 @@ import 'package:provider/provider.dart';
 import '../config/app_colors.dart';
 import '../models/alumno.dart';
 import '../models/anuncio.dart';
+import '../services/anuncios_leidos_local.dart';
 import '../services/supabase_service.dart';
 import 'anuncio_card.dart';
 
-enum _FiltroAnunciosPadre { todos, noLeidos, leidos }
+enum FiltroAnunciosPadre { todos, noLeidos, leidos }
 
-/// Anuncios del padre: más nuevos primero, filtro leído/no leído,
-/// altura acotada (no empujan toda la pantalla).
+/// Anuncios del padre: más nuevos primero, filtro leído/no leído.
 class AnunciosPadreSection extends StatefulWidget {
   final String usuarioId;
+  final bool pantallaCompleta;
 
-  const AnunciosPadreSection({super.key, required this.usuarioId});
+  const AnunciosPadreSection({
+    super.key,
+    required this.usuarioId,
+    this.pantallaCompleta = false,
+  });
 
   @override
   State<AnunciosPadreSection> createState() => _AnunciosPadreSectionState();
 }
 
 class _AnunciosPadreSectionState extends State<AnunciosPadreSection> {
-  _FiltroAnunciosPadre _filtro = _FiltroAnunciosPadre.todos;
+  FiltroAnunciosPadre _filtro = FiltroAnunciosPadre.todos;
+  final Set<String> _leidosLocal = {};
 
-  bool _visibleParaPadre(Anuncio a, Set<String> gradoIdsHijos) {
-    // Escuela completa
-    if (a.paraTodos) return true;
-    // Sin grados destino = no mostrar (antes se filtraba mal y llegaba a todos)
-    if (a.paraGrados.isEmpty) return false;
-    // Solo si algún hijo está en un grado del anuncio
-    return a.paraGrados.any(gradoIdsHijos.contains);
+  @override
+  void initState() {
+    super.initState();
+    AnunciosLeidosLocal.cargar(widget.usuarioId);
+    AnunciosLeidosLocal.tick.addListener(_alCambiarLeidos);
   }
 
-  List<Anuncio> _aplicarFiltro(List<Anuncio> base) {
-    switch (_filtro) {
-      case _FiltroAnunciosPadre.noLeidos:
-        return base
-            .where((a) => !a.fueLeidoPor(widget.usuarioId))
-            .toList();
-      case _FiltroAnunciosPadre.leidos:
-        return base.where((a) => a.fueLeidoPor(widget.usuarioId)).toList();
-      case _FiltroAnunciosPadre.todos:
+  @override
+  void dispose() {
+    AnunciosLeidosLocal.tick.removeListener(_alCambiarLeidos);
+    super.dispose();
+  }
+
+  void _alCambiarLeidos() {
+    if (mounted) setState(() {});
+  }
+
+  bool _leido(Anuncio a) =>
+      a.fueLeidoPor(widget.usuarioId) ||
+      _leidosLocal.contains(a.id) ||
+      AnunciosLeidosLocal.contiene(a.id);
+
+  List<Anuncio> aplicarFiltro(List<Anuncio> base, FiltroAnunciosPadre filtro) {
+    switch (filtro) {
+      case FiltroAnunciosPadre.noLeidos:
+        return base.where((a) => !_leido(a)).toList();
+      case FiltroAnunciosPadre.leidos:
+        return base.where(_leido).toList();
+      case FiltroAnunciosPadre.todos:
         return base;
+    }
+  }
+
+  Future<void> _marcarLeido(SupabaseService service, Anuncio anuncio) async {
+    setState(() => _leidosLocal.add(anuncio.id));
+    await AnunciosLeidosLocal.marcar(widget.usuarioId, anuncio.id);
+    try {
+      await service.marcarAnuncioLeido(anuncio.id, widget.usuarioId);
+    } catch (_) {
+      // El leído ya quedó en el teléfono. La base a veces lo rechaza.
     }
   }
 
   @override
   Widget build(BuildContext context) {
     final service = context.read<SupabaseService>();
-    final maxH = MediaQuery.sizeOf(context).height * 0.38;
+    final completa = widget.pantallaCompleta;
+    final maxH = MediaQuery.sizeOf(context).height * 0.46;
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Text(
-          'Anuncios',
-          style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                fontWeight: FontWeight.bold,
-              ),
-        ),
-        const SizedBox(height: 8),
-        SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: Row(
-            children: [
-              _chip(
-                label: 'Todos',
-                selected: _filtro == _FiltroAnunciosPadre.todos,
-                onTap: () =>
-                    setState(() => _filtro = _FiltroAnunciosPadre.todos),
-              ),
-              const SizedBox(width: 8),
-              _chip(
-                label: 'No leídos',
-                selected: _filtro == _FiltroAnunciosPadre.noLeidos,
-                onTap: () =>
-                    setState(() => _filtro = _FiltroAnunciosPadre.noLeidos),
-              ),
-              const SizedBox(width: 8),
-              _chip(
-                label: 'Leídos',
-                selected: _filtro == _FiltroAnunciosPadre.leidos,
-                onTap: () =>
-                    setState(() => _filtro = _FiltroAnunciosPadre.leidos),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 4),
-        Text(
-          'Del más reciente al más antiguo',
-          style: GoogleFonts.poppins(fontSize: 11, color: AppColors.gris),
-        ),
-        const SizedBox(height: 10),
-        StreamBuilder<List<Alumno>>(
-          stream: service.getAlumnosPorPadre(widget.usuarioId),
-          builder: (context, hijosSnap) {
-            final gradoIds = <String>{
-              for (final h in hijosSnap.data ?? const <Alumno>[])
-                if (h.gradoId != null) h.gradoId!,
-            };
+    return StreamBuilder<List<Alumno>>(
+      stream: service.getAlumnosPorPadre(widget.usuarioId),
+      builder: (context, hijosSnap) {
+        final gradoIds = <String>{
+          for (final h in hijosSnap.data ?? const <Alumno>[])
+            if (h.gradoId != null) h.gradoId!,
+        };
 
-            return StreamBuilder<List<Anuncio>>(
-              stream: service.getAnuncios(),
-              builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting &&
-                    !snapshot.hasData) {
-                  return const Padding(
-                    padding: EdgeInsets.all(24),
-                    child: Center(child: CircularProgressIndicator()),
-                  );
-                }
+        return StreamBuilder<List<Anuncio>>(
+          stream: service.getAnuncios(),
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting &&
+                !snapshot.hasData) {
+              return const Padding(
+                padding: EdgeInsets.all(24),
+                child: Center(child: CircularProgressIndicator()),
+              );
+            }
 
-                final todos = (snapshot.data ?? const <Anuncio>[])
-                    .where((a) => _visibleParaPadre(a, gradoIds))
-                    .toList()
-                  ..sort(
-                    (a, b) =>
-                        b.fechaPublicacion.compareTo(a.fechaPublicacion),
-                  );
-                final filtrados = _aplicarFiltro(todos);
-                final noLeidos =
-                    todos.where((a) => !a.fueLeidoPor(widget.usuarioId)).length;
+            final todos = (snapshot.data ?? const <Anuncio>[])
+                .where((a) => a.visibleParaPadre(gradoIds))
+                .toList()
+              ..sort(
+                (a, b) => b.fechaPublicacion.compareTo(a.fechaPublicacion),
+              );
+            final filtrados = aplicarFiltro(todos, _filtro);
+            final noLeidos = todos.where((a) => !_leido(a)).length;
+            final leidos = todos.length - noLeidos;
 
-                if (todos.isEmpty) {
-                  return Card(
-                    child: Padding(
-                      padding: const EdgeInsets.all(24),
-                      child: Center(
-                        child: Text(
-                          'No hay anuncios',
-                          style: GoogleFonts.poppins(color: AppColors.gris),
-                        ),
-                      ),
+            final filtros = Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                SegmentedButton<FiltroAnunciosPadre>(
+                  showSelectedIcon: false,
+                  segments: [
+                    const ButtonSegment(
+                      value: FiltroAnunciosPadre.todos,
+                      label: Text('Todos'),
                     ),
-                  );
-                }
-
-                return Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    if (noLeidos > 0 &&
-                        _filtro != _FiltroAnunciosPadre.leidos)
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 8),
-                        child: Text(
-                          '$noLeidos sin leer',
-                          style: GoogleFonts.poppins(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                            color: AppColors.rosa,
-                          ),
-                        ),
-                      ),
-                    ConstrainedBox(
-                      constraints: BoxConstraints(maxHeight: maxH),
-                      child: filtrados.isEmpty
-                          ? Card(
-                              child: Padding(
-                                padding: const EdgeInsets.all(20),
-                                child: Center(
-                                  child: Text(
-                                    _filtro == _FiltroAnunciosPadre.noLeidos
-                                        ? 'No tienes anuncios sin leer'
-                                        : _filtro ==
-                                                _FiltroAnunciosPadre.leidos
-                                            ? 'Aún no has marcado anuncios como leídos'
-                                            : 'Sin anuncios en este filtro',
-                                    textAlign: TextAlign.center,
-                                    style: GoogleFonts.poppins(
-                                      color: AppColors.gris,
-                                      fontSize: 13,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            )
-                          : ListView.builder(
-                              padding: EdgeInsets.zero,
-                              itemCount: filtrados.length,
-                              itemBuilder: (context, i) {
-                                final anuncio = filtrados[i];
-                                return AnuncioCard(
-                                  anuncio: anuncio,
-                                  usuarioId: widget.usuarioId,
-                                  onMarcarLeido: () async {
-                                    await service.marcarAnuncioLeido(
-                                      anuncio.id,
-                                      widget.usuarioId,
-                                    );
-                                  },
-                                );
-                              },
-                            ),
+                    ButtonSegment(
+                      value: FiltroAnunciosPadre.noLeidos,
+                      label: Text(noLeidos > 0 ? 'Sin leer ($noLeidos)' : 'Sin leer'),
                     ),
-                    if (filtrados.length > 2)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 4),
-                        child: Text(
-                          'Desliza dentro del recuadro para ver más',
-                          textAlign: TextAlign.center,
-                          style: GoogleFonts.poppins(
-                            fontSize: 11,
-                            color: AppColors.gris,
-                          ),
-                        ),
-                      ),
+                    ButtonSegment(
+                      value: FiltroAnunciosPadre.leidos,
+                      label: Text(leidos > 0 ? 'Leídos ($leidos)' : 'Leídos'),
+                    ),
                   ],
-                );
-              },
+                  selected: {_filtro},
+                  onSelectionChanged: (s) {
+                    setState(() => _filtro = s.first);
+                  },
+                  style: ButtonStyle(
+                    visualDensity: VisualDensity.compact,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    textStyle: WidgetStatePropertyAll(
+                      GoogleFonts.poppins(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                if (todos.isEmpty)
+                  _cajaVacia('Aún no hay anuncios de la escuela')
+                else if (filtrados.isEmpty)
+                  _cajaVacia(
+                    _filtro == FiltroAnunciosPadre.noLeidos
+                        ? 'Ya no tienes anuncios sin leer'
+                        : _filtro == FiltroAnunciosPadre.leidos
+                            ? 'Aquí van los que marques como leídos'
+                            : 'Sin anuncios en este filtro',
+                  )
+                else if (completa)
+                  Expanded(
+                    child: ListView.builder(
+                      padding: EdgeInsets.zero,
+                      itemCount: filtrados.length,
+                      itemBuilder: (context, i) => _card(service, filtrados[i]),
+                    ),
+                  )
+                else
+                  ConstrainedBox(
+                    constraints: BoxConstraints(maxHeight: maxH),
+                    child: ListView.builder(
+                      padding: EdgeInsets.zero,
+                      shrinkWrap: filtrados.length <= 2,
+                      itemCount: filtrados.length,
+                      itemBuilder: (context, i) => _card(service, filtrados[i]),
+                    ),
+                  ),
+              ],
             );
+
+            if (completa) return filtros;
+            return filtros;
           },
-        ),
-      ],
+        );
+      },
     );
   }
 
-  Widget _chip({
-    required String label,
-    required bool selected,
-    required VoidCallback onTap,
-  }) {
-    return FilterChip(
-      label: Text(label),
-      selected: selected,
-      onSelected: (_) => onTap(),
-      selectedColor: AppColors.rosa.withOpacity(0.25),
-      checkmarkColor: AppColors.rosa,
-      labelStyle: GoogleFonts.poppins(
-        fontSize: 12,
-        fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+  Widget _card(SupabaseService service, Anuncio anuncio) {
+    return AnuncioCard(
+      anuncio: anuncio,
+      usuarioId: widget.usuarioId,
+      leidoForzado: _leidosLocal.contains(anuncio.id),
+      onMarcarLeido: () => _marcarLeido(service, anuncio),
+    );
+  }
+
+  Widget _cajaVacia(String texto) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 22),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8F7FC),
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Text(
+        texto,
+        textAlign: TextAlign.center,
+        style: GoogleFonts.poppins(color: AppColors.gris, fontSize: 13),
       ),
     );
   }

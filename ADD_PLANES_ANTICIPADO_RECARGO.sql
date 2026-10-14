@@ -13,14 +13,16 @@ ALTER TABLE public.configuracion_costos
   ADD COLUMN IF NOT EXISTS costo_recargo_10 NUMERIC(10,2);
 
 COMMENT ON COLUMN public.configuracion_costos.costo_anticipado_12 IS
-  'Pago único del ciclo plan 12. Null = mensualidad × 12';
+  'Monto POR MES del plan 12 si pagan 1 día antes. Null = misma mensualidad';
 COMMENT ON COLUMN public.configuracion_costos.costo_anticipado_11 IS
-  'Pago único del ciclo plan 11. Null = mensualidad × 11';
+  'Monto POR MES del plan 11 si pagan 1 día antes. Null = misma mensualidad';
 COMMENT ON COLUMN public.configuracion_costos.costo_anticipado_10 IS
-  'Pago único del ciclo plan 10. Null = mensualidad × 10';
+  'Monto POR MES del plan 10 si pagan 1 día antes. Null = misma mensualidad';
 COMMENT ON COLUMN public.configuracion_costos.costo_recargo_12 IS
-  'Total mes a mes plan 12. Null = mensualidad × 12';
+  'Monto POR MES del plan 12 desde el día 11. Null = misma mensualidad';
 COMMENT ON COLUMN public.configuracion_costos.costo_recargo_11 IS
-  'Total mes a mes plan 11. Null = mensualidad × 11';
+  'Monto POR MES del plan 11 desde el día 11. Null = misma mensualidad';
 COMMENT ON COLUMN public.configuracion_costos.costo_recargo_10 IS
-  'Total mes a mes plan 10. Null = mensualidad × 10';
+  'Monto POR MES del plan 10 desde el día 11. Null = misma mensualidad';
+
+NOTIFY pgrst, 'reload schema';

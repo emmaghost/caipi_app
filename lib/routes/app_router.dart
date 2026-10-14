@@ -70,6 +70,8 @@ import '../screens/padres/personas_autorizadas_screen.dart';
 import '../screens/padres/qr_temporal_screen.dart';
 import '../screens/padres/acceso_restringido_screen.dart';
 import '../screens/padres/indicadores_padre_screen.dart';
+import '../screens/padres/anuncios_padre_screen.dart';
+import '../screens/padres/incidentes_padre_screen.dart';
 import '../screens/chat/chat_lista_escuela_screen.dart';
 import '../screens/chat/chat_conversacion_screen.dart';
 import '../screens/chat/chat_padre_screen.dart';
@@ -677,19 +679,13 @@ GoRouter createRouter({
       },
     ),
     GoRoute(
-      path: '/padre/hijo/:id',
+      path: '/padre/hijo/:id/incidentes',
       builder: (context, state) {
         final hijoId = state.pathParameters['id']!;
-        return DetalleHijoScreen(alumnoId: hijoId);
+        final extra = state.extra as Map<String, dynamic>?;
+        final nombre = extra?['alumnoNombre'] as String? ?? 'Mi hijo/a';
+        return IncidentesPadreScreen(alumnoId: hijoId, alumnoNombre: nombre);
       },
-    ),
-    GoRoute(
-      path: '/padre/chat',
-      builder: (context, state) => const ChatPadreScreen(),
-    ),
-    GoRoute(
-      path: '/padre/eventos',
-      builder: (context, state) => const EventosPadreScreen(),
     ),
     GoRoute(
       path: '/padre/hijo/:id/personas-autorizadas',
@@ -702,6 +698,25 @@ GoRouter createRouter({
           alumnoNombre: alumnoNombre,
         );
       },
+    ),
+    GoRoute(
+      path: '/padre/hijo/:id',
+      builder: (context, state) {
+        final hijoId = state.pathParameters['id']!;
+        return DetalleHijoScreen(alumnoId: hijoId);
+      },
+    ),
+    GoRoute(
+      path: '/padre/anuncios',
+      builder: (context, state) => const AnunciosPadreScreen(),
+    ),
+    GoRoute(
+      path: '/padre/chat',
+      builder: (context, state) => const ChatPadreScreen(),
+    ),
+    GoRoute(
+      path: '/padre/eventos',
+      builder: (context, state) => const EventosPadreScreen(),
     ),
     GoRoute(
       path: '/padre/qr-temporal',
