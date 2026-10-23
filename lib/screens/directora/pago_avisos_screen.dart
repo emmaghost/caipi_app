@@ -408,7 +408,7 @@ class _PagoAvisosScreenState extends State<PagoAvisosScreen> {
       for (final a in alumnos)
         if (a.gradoId != null) a.id: a.gradoId!,
     };
-    final gradosOk = grados.where((g) => g.muestraModuloPagos).toList();
+    final gradosOk = grados.where((g) => g.muestraPagosAlPadre).toList();
     gradosOk.sort((a, b) => a.nombre.compareTo(b.nombre));
     if (!mounted) return null;
 

@@ -94,7 +94,8 @@ class _EntregaAfueraScreenState extends State<EntregaAfueraScreen> {
                           child: Text(
                             'Aquí aparecen los niños cuando el papá/mamá '
                             'avisa que ya está en la entrada. '
-                            'Toca «Entregar» y elige: al papá/mamá o con QR.',
+                            'Si es de la lista, coteja la INE y marca si se lo '
+                            'entregaste. Si no se parece, no lo entregues.',
                             style: GoogleFonts.poppins(
                               fontSize: 13,
                               color: Colors.orange.shade900,

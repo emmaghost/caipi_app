@@ -44,32 +44,37 @@ class Grado {
     );
   }
 
-  bool get esEstimulacion {
-    final n = nombre.toLowerCase();
-    return n.contains('estimul');
-  }
-
-  bool get esMaternal {
-    final n = nombre.toLowerCase();
-    return n.contains('maternal');
-  }
-
-  /// En CAIPI, estimulación temprana es el mismo grupo que maternal.
-  bool get esMaternalOBebes => esMaternal || esEstimulacion;
-
-  bool get esKinder {
-    final n = nombre.toLowerCase().replaceAll('í', 'i');
-    return n.contains('kinder');
-  }
-
-  /// Solo Kínder 1, 2 y 3 entran al módulo de pagos / colegiaturas.
-  /// Estimulación, maternal y otros no aparecen en Pagos.
-  bool get muestraModuloPagos {
-    final n = nombre
+  static String claveNombre(String nombre) {
+    return nombre
         .toLowerCase()
-        .replaceAll('í', 'i')
         .replaceAll('á', 'a')
-        .replaceAll('é', 'e');
+        .replaceAll('é', 'e')
+        .replaceAll('í', 'i')
+        .replaceAll('ó', 'o')
+        .replaceAll('ú', 'u')
+        .replaceAll('ü', 'u');
+  }
+
+  String get _clave => claveNombre(nombre);
+
+  bool get esEstimulacion => _clave.contains('estimul');
+
+  bool get esMaternal => _clave.contains('maternal');
+
+  /// Lactante, bebé o sala cuna: mismo trato de pagos que maternal.
+  bool get esLactanteOBebes {
+    final n = _clave;
+    return n.contains('lactante') || n.contains('bebe') || n.contains('cuna');
+  }
+
+  /// Maternal, lactante/bebé o estimulación.
+  bool get esMaternalOBebes => esMaternal || esLactanteOBebes || esEstimulacion;
+
+  bool get esKinder => _clave.contains('kinder');
+
+  /// Kínder 1, 2 y 3. Caja solo ve estos. La directora ve todos los grupos.
+  bool get muestraModuloPagos {
+    final n = _clave;
     if (!n.contains('kinder')) return false;
     final m = RegExp(r'kinder\s*([0-9]+)').firstMatch(n);
     if (m != null) {
@@ -80,11 +85,18 @@ class Grado {
     return true;
   }
 
-  /// Colegiatura automática 10/11/12 solo para kínder 1–3.
+  /// Colegiatura 10/11/12 solo de kínder. Maternal y lactante usan sesión o paquete.
   bool get generaColegiaturaAutomatica => muestraModuloPagos;
 
-  /// Por clase / sin plan fijo: maternal (incluye estimulación) o sin clasificar.
-  bool get cobroPorClase => !muestraModuloPagos;
+  /// Sesión o paquete (1, 4, 6 u 8), con los precios de maternal y lactante.
+  bool get usaCostosMaternal =>
+      esMaternal || esLactanteOBebes || esEstimulacion;
+
+  /// El papá ve pagos de kínder y también de maternal, lactante o estimulación.
+  bool get muestraPagosAlPadre => muestraModuloPagos || usaCostosMaternal;
+
+  /// Por clase, sin colegiatura de kínder.
+  bool get cobroPorClase => !generaColegiaturaAutomatica;
 
   Map<String, dynamic> toJson() {
     return {

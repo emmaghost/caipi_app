@@ -38,6 +38,7 @@ import '../screens/directora/bitacora_rapida_grupo_screen.dart';
 import '../screens/directora/crear_bitacora_gasto_screen.dart';
 import '../screens/directora/control_salidas_screen.dart';
 import '../screens/directora/entrega_afuera_screen.dart';
+import '../screens/directora/lista_recogida_screen.dart';
 import '../screens/directora/registrar_salida_screen.dart';
 import '../screens/directora/calificaciones_screen.dart';
 import '../screens/directora/calificaciones_alumno_screen.dart';
@@ -533,6 +534,10 @@ GoRouter createRouter({
     GoRoute(
       path: '/directora/entrega-afuera',
       builder: (context, state) => const EntregaAfueraScreen(),
+    ),
+    GoRoute(
+      path: '/directora/lista-recogida',
+      builder: (context, state) => const ListaRecogidaScreen(),
     ),
     GoRoute(
       path: '/directora/control-salidas',

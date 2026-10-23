@@ -13,6 +13,7 @@ import '../../services/supabase_service.dart';
 import '../../utils/portage_stats.dart';
 import '../../widgets/portage_grafica_sheet.dart';
 import '../../widgets/caipi_app_bar_leading.dart';
+import '../../widgets/edad_nino_banner.dart';
 
 enum _FiltroCalifSeguimiento { todos, pendientes, calificados }
 
@@ -413,6 +414,7 @@ class _PortageCalificarAlumnoScreenState
   final _portage = PortageService();
   PortageEvaluacion? _eval;
   Alumno? _alumno;
+  int? _hitosDeMeses;
   List<PortageIndicador> _indicadores = [];
   final Map<String, String?> _estados = {};
   final Map<String, TextEditingController> _obs = {};
@@ -444,6 +446,7 @@ class _PortageCalificarAlumnoScreenState
         throw Exception('Datos no encontrados');
       }
       final inds = await _portage.listarIndicadores(eval.listaId);
+      final lista = await _portage.obtenerLista(eval.listaId);
       final resultados =
           await _portage.obtenerResultados(eval.id, alumno.id);
       final porInd = {for (final r in resultados) r.indicadorId: r};
@@ -462,6 +465,7 @@ class _PortageCalificarAlumnoScreenState
       setState(() {
         _eval = eval;
         _alumno = alumno;
+        _hitosDeMeses = lista?.mesesEdad;
         _indicadores = inds;
         _loading = false;
       });
@@ -523,7 +527,16 @@ class _PortageCalificarAlumnoScreenState
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
-          : ListView(
+          : Column(
+              children: [
+                if (_alumno != null)
+                  EdadNinoBanner(
+                    nombre: _alumno!.nombreCompleto,
+                    nacimiento: _alumno!.fechaNacimiento,
+                    hitosDeMeses: _hitosDeMeses,
+                  ),
+                Expanded(
+                  child: ListView(
               padding: const EdgeInsets.all(16),
               children: [
                 for (final ind in _indicadores) ...[
@@ -608,6 +621,9 @@ class _PortageCalificarAlumnoScreenState
                         : const Text('Guardar calificación'),
                   ),
                 const SizedBox(height: 24),
+              ],
+            ),
+                ),
               ],
             ),
     );

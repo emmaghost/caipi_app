@@ -33,6 +33,11 @@ class _ConfiguracionCostosScreenState extends State<ConfiguracionCostosScreen> {
   final _recargo12Controller = TextEditingController();
   final _recargo11Controller = TextEditingController();
   final _recargo10Controller = TextEditingController();
+  final _sesionController = TextEditingController(text: '350');
+  final _paquete4Controller = TextEditingController(text: '950');
+  final _paquete6Controller = TextEditingController(text: '1100');
+  final _paquete8Controller = TextEditingController(text: '1150');
+  final _inscripcionMaternalController = TextEditingController(text: '1150');
   final _notasController = TextEditingController();
 
   ConfiguracionCostos? _configActual;
@@ -41,6 +46,7 @@ class _ConfiguracionCostosScreenState extends State<ConfiguracionCostosScreen> {
   bool _sumarInscripcion = false;
   bool _sumarSeguro = false;
   bool _faltanColumnasDescuento = false;
+  bool _faltanColumnasMaternal = false;
   String? _resumenGuardado;
 
   void _refrescarVista() => setState(() {});
@@ -61,6 +67,11 @@ class _ConfiguracionCostosScreenState extends State<ConfiguracionCostosScreen> {
       _recargo12Controller,
       _recargo11Controller,
       _recargo10Controller,
+      _sesionController,
+      _paquete4Controller,
+      _paquete6Controller,
+      _paquete8Controller,
+      _inscripcionMaternalController,
     ]) {
       c.addListener(_refrescarVista);
     }
@@ -80,6 +91,11 @@ class _ConfiguracionCostosScreenState extends State<ConfiguracionCostosScreen> {
       _recargo12Controller,
       _recargo11Controller,
       _recargo10Controller,
+      _sesionController,
+      _paquete4Controller,
+      _paquete6Controller,
+      _paquete8Controller,
+      _inscripcionMaternalController,
     ]) {
       c.removeListener(_refrescarVista);
     }
@@ -94,6 +110,11 @@ class _ConfiguracionCostosScreenState extends State<ConfiguracionCostosScreen> {
     _recargo12Controller.dispose();
     _recargo11Controller.dispose();
     _recargo10Controller.dispose();
+    _sesionController.dispose();
+    _paquete4Controller.dispose();
+    _paquete6Controller.dispose();
+    _paquete8Controller.dispose();
+    _inscripcionMaternalController.dispose();
     _notasController.dispose();
     super.dispose();
   }
@@ -137,6 +158,12 @@ class _ConfiguracionCostosScreenState extends State<ConfiguracionCostosScreen> {
         _recargo12Controller.text = _fmtOpcional(_configActual!.costoRecargo12);
         _recargo11Controller.text = _fmtOpcional(_configActual!.costoRecargo11);
         _recargo10Controller.text = _fmtOpcional(_configActual!.costoRecargo10);
+        _sesionController.text = _numODefault(response['estim_sesion'], 350);
+        _paquete4Controller.text = _numODefault(response['estim_paquete_4'], 950);
+        _paquete6Controller.text = _numODefault(response['estim_paquete_6'], 1100);
+        _paquete8Controller.text = _numODefault(response['estim_paquete_8'], 1150);
+        _inscripcionMaternalController.text =
+            _numODefault(response['estim_inscripcion_anual'], 1150);
         _notasController.text = _configActual!.notas ?? '';
       }
     } catch (e) {
@@ -167,45 +194,80 @@ class _ConfiguracionCostosScreenState extends State<ConfiguracionCostosScreen> {
         'costo_recargo_12': _montoOpcional(_recargo12Controller.text),
         'costo_recargo_11': _montoOpcional(_recargo11Controller.text),
         'costo_recargo_10': _montoOpcional(_recargo10Controller.text),
+        'estim_sesion': double.parse(_sesionController.text),
+        'estim_paquete_4': double.parse(_paquete4Controller.text),
+        'estim_paquete_6': double.parse(_paquete6Controller.text),
+        'estim_paquete_8': double.parse(_paquete8Controller.text),
+        'estim_inscripcion_anual': double.parse(_inscripcionMaternalController.text),
         'notas': _notasController.text.trim().isEmpty ? null : _notasController.text.trim(),
         'vigente': true,
         'vigencia_desde': DateTime.now().toIso8601String().split('T')[0],
       };
 
       var extrasOk = true;
+      var maternalOk = true;
       try {
         await _persistirConfig(data);
       } catch (e) {
-        final t = e.toString();
-        final faltan = t.contains('42703') ||
-            t.contains('costo_anticipado') ||
-            t.contains('costo_recargo') ||
-            t.contains('schema cache');
-        if (!faltan) rethrow;
-        extrasOk = false;
-        final sinPlanesExtra = Map<String, dynamic>.from(data)
-          ..removeWhere((k, _) =>
+        var payload = Map<String, dynamic>.from(data);
+        final faltanDescuento = _errorDeColumna(e, const [
+          'costo_anticipado',
+          'costo_recargo',
+        ]);
+        final faltanMaternal = _errorDeColumna(e, const ['estim_']);
+        if (!faltanDescuento && !faltanMaternal) rethrow;
+        if (faltanDescuento) {
+          extrasOk = false;
+          payload.removeWhere((k, _) =>
               k.startsWith('costo_anticipado_') || k.startsWith('costo_recargo_'));
-        await _persistirConfig(sinPlanesExtra);
+        }
+        if (faltanMaternal) {
+          maternalOk = false;
+          payload.removeWhere((k, _) => k.startsWith('estim_'));
+        }
+        try {
+          await _persistirConfig(payload);
+        } catch (e2) {
+          final faltanDescuento2 = _errorDeColumna(e2, const [
+            'costo_anticipado',
+            'costo_recargo',
+          ]);
+          final faltanMaternal2 = _errorDeColumna(e2, const ['estim_']);
+          if (!faltanDescuento2 && !faltanMaternal2) rethrow;
+          if (faltanDescuento2) {
+            extrasOk = false;
+            payload.removeWhere((k, _) =>
+                k.startsWith('costo_anticipado_') || k.startsWith('costo_recargo_'));
+          }
+          if (faltanMaternal2) {
+            maternalOk = false;
+            payload.removeWhere((k, _) => k.startsWith('estim_'));
+          }
+          await _persistirConfig(payload);
+        }
       }
 
-      if (!extrasOk) {
+      if (!extrasOk || !maternalOk) {
         if (!mounted) return;
         setState(() {
-          _faltanColumnasDescuento = true;
-          _resumenGuardado = null;
+          _faltanColumnasDescuento = !extrasOk;
+          _faltanColumnasMaternal = !maternalOk;
+          if (!extrasOk) _resumenGuardado = null;
         });
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
+          SnackBar(
             content: Text(
-              'La mensualidad sí se guardó. El descuento y el recargo no: '
-              'todavía no existen en el sistema. El recuadro naranja dice qué falta.',
+              !extrasOk
+                  ? 'La mensualidad sí se guardó. El descuento y el recargo no: '
+                      'todavía no existen en el sistema. El recuadro naranja dice qué falta.'
+                  : 'Kínder sí se guardó. Maternal y lactante no: '
+                      'faltan esas columnas. El recuadro naranja dice qué falta.',
             ),
             backgroundColor: Colors.orange,
-            duration: Duration(seconds: 7),
+            duration: const Duration(seconds: 7),
           ),
         );
-        return;
+        if (!extrasOk) return;
       }
 
       await _cargarConfiguracion();
@@ -213,6 +275,7 @@ class _ConfiguracionCostosScreenState extends State<ConfiguracionCostosScreen> {
 
       final c = _configActual;
       setState(() {
+        _faltanColumnasMaternal = false;
         _resumenGuardado = c == null
             ? 'Guardado. Vuelve a abrir esta pantalla para ver los montos.'
             : 'Sí quedó guardado.\n'
@@ -256,6 +319,21 @@ class _ConfiguracionCostosScreenState extends State<ConfiguracionCostosScreen> {
   static String _fmtOpcional(double? v) {
     if (v == null || v <= 0) return '';
     return v.toString();
+  }
+
+  static String _numODefault(dynamic value, num fallback) {
+    if (value is num) return value.toDouble().toString();
+    return fallback.toString();
+  }
+
+  static bool _errorDeColumna(Object error, List<String> pistas) {
+    final t = error.toString();
+    if (!t.contains('42703') &&
+        !t.contains('PGRST204') &&
+        !t.contains('schema cache')) {
+      return false;
+    }
+    return pistas.any(t.contains);
   }
 
   static String _lineaPlan(double? porMes, int meses) {
@@ -355,24 +433,18 @@ class _ConfiguracionCostosScreenState extends State<ConfiguracionCostosScreen> {
                   children: [
                     _buildInfoCard(),
                     const SizedBox(height: 20),
-                    Text(
-                      'Montos',
-                      style: GoogleFonts.fredoka(
-                        fontSize: 17,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.azulOscuro,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      'Se usan al dar de alta alumnos y para los planes de pago. Montos en pesos (sin símbolo en el campo).',
-                      style: GoogleFonts.poppins(fontSize: 13, color: AppColors.gris),
+                    _encabezadoSeccion(
+                      titulo: 'Kínder',
+                      detalle:
+                          'Colegiatura de 10, 11 o 12 meses. Al dar de alta un niño de kínder se generan estos pagos.',
+                      icono: Icons.school_rounded,
+                      color: AppColors.morado,
                     ),
                     const SizedBox(height: 14),
                     TextFormField(
                       controller: _inscripcionController,
                       decoration: _fieldDecoration(
-                        label: 'Inscripción anual (referencia)',
+                        label: 'Inscripción anual de kínder',
                         icon: Icons.school_outlined,
                         hintText: r'0.00',
                       ),
@@ -387,7 +459,7 @@ class _ConfiguracionCostosScreenState extends State<ConfiguracionCostosScreen> {
                     TextFormField(
                       controller: _seguroController,
                       decoration: _fieldDecoration(
-                        label: 'Seguro + credencial (referencia)',
+                        label: 'Seguro y credencial de kínder',
                         icon: Icons.health_and_safety_outlined,
                         hintText: r'0.00',
                       ),
@@ -400,14 +472,14 @@ class _ConfiguracionCostosScreenState extends State<ConfiguracionCostosScreen> {
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      'Inscripción y seguro se guardan como referencia. Por default no se suman en los cuadritos de abajo; tú eliges si incluirlos cuando un papá pida el total completo.',
+                      'Inscripción y seguro de kínder se guardan como referencia. No se suman solos en los cuadritos; tú eliges si incluirlos.',
                       style: GoogleFonts.poppins(fontSize: 12, color: AppColors.gris),
                     ),
                     const SizedBox(height: 14),
                     TextFormField(
                       controller: _mensualidad12Controller,
                       decoration: _fieldDecoration(
-                        label: 'Mensualidad plan 12 meses',
+                        label: 'Mensualidad de kínder · 12 meses',
                         icon: Icons.calendar_month_outlined,
                         hintText: r'0.00',
                       ),
@@ -422,7 +494,7 @@ class _ConfiguracionCostosScreenState extends State<ConfiguracionCostosScreen> {
                     TextFormField(
                       controller: _mensualidad11Controller,
                       decoration: _fieldDecoration(
-                        label: 'Mensualidad plan 11 meses',
+                        label: 'Mensualidad de kínder · 11 meses',
                         icon: Icons.date_range_outlined,
                         hintText: r'0.00',
                       ),
@@ -437,7 +509,7 @@ class _ConfiguracionCostosScreenState extends State<ConfiguracionCostosScreen> {
                     TextFormField(
                       controller: _mensualidad10Controller,
                       decoration: _fieldDecoration(
-                        label: 'Mensualidad plan 10 meses',
+                        label: 'Mensualidad de kínder · 10 meses',
                         icon: Icons.event_repeat_outlined,
                         hintText: r'0.00',
                       ),
@@ -467,6 +539,8 @@ class _ConfiguracionCostosScreenState extends State<ConfiguracionCostosScreen> {
                     ),
                     const SizedBox(height: 28),
                     _buildComparativaSection(),
+                    const SizedBox(height: 28),
+                    _buildSeccionMaternal(),
                     if (_resumenGuardado != null) ...[
                       const SizedBox(height: 16),
                       Container(
@@ -571,6 +645,155 @@ class _ConfiguracionCostosScreenState extends State<ConfiguracionCostosScreen> {
     );
   }
 
+  Widget _encabezadoSeccion({
+    required String titulo,
+    required String detalle,
+    required IconData icono,
+    required Color color,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: color.withValues(alpha: 0.35)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icono, color: color),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  titulo,
+                  style: GoogleFonts.fredoka(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w700,
+                    color: color,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  detalle,
+                  style: GoogleFonts.poppins(
+                    fontSize: 13,
+                    height: 1.35,
+                    color: AppColors.grisOscuro,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSeccionMaternal() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _encabezadoSeccion(
+          titulo: 'Maternal y lactante',
+          detalle:
+              'Precios por sesión o por paquete al mes. Si al niño no le eliges paquete, no se le arma el año.',
+          icono: Icons.child_care_rounded,
+          color: const Color(0xFF0F766E),
+        ),
+        const SizedBox(height: 14),
+        if (_faltanColumnasMaternal) ...[
+          _avisoColumnasFaltantesMaternal(),
+          const SizedBox(height: 14),
+        ],
+        _campoMonto(
+          controller: _sesionController,
+          label: '1 sesión',
+          hint: '350',
+          icon: Icons.looks_one_outlined,
+        ),
+        _campoMonto(
+          controller: _paquete4Controller,
+          label: 'Paquete de 4 sesiones al mes',
+          hint: '950',
+          icon: Icons.calendar_view_week_outlined,
+        ),
+        _campoMonto(
+          controller: _paquete6Controller,
+          label: 'Paquete de 6 sesiones al mes',
+          hint: '1100',
+          icon: Icons.groups_outlined,
+        ),
+        _campoMonto(
+          controller: _paquete8Controller,
+          label: 'Paquete de 8 sesiones al mes',
+          hint: '1150',
+          icon: Icons.stacked_bar_chart_rounded,
+        ),
+        _campoMonto(
+          controller: _inscripcionMaternalController,
+          label: 'Inscripción anual de maternal / lactante',
+          hint: '1150',
+          icon: Icons.description_outlined,
+        ),
+        Text(
+          'Al guardar un niño con 8 sesiones, cada mes del ciclo usa el precio de 8 sesiones. '
+          'La de 1 sesión no rellena el año: esa clase se carga cuando va.',
+          style: GoogleFonts.poppins(fontSize: 12, height: 1.35, color: AppColors.gris),
+        ),
+      ],
+    );
+  }
+
+  Widget _avisoColumnasFaltantesMaternal() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFF7ED),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFFDBA74)),
+      ),
+      child: Text(
+        'Estos precios de maternal y lactante todavía no se pueden guardar. '
+        'Hay que activar esas columnas una sola vez y volver a picar Guardar.',
+        style: GoogleFonts.poppins(
+          fontSize: 13,
+          height: 1.4,
+          color: const Color(0xFF9A3412),
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+    );
+  }
+
+  Widget _campoMonto({
+    required TextEditingController controller,
+    required String label,
+    required String hint,
+    required IconData icon,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 14),
+      child: TextFormField(
+        controller: controller,
+        decoration: _fieldDecoration(
+          label: label,
+          icon: icon,
+          hintText: hint,
+        ),
+        style: GoogleFonts.poppins(fontSize: 16, fontWeight: FontWeight.w500),
+        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+        inputFormatters: [
+          FilteringTextInputFormatter.allow(RegExp(r'^\d+\.?\d{0,2}')),
+        ],
+        validator: _validarMonto,
+      ),
+    );
+  }
+
   Widget _buildInfoCard() {
     return Container(
       decoration: BoxDecoration(
@@ -626,9 +849,9 @@ class _ConfiguracionCostosScreenState extends State<ConfiguracionCostosScreen> {
                         ],
                       ),
                       const SizedBox(height: 12),
-                      _infoLine('Al inscribir se elige plan de 10, 11 o 12 mensualidades.'),
-                      _infoLine('Al crear un alumno se generan los pagos según el plan.'),
-                      _infoLine('Estos valores aplican a alumnos nuevos con esta configuración.'),
+                      _infoLine('Kínder: al inscribir se elige 10, 11 o 12 meses y se generan las colegiaturas.'),
+                      _infoLine('Maternal y lactante: si eliges 1, 4, 6 u 8 sesiones, se usa el precio de esa sección. Si no eliges, no se rellena el año.'),
+                      _infoLine('Cambiar un precio aquí no reescribe pagos que ya existen.'),
                     ],
                   ),
                 ),
@@ -727,7 +950,7 @@ class _ConfiguracionCostosScreenState extends State<ConfiguracionCostosScreen> {
             ),
             const SizedBox(width: 10),
             Text(
-              'Comparativa de planes',
+              'Planes de kínder',
               style: GoogleFonts.fredoka(
                 fontSize: 18,
                 fontWeight: FontWeight.w700,

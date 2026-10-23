@@ -285,6 +285,24 @@ class SupabaseService {
     }
   }
 
+  Future<Grado?> _gradoDeAlumno(Alumno alumno) async {
+    if (alumno.gradoId == null || alumno.gradoId!.isEmpty) return null;
+    final gradoRow = await _supabase
+        .from('grados')
+        .select('nombre')
+        .eq('id', alumno.gradoId!)
+        .maybeSingle();
+    if (gradoRow == null) return null;
+    return Grado.fromJson({
+      ...gradoRow,
+      'id': alumno.gradoId,
+      'cupo_maximo': 20,
+      'activo': true,
+      'created_at': DateTime.now().toIso8601String(),
+      'updated_at': DateTime.now().toIso8601String(),
+    });
+  }
+
   Future<void> _generarPagosIniciales(Alumno alumno) async {
     // Si el trigger de BD ya creó cargos, no duplicar.
     final existentes = await _supabase
@@ -294,27 +312,13 @@ class SupabaseService {
         .limit(1);
     if ((existentes as List).isNotEmpty) return;
 
-    // Estimulación = maternal: cobro por clase, sin colegiaturas ni paquetes auto.
-    if (alumno.esPlanEstimulacion) return;
-
-    // Sin grado o no kínder: no generar colegiaturas.
-    if (alumno.gradoId == null || alumno.gradoId!.isEmpty) return;
-
-    final gradoRow = await _supabase
-        .from('grados')
-        .select('nombre')
-        .eq('id', alumno.gradoId!)
-        .maybeSingle();
-    if (gradoRow == null) return;
-    final g = Grado.fromJson({
-      ...gradoRow,
-      'id': alumno.gradoId,
-      'cupo_maximo': 20,
-      'activo': true,
-      'created_at': DateTime.now().toIso8601String(),
-      'updated_at': DateTime.now().toIso8601String(),
-    });
-    if (!g.muestraModuloPagos) return;
+    final g = await _gradoDeAlumno(alumno);
+    if (g == null) return;
+    if (g.usaCostosMaternal) {
+      await _generarPagosEstimulacion(alumno);
+      return;
+    }
+    if (!g.generaColegiaturaAutomatica) return;
 
     final inicio = alumno.fechaIngreso;
     final plan = PagoHelpers.normalizarPlan(alumno.planPagos);
@@ -377,6 +381,17 @@ class SupabaseService {
   /// Tras editar plan/beca: recalcula colegiaturas pendientes sin abono.
   /// No toca pagos parciales ni pagados.
   Future<String?> sincronizarPagosTrasEditarAlumno(Alumno alumno) async {
+    final g = await _gradoDeAlumno(alumno);
+    if (g != null && g.usaCostosMaternal) {
+      try {
+        return await _completarPagosMaternal(alumno);
+      } catch (e) {
+        // ignore: avoid_print
+        print('completar maternal: $e');
+        return 'El niño se guardó, pero no se pudieron crear los pagos: $e';
+      }
+    }
+
     final existentes = await _supabase
         .from('pagos')
         .select('id')
@@ -425,7 +440,7 @@ class SupabaseService {
       'created_at': DateTime.now().toIso8601String(),
       'updated_at': DateTime.now().toIso8601String(),
     });
-    if (!g.muestraModuloPagos) return 0;
+    if (!g.generaColegiaturaAutomatica) return 0;
 
     final plan = PagoHelpers.normalizarPlan(alumno.planPagos);
     final descuentoFactor = (100 - alumno.becaPorcentaje.clamp(0, 100)) / 100.0;
@@ -521,13 +536,55 @@ class SupabaseService {
     return actualizados;
   }
 
-  Future<void> _generarPagosEstimulacion(Alumno alumno) async {
+  /// Niño nuevo, o uno que todavía no tiene esa parte.
+  /// No borra pagos que ya existen.
+  Future<String> _completarPagosMaternal(Alumno alumno) async {
+    final rows = await _supabase
+        .from('pagos')
+        .select('tipo_pago, concepto')
+        .eq('alumno_id', alumno.id);
+    final lista = rows as List;
+    bool insc(dynamic r) {
+      final tipo = (r['tipo_pago'] ?? '').toString();
+      final concepto = (r['concepto'] ?? '').toString().toLowerCase();
+      return tipo == 'inscripcion' || concepto.contains('inscrip');
+    }
+
+    final tieneInsc = lista.any(insc);
+    final tieneMes = lista.any((r) => (r['tipo_pago'] ?? '') == 'mensualidad');
+    final plan = alumno.planEstimulacion;
+    final quiereMeses =
+        plan == 'paquete_4' || plan == 'paquete_6' || plan == 'paquete_8';
+    if (tieneInsc && (tieneMes || !quiereMeses)) {
+      return 'Este niño ya tiene pagos. No se generaron otra vez.';
+    }
+    final n = await _generarPagosEstimulacion(
+      alumno,
+      conInscripcion: !tieneInsc,
+      conFormaDePago: quiereMeses && !tieneMes,
+    );
+    if (n == 0) {
+      return 'Este niño ya tiene pagos. No se generaron otra vez.';
+    }
+    if (!tieneInsc && quiereMeses && !tieneMes) {
+      return 'Se creó la inscripción y la forma de pago de maternal / lactante.';
+    }
+    if (!tieneInsc) {
+      return 'Se creó el pago de inscripción de maternal / lactante.';
+    }
+    return 'Se creó la forma de pago de maternal / lactante.';
+  }
+
+  Future<int> _generarPagosEstimulacion(
+    Alumno alumno, {
+    bool conInscripcion = true,
+    bool conFormaDePago = true,
+  }) async {
     final inicio = alumno.fechaIngreso;
     final descuentoFactor = (100 - alumno.becaPorcentaje.clamp(0, 100)) / 100.0;
     final anioCiclo = PagoHelpers.anioInicioCiclo(inicio);
-    final plan = alumno.planEstimulacion ?? 'sesion';
+    final plan = alumno.planEstimulacion;
 
-    var costoSesion = 350.0;
     var costoP4 = 950.0;
     var costoP6 = 1100.0;
     var costoP8 = 1150.0;
@@ -542,9 +599,6 @@ class SupabaseService {
           .limit(1)
           .maybeSingle();
       if (cfg != null) {
-        if (cfg['estim_sesion'] is num) {
-          costoSesion = (cfg['estim_sesion'] as num).toDouble();
-        }
         if (cfg['estim_paquete_4'] is num) {
           costoP4 = (cfg['estim_paquete_4'] as num).toDouble();
         }
@@ -561,25 +615,43 @@ class SupabaseService {
     } catch (_) {}
 
     final pagos = <Map<String, dynamic>>[];
-    final vencInsc = inicio.add(const Duration(days: 15));
+    final vencInsc = inicio;
+    final ya = await _supabase
+        .from('pagos')
+        .select('mes, concepto')
+        .eq('alumno_id', alumno.id);
+    final claves = <String>{
+      for (final r in ya as List)
+        '${r['mes']}|${r['concepto']}',
+    };
 
-    // Inscripción anual de estimulación (sí va en pagos de estimulación).
-    pagos.add({
-      'alumno_id': alumno.id,
-      'mes': 'Inscripción estimulación $anioCiclo',
-      'concepto': 'Inscripción anual estimulación',
-      'monto': costoInsc * descuentoFactor,
-      'monto_pagado': 0.0,
-      'fecha_vencimiento': vencInsc.toIso8601String().split('T')[0],
-      'estatus': 'pendiente',
-      'tipo_pago': 'inscripcion',
-      'anio_escolar': anioCiclo,
-    });
+    void agregar(Map<String, dynamic> row) {
+      final clave = '${row['mes']}|${row['concepto']}';
+      if (claves.contains(clave)) return;
+      claves.add(clave);
+      pagos.add(row);
+    }
 
-    if (plan == 'sesion') {
-      // Por sesión: solo inscripción; las sesiones se cargan al asistir.
-      await _supabase.from('pagos').insert(pagos);
-      return;
+    // Un solo pago de inscripción. La forma de pago (paquete) va aparte.
+    if (conInscripcion) {
+      agregar({
+        'alumno_id': alumno.id,
+        'mes': 'Inscripción maternal $anioCiclo',
+        'concepto': 'Inscripción anual maternal / lactante',
+        'monto': costoInsc * descuentoFactor,
+        'monto_pagado': 0.0,
+        'fecha_vencimiento': vencInsc.toIso8601String().split('T')[0],
+        'estatus': 'pendiente',
+        'tipo_pago': 'inscripcion',
+        'anio_escolar': anioCiclo,
+      });
+    }
+
+    final armaMeses = conFormaDePago &&
+        (plan == 'paquete_4' || plan == 'paquete_6' || plan == 'paquete_8');
+    if (!armaMeses) {
+      if (pagos.isNotEmpty) await _supabase.from('pagos').insert(pagos);
+      return pagos.length;
     }
 
     final montoMensual = plan == 'paquete_4'
@@ -600,10 +672,10 @@ class SupabaseService {
     );
     for (var i = 0; i < fechas.length; i++) {
       final f = fechas[i];
-      pagos.add({
+      agregar({
         'alumno_id': alumno.id,
         'mes': PagoHelpers.etiquetaPeriodo(f),
-        'concepto': '$etiqueta (${i + 1}/${fechas.length})',
+        'concepto': etiqueta,
         'monto': montoMensual * descuentoFactor,
         'monto_pagado': 0.0,
         'fecha_vencimiento': f.toIso8601String().split('T')[0],
@@ -613,7 +685,8 @@ class SupabaseService {
       });
     }
 
-    await _supabase.from('pagos').insert(pagos);
+    if (pagos.isNotEmpty) await _supabase.from('pagos').insert(pagos);
+    return pagos.length;
   }
 
   /// Monto de una sesión de estimulación (para cargos manuales).

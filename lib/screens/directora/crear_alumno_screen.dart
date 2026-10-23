@@ -47,6 +47,11 @@ class _CrearAlumnoScreenState extends State<CrearAlumnoScreen> {
   DateTime _fechaIngreso = DateTime.now(); // Fecha de ingreso (hoy por defecto)
   int _planPagos = 12; // Plan kínder/maternal: 10, 11 o 12
   String? _planEstimulacion; // sesion | paquete_4 | paquete_6 | paquete_8
+  double _precioSesion = 350;
+  double _precio4 = 950;
+  double _precio6 = 1100;
+  double _precio8 = 1150;
+  double _precioInscripcion = 1150;
   int _becaPorcentaje = 0; // Porcentaje de beca (0-100)
   bool _cartillaCompleta = true; // Cartilla de vacunas completa por defecto
   String? _gradoSeleccionado;
@@ -63,13 +68,18 @@ class _CrearAlumnoScreenState extends State<CrearAlumnoScreen> {
     return null;
   }
 
-  bool get _esKinderSeleccionado =>
-      _gradoSeleccionadoObj?.muestraModuloPagos ?? false;
+  bool get _generaColegiatura =>
+      _gradoSeleccionadoObj?.generaColegiaturaAutomatica ?? false;
 
-  /// Sin grado o no-kínder (maternal / estimulación): cobro por clase.
-  bool get _esCobroPorClase =>
-      _gradoSeleccionado == null ||
-      (_gradoSeleccionadoObj?.cobroPorClase ?? true);
+  bool get _usaCostosMaternal =>
+      _gradoSeleccionadoObj?.usaCostosMaternal ?? false;
+
+  String? get _planMaternalGuardado =>
+      _usaCostosMaternal ? _planEstimulacion : null;
+
+  String _money(double n) => n == n.roundToDouble()
+      ? '\$${n.toStringAsFixed(0)}'
+      : '\$${n.toStringAsFixed(2)}';
 
   @override
   void initState() {
@@ -79,11 +89,37 @@ class _CrearAlumnoScreenState extends State<CrearAlumnoScreen> {
 
   Future<void> _cargarDatos() async {
     await _cargarGrados();
+    await _cargarPreciosMaternal();
     
     // Si es edición, cargar datos del alumno
     if (widget.alumnoId != null) {
       await _cargarAlumno(widget.alumnoId!);
     }
+  }
+
+  Future<void> _cargarPreciosMaternal() async {
+    try {
+      final cfg = await Supabase.instance.client
+          .from('configuracion_costos')
+          .select(
+            'estim_sesion, estim_paquete_4, estim_paquete_6, estim_paquete_8, estim_inscripcion_anual',
+          )
+          .eq('vigente', true)
+          .order('vigencia_desde', ascending: false)
+          .limit(1)
+          .maybeSingle();
+      if (cfg == null || !mounted) return;
+      double n(dynamic v, double fallback) =>
+          v is num ? v.toDouble() : fallback;
+      setState(() {
+        _precioSesion = n(cfg['estim_sesion'], _precioSesion);
+        _precio4 = n(cfg['estim_paquete_4'], _precio4);
+        _precio6 = n(cfg['estim_paquete_6'], _precio6);
+        _precio8 = n(cfg['estim_paquete_8'], _precio8);
+        _precioInscripcion =
+            n(cfg['estim_inscripcion_anual'], _precioInscripcion);
+      });
+    } catch (_) {}
   }
 
   Future<void> _cargarGrados() async {
@@ -307,7 +343,7 @@ class _CrearAlumnoScreenState extends State<CrearAlumnoScreen> {
               ? null
               : _vacunasFaltantesController.text.trim(),
           'plan_pagos': _planPagos,
-          'plan_estimulacion': null,
+          'plan_estimulacion': _planMaternalGuardado,
           'fecha_ingreso': _fechaIngreso.toIso8601String().split('T')[0],
           'registro_incompleto': incompleto,
           'updated_at': DateTime.now().toIso8601String(),
@@ -337,7 +373,7 @@ class _CrearAlumnoScreenState extends State<CrearAlumnoScreen> {
           gradoId: _gradoSeleccionado,
           padreId: padreId,
           planPagos: _planPagos,
-          planEstimulacion: null,
+          planEstimulacion: _planMaternalGuardado,
           fechaIngreso: _fechaIngreso,
           becaPorcentaje: _becaPorcentaje,
           registroIncompleto: incompleto,
@@ -403,7 +439,7 @@ class _CrearAlumnoScreenState extends State<CrearAlumnoScreen> {
               ? null
               : _vacunasFaltantesController.text.trim(),
           planPagos: _planPagos,
-          planEstimulacion: null,
+          planEstimulacion: _planMaternalGuardado,
           fechaIngreso: _fechaIngreso,
           becaPorcentaje: _becaPorcentaje,
           registroIncompleto: incompleto,
@@ -766,23 +802,24 @@ class _CrearAlumnoScreenState extends State<CrearAlumnoScreen> {
                       onChanged: (value) {
                         setState(() {
                           _gradoSeleccionado = value;
-                          _planEstimulacion = null;
+                          if (!_usaCostosMaternal) _planEstimulacion = null;
                         });
                       },
                     ),
                     const SizedBox(height: 16),
 
                     // Plan de pagos según tipo de grado
-                    if (_esKinderSeleccionado)
+                    if (_generaColegiatura)
                       DropdownButtonFormField<int>(
                         value: _planPagos,
                         decoration: InputDecoration(
-                          labelText: 'Plan de Pagos (kínder)',
+                          labelText: 'Plan de pagos de kínder',
                           prefixIcon: const Icon(Icons.payments, color: AppColors.naranja),
                           border: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(16),
                           ),
-                          helperText: '10, 11 o 12 mensualidades (sí genera colegiaturas)',
+                          helperText:
+                              '10, 11 o 12 mensualidades. El monto sale de Costos · Kínder.',
                         ),
                         items: const [
                           DropdownMenuItem(
@@ -804,6 +841,74 @@ class _CrearAlumnoScreenState extends State<CrearAlumnoScreen> {
                           }
                         },
                         validator: (v) => v == null ? 'Selecciona el plan' : null,
+                      )
+                    else if (_usaCostosMaternal)
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(14),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFF0FDFA),
+                              borderRadius: BorderRadius.circular(16),
+                              border: Border.all(color: const Color(0xFF0F766E)),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Inscripción',
+                                  style: GoogleFonts.poppins(
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: 14,
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  'Un pago de ${_money(_precioInscripcion)}. Se crea al guardar si este niño todavía no lo tiene.',
+                                  style: GoogleFonts.poppins(fontSize: 12, height: 1.35),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          DropdownButtonFormField<String?>(
+                            value: _planEstimulacion,
+                            decoration: InputDecoration(
+                              labelText: 'Forma de pago',
+                              prefixIcon: const Icon(Icons.child_care, color: AppColors.naranja),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(16),
+                              ),
+                              helperText:
+                                  'Paquete de maternal / lactante. Si lo dejas vacío, solo se crea la inscripción.',
+                            ),
+                            items: [
+                              const DropdownMenuItem<String?>(
+                                value: null,
+                                child: Text('Sin paquete'),
+                              ),
+                              DropdownMenuItem(
+                                value: 'sesion',
+                                child: Text('1 sesión · ${_money(_precioSesion)}'),
+                              ),
+                              DropdownMenuItem(
+                                value: 'paquete_4',
+                                child: Text('4 sesiones al mes · ${_money(_precio4)}'),
+                              ),
+                              DropdownMenuItem(
+                                value: 'paquete_6',
+                                child: Text('6 sesiones al mes · ${_money(_precio6)}'),
+                              ),
+                              DropdownMenuItem(
+                                value: 'paquete_8',
+                                child: Text('8 sesiones al mes · ${_money(_precio8)}'),
+                              ),
+                            ],
+                            onChanged: (value) =>
+                                setState(() => _planEstimulacion = value),
+                          ),
+                        ],
                       )
                     else
                       Container(
@@ -827,9 +932,7 @@ class _CrearAlumnoScreenState extends State<CrearAlumnoScreen> {
                                   child: Text(
                                     _gradoSeleccionado == null
                                         ? 'Sin grado: cobro por clase'
-                                        : _gradoSeleccionadoObj?.esEstimulacion == true
-                                            ? 'Estimulación: cobro manual'
-                                            : 'Maternal / por clase',
+                                        : 'Este grupo no arma pagos solos',
                                     style: GoogleFonts.poppins(
                                       fontWeight: FontWeight.w700,
                                       fontSize: 14,
@@ -842,9 +945,7 @@ class _CrearAlumnoScreenState extends State<CrearAlumnoScreen> {
                             Text(
                               _gradoSeleccionado == null
                                   ? 'Asigna el grado para definir el plan. Mientras tanto no se generan colegiaturas automáticas.'
-                                  : _gradoSeleccionadoObj?.esEstimulacion == true
-                                      ? 'No se generan colegiaturas. El cargo se registra a mano en Pagos: por clase, 4 clases, 6 clases u 8 clases.'
-                                      : 'Este grado se cobra por clase. No se generan costos automáticos; los cargos se agregan manualmente en Pagos.',
+                                  : 'Los cargos de este grupo se agregan a mano en Pagos.',
                               style: GoogleFonts.poppins(fontSize: 12, height: 1.35),
                             ),
                           ],

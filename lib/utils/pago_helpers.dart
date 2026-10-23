@@ -207,7 +207,9 @@ class PagoHelpers {
     if (t == 'seguro') return false;
     if (t == 'inscripcion') {
       final c = (concepto ?? '').toLowerCase();
-      return c.contains('estimul');
+      return c.contains('estimul') ||
+          c.contains('maternal') ||
+          c.contains('lactante');
     }
     return true;
   }

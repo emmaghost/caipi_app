@@ -7,6 +7,8 @@ class PersonaAutorizada {
   final String telefono;
   final String? identificacion;
   final String? fotoUrl;
+  final String? fotoIneUrl;
+  final bool esListaFija;
   final bool activo;
   final DateTime createdAt;
 
@@ -19,6 +21,8 @@ class PersonaAutorizada {
     required this.telefono,
     this.identificacion,
     this.fotoUrl,
+    this.fotoIneUrl,
+    this.esListaFija = false,
     this.activo = true,
     required this.createdAt,
   });
@@ -35,6 +39,8 @@ class PersonaAutorizada {
       telefono: json['telefono'] as String? ?? '',
       identificacion: json['identificacion'] as String?,
       fotoUrl: json['foto_url'] as String?,
+      fotoIneUrl: json['foto_ine_url'] as String?,
+      esListaFija: json['es_lista_fija'] as bool? ?? false,
       activo: json['activo'] as bool? ?? true,
       createdAt: DateTime.tryParse(json['created_at']?.toString() ?? '') ?? DateTime.now(),
     );

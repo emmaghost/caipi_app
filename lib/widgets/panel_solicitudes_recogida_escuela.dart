@@ -3,7 +3,6 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
@@ -41,6 +40,7 @@ class PanelSolicitudesRecogidaEscuela extends StatefulWidget {
 class _PanelSolicitudesRecogidaEscuelaState
     extends State<PanelSolicitudesRecogidaEscuela> {
   Set<String>? _alumnosDelGrado; // null = sin filtro
+  final Set<String> _resueltas = {};
   late final SolicitudRecogidaService _service;
 
   @override
@@ -113,6 +113,7 @@ class _PanelSolicitudesRecogidaEscuelaState
               .where((s) => _alumnosDelGrado!.contains(s.alumnoId))
               .toList();
         }
+        lista = lista.where((s) => !_resueltas.contains(s.id)).toList();
         if (lista.isEmpty) {
           if (!widget.mostrarVacio) return const SizedBox.shrink();
           return Padding(
@@ -178,6 +179,10 @@ class _PanelSolicitudesRecogidaEscuelaState
                       key: ValueKey(s.id),
                       solicitud: s,
                       service: _service,
+                      onResuelta: () {
+                        if (!mounted) return;
+                        setState(() => _resueltas.add(s.id));
+                      },
                     ),
                   ),
                 ],
@@ -193,20 +198,50 @@ class _PanelSolicitudesRecogidaEscuelaState
 class _FilaSolicitud extends StatefulWidget {
   final SolicitudRecogida solicitud;
   final SolicitudRecogidaService service;
+  final VoidCallback onResuelta;
 
   const _FilaSolicitud({
     super.key,
     required this.solicitud,
     required this.service,
+    required this.onResuelta,
   });
 
   @override
   State<_FilaSolicitud> createState() => _FilaSolicitudState();
 }
 
+class _PersonaCotejo {
+  final String id;
+  final String nombre;
+  final String parentesco;
+  final String foto;
+  final bool esQuienViene;
+
+  const _PersonaCotejo({
+    required this.id,
+    required this.nombre,
+    required this.parentesco,
+    required this.foto,
+    required this.esQuienViene,
+  });
+}
+
+class _DatosAviso {
+  final String alumno;
+  final String padre;
+  final List<_PersonaCotejo> lista;
+
+  const _DatosAviso({
+    required this.alumno,
+    required this.padre,
+    required this.lista,
+  });
+}
+
 class _FilaSolicitudState extends State<_FilaSolicitud> {
   bool _procesando = false;
-  late Future<Map<String, String>> _nombresFuture;
+  late Future<_DatosAviso> _nombresFuture;
 
   @override
   void initState() {
@@ -224,7 +259,7 @@ class _FilaSolicitudState extends State<_FilaSolicitud> {
     }
   }
 
-  Future<Map<String, String>> _nombres() async {
+  Future<_DatosAviso> _nombres() async {
     final client = Supabase.instance.client;
     final alumno = await client
         .from('alumnos')
@@ -233,7 +268,7 @@ class _FilaSolicitudState extends State<_FilaSolicitud> {
         .maybeSingle();
     final padre = await client
         .from('usuarios')
-        .select('nombre, apellidos')
+        .select('nombre, apellidos, foto_url')
         .eq('id', widget.solicitud.padreId)
         .maybeSingle();
 
@@ -244,103 +279,214 @@ class _FilaSolicitudState extends State<_FilaSolicitud> {
       return a != null && a.isNotEmpty ? '$n $a' : n;
     }
 
-    return {
-      'alumno': fmt(alumno),
-      'padre': fmt(padre),
-    };
+    final quienId = widget.solicitud.personaAutorizadaId;
+    final lista = <_PersonaCotejo>[];
+    try {
+      final rows = await client
+          .from('personas_autorizadas')
+          .select('id, nombre, parentesco, foto_ine_url, foto_url')
+          .eq('alumno_id', widget.solicitud.alumnoId)
+          .eq('es_lista_fija', true);
+      for (final raw in rows as List) {
+        final p = Map<String, dynamic>.from(raw as Map);
+        final id = p['id'] as String? ?? '';
+        final ine = (p['foto_ine_url'] as String?)?.trim() ?? '';
+        final otra = (p['foto_url'] as String?)?.trim() ?? '';
+        lista.add(
+          _PersonaCotejo(
+            id: id,
+            nombre: (p['nombre'] as String? ?? '').trim(),
+            parentesco: (p['parentesco'] as String? ?? '').trim(),
+            foto: ine.isNotEmpty ? ine : otra,
+            esQuienViene: quienId != null && quienId.isNotEmpty && quienId == id,
+          ),
+        );
+      }
+    } catch (_) {}
+
+    final fotoPadre = (padre?['foto_url'] as String?)?.trim() ?? '';
+    if ((quienId == null || quienId.isEmpty) &&
+        !widget.solicitud.requiereCodigo &&
+        fotoPadre.isNotEmpty) {
+      lista.insert(
+        0,
+        _PersonaCotejo(
+          id: widget.solicitud.padreId,
+          nombre: fmt(padre),
+          parentesco: 'Papá/mamá',
+          foto: fotoPadre,
+          esQuienViene: true,
+        ),
+      );
+    }
+
+    lista.sort((a, b) {
+      if (a.esQuienViene == b.esQuienViene) return 0;
+      return a.esQuienViene ? -1 : 1;
+    });
+
+    return _DatosAviso(
+      alumno: fmt(alumno),
+      padre: fmt(padre),
+      lista: lista,
+    );
   }
 
-  Future<void> _mostrarOpcionesEntrega(String nombrePadre) async {
-    if (_procesando) return;
-    var notificarPadres = true;
-    final nPadres = await NotificacionEntregaService()
-        .contarPadresDeAlumno(widget.solicitud.alumnoId);
-    if (!mounted) return;
-    final labelPadres = nPadres >= 2
-        ? 'Notificar a los 2 padres/tutores'
-        : nPadres == 1
-            ? 'Notificar al padre/tutor'
-            : 'Notificar a padres (si hay vinculados)';
-
-    final opcion = await showModalBottomSheet<String>(
+  void _abrirFoto(String url, String detalle) {
+    showDialog<void>(
       context: context,
-      showDragHandle: true,
-      isScrollControlled: true,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setModal) => SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
+      builder: (ctx) {
+        final alto = MediaQuery.sizeOf(ctx).height * 0.82;
+        final ancho = MediaQuery.sizeOf(ctx).width;
+        return Dialog(
+          insetPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 24),
+          backgroundColor: Colors.black,
+          child: SizedBox(
+            width: ancho,
+            height: alto,
+            child: Stack(
               children: [
-                Text(
-                  '¿Cómo se entrega?',
-                  style: GoogleFonts.fredoka(fontSize: 18),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  'Elige si lo recogió el papá/mamá o alguien con código QR.',
-                  style: GoogleFonts.poppins(fontSize: 13, color: AppColors.gris),
-                ),
-                const SizedBox(height: 12),
-                SwitchListTile(
-                  contentPadding: EdgeInsets.zero,
-                  secondary: Icon(
-                    notificarPadres
-                        ? Icons.notifications_active
-                        : Icons.notifications_off_outlined,
-                    color: notificarPadres ? AppColors.verde : AppColors.gris,
-                  ),
-                  title: Text(
-                    labelPadres,
-                    style: GoogleFonts.poppins(
-                      fontWeight: FontWeight.w600,
-                      fontSize: 14,
+                Positioned.fill(
+                  child: InteractiveViewer(
+                    minScale: 1,
+                    maxScale: 4,
+                    child: Center(
+                      child: Image.network(
+                        url,
+                        fit: BoxFit.contain,
+                        errorBuilder: (_, __, ___) => const Padding(
+                          padding: EdgeInsets.all(24),
+                          child: Text(
+                            'No se pudo abrir la foto',
+                            style: TextStyle(color: Colors.white),
+                          ),
+                        ),
+                      ),
                     ),
                   ),
-                  subtitle: Text(
-                    notificarPadres
-                        ? 'Se enviará push a ${nPadres >= 2 ? 'ambos tutores' : 'el tutor'} con la fecha del día'
-                        : 'No se avisará a los padres (sí a maestra del grupo)',
-                    style: GoogleFonts.poppins(fontSize: 12),
+                ),
+                Positioned(
+                  top: 4,
+                  right: 4,
+                  child: IconButton(
+                    onPressed: () => Navigator.pop(ctx),
+                    icon: const Icon(Icons.close, color: Colors.white),
                   ),
-                  value: notificarPadres,
-                  activeColor: AppColors.verde,
-                  onChanged: (v) => setModal(() => notificarPadres = v),
                 ),
-                const Divider(),
-                ListTile(
-                  leading: const Icon(Icons.family_restroom, color: AppColors.verde),
-                  title: const Text('Entregado al papá / mamá'),
-                  subtitle: Text(nombrePadre),
-                  onTap: () => Navigator.pop(ctx, 'padre'),
-                ),
-                ListTile(
-                  leading: const Icon(Icons.qr_code_2, color: AppColors.azulOscuro),
-                  title: const Text('Entregado con QR'),
-                  subtitle: const Text('Validar código de 8 caracteres'),
-                  onTap: () => Navigator.pop(ctx, 'qr'),
-                ),
-                ListTile(
-                  leading: Icon(Icons.delete_outline, color: Colors.red.shade700),
-                  title: const Text('Equivocación: quitar solicitud'),
-                  subtitle: const Text('Borra este aviso (sin histórico)'),
-                  onTap: () => Navigator.pop(ctx, 'borrar'),
+                Positioned(
+                  left: 12,
+                  right: 48,
+                  bottom: 12,
+                  child: Text(
+                    detalle,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
                 ),
               ],
             ),
           ),
-        ),
+        );
+      },
+    );
+  }
+
+  Widget _fotoCotejo(_PersonaCotejo p) {
+    final detalle = p.parentesco.isEmpty ? p.nombre : '${p.nombre} · ${p.parentesco}';
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            p.esQuienViene ? 'Coteja con esta foto' : 'Foto de la lista',
+            style: GoogleFonts.poppins(fontSize: 12, fontWeight: FontWeight.w700),
+          ),
+          Text(
+            detalle,
+            style: GoogleFonts.poppins(fontSize: 13, color: const Color(0xFF4A3F55)),
+          ),
+          const SizedBox(height: 6),
+          GestureDetector(
+            onTap: () => _abrirFoto(p.foto, detalle),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: Image.network(
+                p.foto,
+                height: 220,
+                width: double.infinity,
+                fit: BoxFit.contain,
+                errorBuilder: (_, __, ___) => Text(
+                  'No se pudo abrir la foto de $detalle',
+                  style: GoogleFonts.poppins(fontSize: 12, color: AppColors.rojo),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Toca la foto para verla grande',
+            style: GoogleFonts.poppins(fontSize: 11, color: AppColors.gris),
+          ),
+        ],
       ),
     );
-    if (opcion == null || !mounted) return;
-    if (opcion == 'padre') {
-      await _entregarAlPadre(nombrePadre, notificarPadres: notificarPadres);
-    } else if (opcion == 'qr') {
-      await _entregarConQr(notificarPadres: notificarPadres);
-    } else if (opcion == 'borrar') {
-      await _borrarSolicitud();
+  }
+
+  Future<void> _avisarNoCoincide() async {
+    final user = context.read<AuthService>().currentUser;
+    if (user == null) return;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('No se parece'),
+        content: const Text(
+          'No se entrega al niño. Se avisa al papá para que genere un código.',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Avisar al papá')),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    setState(() => _procesando = true);
+    try {
+      await widget.service.marcarNoCoincide(
+        solicitudId: widget.solicitud.id,
+        atendidaPorId: user.id,
+      );
+      try {
+        final quien = widget.solicitud.quienVaTexto;
+        await Supabase.instance.client.functions.invoke(
+          'notify-chat',
+          body: {
+            'title': 'No entregamos al niño',
+            'body': quien.isEmpty
+                ? 'La persona de la puerta no coincide. Genera un código para autorizar la salida.'
+                : 'Quien está en la puerta no se parece a $quien. Genera un código para autorizar la salida.',
+            'usuario_ids': [widget.solicitud.padreId],
+          },
+        );
+      } catch (_) {}
+      if (!mounted) return;
+      widget.onResuelta();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No se entregó. El papá ya puede generar el código.'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error: $e'), backgroundColor: AppColors.rojo),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _procesando = false);
     }
   }
 
@@ -370,6 +516,7 @@ class _FilaSolicitudState extends State<_FilaSolicitud> {
         notificarPadres: notificarPadres,
       );
       if (!mounted) return;
+      widget.onResuelta();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
@@ -509,6 +656,7 @@ class _FilaSolicitudState extends State<_FilaSolicitud> {
         notificarPadres: notificarPadres,
       );
       if (!mounted) return;
+      widget.onResuelta();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
@@ -560,6 +708,7 @@ class _FilaSolicitudState extends State<_FilaSolicitud> {
     setState(() => _procesando = true);
     try {
       await widget.service.borrar(widget.solicitud.id);
+      if (mounted) widget.onResuelta();
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -616,11 +765,26 @@ class _FilaSolicitudState extends State<_FilaSolicitud> {
   Widget build(BuildContext context) {
     final hora = MexicoTime.fechaHora(widget.solicitud.createdAt);
 
-    return FutureBuilder<Map<String, String>>(
+    return FutureBuilder<_DatosAviso>(
       future: _nombresFuture,
       builder: (context, snap) {
-        final alumno = snap.data?['alumno'] ?? '…';
-        final padre = snap.data?['padre'] ?? '…';
+        final datos = snap.data;
+        final alumno = datos?.alumno ?? '…';
+        final padre = datos?.padre ?? '…';
+        final lista = datos?.lista ?? const <_PersonaCotejo>[];
+        final s = widget.solicitud;
+        final quien = s.quienVaTexto.isEmpty ? padre : s.quienVaTexto;
+        final pideCodigo = s.requiereCodigo;
+        final conFoto = lista.where((p) => p.foto.isNotEmpty).toList();
+        final sinFoto = lista.where((p) => p.foto.isEmpty).toList();
+        final vieneConFoto = lista.any((p) => p.esQuienViene && p.foto.isNotEmpty);
+        final texto = pideCodigo
+            ? 'No es de la lista. Pide el código antes de entregar.'
+            : vieneConFoto
+                ? 'Va por él: $quien. Coteja con la foto de abajo. Si no se parece, no lo entregues.'
+                : conFoto.isNotEmpty
+                    ? 'Va por él: $quien. Abajo están las fotos que ya están en la lista de este niño.'
+                    : 'Va por él: $quien. Este niño no tiene foto en la lista para cotejar.';
 
         return Container(
           margin: const EdgeInsets.only(bottom: 8),
@@ -629,54 +793,87 @@ class _FilaSolicitudState extends State<_FilaSolicitud> {
             color: Colors.white,
             borderRadius: BorderRadius.circular(10),
           ),
-          child: Row(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+              Text(
+                alumno,
+                style: GoogleFonts.poppins(
+                  fontWeight: FontWeight.w700,
+                  fontSize: 15,
+                ),
+              ),
+              Text(
+                'Aviso de $padre · $hora',
+                style: GoogleFonts.poppins(fontSize: 12, color: AppColors.gris),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                texto,
+                style: GoogleFonts.poppins(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: pideCodigo ? const Color(0xFF9A3412) : const Color(0xFF166534),
+                ),
+              ),
+              const SizedBox(height: 8),
+              if (snap.connectionState == ConnectionState.waiting)
+                const LinearProgressIndicator()
+              else if (conFoto.isEmpty && lista.isEmpty)
+                Text(
+                  'Este niño no tiene personas en la lista. No hay foto para cotejar.',
+                  style: GoogleFonts.poppins(fontSize: 12, color: AppColors.gris),
+                )
+              else
+                for (final p in conFoto) _fotoCotejo(p),
+              for (final p in sinFoto)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 4),
+                  child: Text(
+                    '${p.nombre.isEmpty ? 'Persona de la lista' : p.nombre} está registrada, sin foto.',
+                    style: GoogleFonts.poppins(fontSize: 12, color: AppColors.gris),
+                  ),
+                ),
+              const SizedBox(height: 8),
+              if (!pideCodigo)
+                Row(
                   children: [
-                    Text(
-                      alumno,
-                      style: GoogleFonts.poppins(
-                        fontWeight: FontWeight.w700,
-                        fontSize: 15,
+                    Expanded(
+                      child: FilledButton(
+                        onPressed: _procesando
+                            ? null
+                            : () => _entregarAlPadre(quien, notificarPadres: true),
+                        style: FilledButton.styleFrom(backgroundColor: AppColors.verde),
+                        child: const Text('Sí, se lo entregué'),
                       ),
                     ),
-                    Text(
-                      'Padre: $padre · $hora',
-                      style: GoogleFonts.poppins(
-                        fontSize: 12,
-                        color: AppColors.gris,
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: _procesando ? null : _avisarNoCoincide,
+                        child: const Text('No se parece'),
                       ),
                     ),
                   ],
                 ),
+              if (!pideCodigo) const SizedBox(height: 8),
+              OutlinedButton.icon(
+                onPressed: _procesando ? null : () => _entregarConQr(notificarPadres: true),
+                icon: const Icon(Icons.qr_code_2),
+                label: const Text('Entregar con código'), // visible también si viene el papá
               ),
-              FilledButton(
-                onPressed: _procesando
-                    ? null
-                    : () async {
-                        // Nombre fresco del papá de ESTA solicitud (no de otra fila).
-                        final nombres = await _nombres();
-                        if (!mounted) return;
-                        await _mostrarOpcionesEntrega(nombres['padre'] ?? 'Tutor');
-                      },
-                style: FilledButton.styleFrom(
-                  backgroundColor: AppColors.verde,
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              Align(
+                alignment: Alignment.centerRight,
+                child: TextButton(
+                  onPressed: _procesando ? null : _borrarSolicitud,
+                  child: const Text('Quitar aviso'),
                 ),
-                child: _procesando
-                    ? const SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: Colors.white,
-                        ),
-                      )
-                    : const Text('Entregar'),
               ),
+              if (_procesando)
+                const Padding(
+                  padding: EdgeInsets.only(top: 8),
+                  child: LinearProgressIndicator(),
+                ),
             ],
           ),
         );

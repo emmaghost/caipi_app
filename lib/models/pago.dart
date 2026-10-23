@@ -131,7 +131,7 @@ class Pago {
       case 'inscripcion':
         return 'Inscripción';
       case 'mensualidad':
-        return 'Colegiatura';
+        return esPaqueteSesiones ? 'Paquete' : 'Colegiatura';
       case 'seguro':
         return 'Seguro';
       case 'extracurricular':
@@ -141,6 +141,20 @@ class Pago {
       default:
         return tipoPago ?? 'Pago';
     }
+  }
+
+  /// Paquete de sesiones de maternal o lactante. Cada mes es el pago completo.
+  bool get esPaqueteSesiones {
+    final c = (concepto ?? '').toLowerCase();
+    return c.contains('paquete') && c.contains('sesion');
+  }
+
+  /// El contador (1/10) no va en el paquete: no es una parcialidad.
+  String get conceptoVisible {
+    final c = (concepto ?? '').trim();
+    if (c.isEmpty) return 'Sin concepto';
+    if (!esPaqueteSesiones) return c;
+    return c.replaceFirst(RegExp(r'\s*\(\d+\s*/\s*\d+\)\s*$'), '');
   }
 
   /// Descripción legible del cargo (tipo + periodo/concepto).

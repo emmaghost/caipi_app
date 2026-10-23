@@ -71,45 +71,32 @@ class PersonasAutorizadasPadreScreen extends StatelessWidget {
           }
 
           final personas = snapshot.data ?? [];
+          final fijas = personas.where((p) => p['es_lista_fija'] == true).toList();
+          final otras = personas.where((p) => p['es_lista_fija'] != true).toList();
 
-          if (personas.isEmpty) {
-            return Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(
-                    Icons.person_add_outlined,
-                    size: 80,
-                    color: AppColors.gris.withOpacity(0.5),
-                  ),
-                  const SizedBox(height: 16),
-                  Text(
-                    'No hay personas autorizadas',
-                    style: GoogleFonts.poppins(
-                      fontSize: 18,
-                      color: AppColors.gris,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Presiona + para agregar una',
-                    style: GoogleFonts.poppins(
-                      fontSize: 14,
-                      color: AppColors.gris,
-                    ),
-                  ),
-                ],
-              ),
-            );
-          }
-
-          return ListView.builder(
+          return ListView(
             padding: const EdgeInsets.all(20),
-            itemCount: personas.length,
-            itemBuilder: (context, index) {
-              final persona = personas[index];
-              return _buildPersonaCard(context, persona);
-            },
+            children: [
+              _seccionListaFija(context, fijas),
+              const SizedBox(height: 18),
+              Text(
+                'Autorizar con código',
+                style: GoogleFonts.poppins(fontSize: 18, fontWeight: FontWeight.w700),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Si va alguien que no eres tú ni está en la lista de arriba, genera un código. La escuela no entrega al niño sin ese código.',
+                style: GoogleFonts.poppins(fontSize: 13, color: AppColors.gris),
+              ),
+              const SizedBox(height: 12),
+              if (otras.isEmpty)
+                Text(
+                  'Todavía no hay códigos. Presiona + para autorizar a alguien más.',
+                  style: GoogleFonts.poppins(fontSize: 14, color: AppColors.gris),
+                )
+              else
+                ...otras.map((p) => _buildPersonaCard(context, p)),
+            ],
           );
         },
       ),
@@ -148,7 +135,102 @@ class PersonasAutorizadasPadreScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildPersonaCard(BuildContext context, Map<String, dynamic> persona) {
+  Widget _seccionListaFija(BuildContext context, List<Map<String, dynamic>> fijas) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          'Quién puede recoger a $alumnoNombre',
+          style: GoogleFonts.poppins(fontSize: 18, fontWeight: FontWeight.w700),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          'Esta lista la carga la escuela, por este niño. Tú solo la ves. Si hay que cambiarla, pide el cambio y ve a la escuela con los papeles.',
+          style: GoogleFonts.poppins(fontSize: 13, color: AppColors.gris),
+        ),
+        const SizedBox(height: 12),
+        if (fijas.isEmpty)
+          Text(
+            'La escuela todavía no carga personas para este niño. Si vas tú, no hace falta código. Si va otra persona, genera un código abajo.',
+            style: GoogleFonts.poppins(fontSize: 14, color: AppColors.gris),
+          )
+        else
+          ...fijas.map((p) => _buildPersonaCard(context, p, soloLectura: true)),
+        const SizedBox(height: 4),
+        OutlinedButton.icon(
+          onPressed: () => _solicitarCambio(context),
+          icon: const Icon(Icons.campaign_outlined),
+          label: const Text('Solicitar cambio'),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _solicitarCambio(BuildContext context) async {
+    final padreId = Supabase.instance.client.auth.currentUser?.id;
+    if (padreId == null) return;
+    final nota = TextEditingController();
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Solicitar cambio'),
+        content: TextField(
+          controller: nota,
+          maxLines: 3,
+          decoration: const InputDecoration(
+            hintText: 'Qué persona hay que cambiar (opcional)',
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Avisar')),
+        ],
+      ),
+    );
+    if (ok != true || !context.mounted) return;
+    try {
+      await Supabase.instance.client.from('solicitudes_cambio_recogida').insert({
+        'alumno_id': alumnoId,
+        'padre_id': padreId,
+        'mensaje': nota.text.trim().isEmpty ? null : nota.text.trim(),
+      });
+      try {
+        final dirs = await Supabase.instance.client
+            .from('usuarios')
+            .select('id')
+            .eq('rol', 'directora');
+        final ids = (dirs as List).map((r) => r['id'] as String).toList();
+        if (ids.isNotEmpty) {
+          await Supabase.instance.client.functions.invoke(
+            'notify-chat',
+            body: {
+              'title': 'Cambio de recogida',
+              'body': 'Un papá pide cambiar quién puede recoger a $alumnoNombre. Tiene que ir a la escuela con los papeles.',
+              'usuario_ids': ids,
+            },
+          );
+        }
+      } catch (_) {}
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Aviso enviado. Ve a la escuela con los papeles para que la directora lo cambie.'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } catch (e) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('No se pudo avisar: $e')),
+      );
+    }
+  }
+
+  Widget _buildPersonaCard(
+    BuildContext context,
+    Map<String, dynamic> persona, {
+    bool soloLectura = false,
+  }) {
     return Card(
       margin: const EdgeInsets.only(bottom: 16),
       shape: RoundedRectangleBorder(
@@ -281,38 +363,39 @@ class PersonasAutorizadasPadreScreen extends StatelessWidget {
                       ],
                     ),
                   ),
-                  Column(
-                    children: [
-                      Container(
-                        decoration: BoxDecoration(
-                          color: AppColors.morado.withOpacity(0.15),
-                          borderRadius: BorderRadius.circular(10),
+                  if (!soloLectura)
+                    Column(
+                      children: [
+                        Container(
+                          decoration: BoxDecoration(
+                            color: AppColors.morado.withOpacity(0.15),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: IconButton(
+                            icon: const Icon(Icons.edit, color: Color(0xFF7B1FA2), size: 24),
+                            onPressed: () => _mostrarDialogoEditar(context, persona),
+                            tooltip: 'Editar',
+                          ),
                         ),
-                        child: IconButton(
-                          icon: const Icon(Icons.edit, color: Color(0xFF7B1FA2), size: 24),
-                          onPressed: () => _mostrarDialogoEditar(context, persona),
-                          tooltip: 'Editar',
+                        const SizedBox(height: 8),
+                        Container(
+                          decoration: BoxDecoration(
+                            color: Colors.red.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: IconButton(
+                            icon: const Icon(Icons.delete, color: Colors.red, size: 24),
+                            onPressed: () => _eliminarPersona(context, persona['id']),
+                            tooltip: 'Eliminar',
+                          ),
                         ),
-                      ),
-                      const SizedBox(height: 8),
-                      Container(
-                        decoration: BoxDecoration(
-                          color: Colors.red.withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: IconButton(
-                          icon: const Icon(Icons.delete, color: Colors.red, size: 24),
-                          onPressed: () => _eliminarPersona(context, persona['id']),
-                          tooltip: 'Eliminar',
-                        ),
-                      ),
-                    ],
-                  ),
+                      ],
+                    ),
                 ],
               ),
             ),
           
-          // Botón para generar QR temporal (MEJORADO)
+          if (!soloLectura)
           Container(
             width: double.infinity,
             margin: const EdgeInsets.all(12),

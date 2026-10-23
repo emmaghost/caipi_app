@@ -60,7 +60,7 @@ class _PagosPadreScreenState extends State<PagosPadreScreen> {
           .eq('id', gid)
           .maybeSingle();
       final ok = gRow != null &&
-          Grado.fromJson(Map<String, dynamic>.from(gRow)).muestraModuloPagos;
+          Grado.fromJson(Map<String, dynamic>.from(gRow)).muestraPagosAlPadre;
       if (mounted) setState(() => _puedeVerPagos = ok);
     } catch (_) {
       if (mounted) setState(() => _puedeVerPagos = false);
@@ -350,7 +350,7 @@ class _PagosPadreScreenState extends State<PagosPadreScreen> {
       child: ListTile(
         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         title: Text(
-          pago.concepto ?? 'Concepto',
+          pago.conceptoVisible,
           style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
         ),
         subtitle: Column(

@@ -237,7 +237,7 @@ class DetalleHijoScreen extends StatelessWidget {
                 future: _cargarGrado(alumno.gradoId),
                 builder: (context, gradoSnap) {
                   final muestraPagos =
-                      gradoSnap.data?.muestraModuloPagos == true;
+                      gradoSnap.data?.muestraPagosAlPadre == true;
                   return StreamBuilder<List<Map<String, dynamic>>>(
                     stream: Supabase.instance.client
                         .from('incidentes')

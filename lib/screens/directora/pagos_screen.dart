@@ -558,10 +558,11 @@ class _PagosScreenState extends State<PagosScreen> with SingleTickerProviderStat
   bool get _directoraVeMaternal =>
       context.read<AuthService>().currentUser?.esDirectora == true;
 
-  /// Kínder 1–3 para todos. Maternal y estimulación solo si es la directora.
+  /// Caja: solo Kínder 1–3. Directora: cualquier grupo activo, incluido
+  /// uno recién creado de maternal o lactante aunque el nombre no diga eso.
   bool _gradoEntraEnPagos(Grado g) {
-    if (g.muestraModuloPagos) return true;
-    return _directoraVeMaternal && g.esMaternalOBebes;
+    if (_directoraVeMaternal) return true;
+    return g.muestraModuloPagos;
   }
 
   Set<String> _alumnoIdsModuloPagos(List<Alumno> alumnos, List<Grado> grados) {
@@ -591,7 +592,7 @@ class _PagosScreenState extends State<PagosScreen> with SingleTickerProviderStat
   }
 
   String get _etiquetaTodosGrados => _directoraVeMaternal
-      ? 'Todos (Kínder, maternal y estimulación)'
+      ? 'Todos los grupos'
       : 'Todos (Kínder 1–3)';
 
   String _etiquetaEstadoFiltroCorto() {
@@ -741,8 +742,8 @@ class _PagosScreenState extends State<PagosScreen> with SingleTickerProviderStat
                       Expanded(
                         child: Text(
                           usuario?.esDirectora == true
-                              ? 'Ves Kínder, maternal y estimulación. Estimulación se cobra a mano (por clase, 4, 6 u 8). Caja solo ve Kínder.'
-                              : 'Pagos solo de Kínder 1, 2 y 3 (maternal y estimulación no aparecen en caja).',
+                              ? 'Ves todos los grupos. Kínder usa colegiatura de 10, 11 o 12 meses. Maternal y lactante usan el paquete de sesiones. Caja solo ve Kínder.'
+                              : 'Pagos solo de Kínder 1, 2 y 3 (maternal, lactante y estimulación no aparecen en caja).',
                           style: GoogleFonts.poppins(
                             fontSize: 12,
                             color: AppColors.azulOscuro,
@@ -787,6 +788,8 @@ class _PagosScreenState extends State<PagosScreen> with SingleTickerProviderStat
                           const SizedBox(height: 6),
                           DropdownButtonFormField<String?>(
                             value: _filtroGradoId,
+                            isExpanded: true,
+                            menuMaxHeight: 360,
                             decoration: InputDecoration(
                               isDense: true,
                               contentPadding:
@@ -2079,7 +2082,7 @@ class _PagosScreenState extends State<PagosScreen> with SingleTickerProviderStat
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        pago.concepto ?? 'Sin concepto',
+                        pago.conceptoVisible,
                         style: GoogleFonts.poppins(
                           fontSize: 16,
                           fontWeight: FontWeight.w700,

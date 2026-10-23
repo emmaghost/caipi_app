@@ -106,6 +106,26 @@ class StorageService {
     }
   }
 
+  /// Fotocopia de INE. Opcional: solo la ven maestra y directora al entregar.
+  Future<String?> subirFotoIne(File file, String alumnoId, String personaId) async {
+    try {
+      final bytes = await file.readAsBytes();
+      final fileName = 'ine/$alumnoId/$personaId.jpg';
+      await _supabase.storage.from('fotos').uploadBinary(
+            fileName,
+            bytes,
+            fileOptions: const FileOptions(
+              upsert: true,
+              contentType: 'image/jpeg',
+            ),
+          );
+      return _supabase.storage.from('fotos').getPublicUrl(fileName);
+    } catch (e) {
+      print('Error subiendo INE: $e');
+      return null;
+    }
+  }
+
   // Eliminar archivo
   Future<void> eliminarArchivo(String path) async {
     try {

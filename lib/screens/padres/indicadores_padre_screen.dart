@@ -13,6 +13,7 @@ import '../../services/portage_service.dart';
 import '../../services/supabase_service.dart';
 import '../../utils/portage_stats.dart';
 import '../../widgets/caipi_app_bar_leading.dart';
+import '../../widgets/edad_nino_banner.dart';
 import '../../widgets/portage_line_chart.dart';
 
 /// Hub: elige hijo para ver indicadores (entrada desde el menú).
@@ -174,11 +175,12 @@ class _IndicadoresPadreScreenState extends State<IndicadoresPadreScreen> {
   PortageEvaluacion? get _evalMostrada {
     final id = _evalIdSel;
     if (id != null) {
-      for (final e in _evalsCalificadas) {
+      for (final e in _evalsDeLista) {
         if (e.id == id) return e;
       }
     }
-    return _evalsCalificadas.isEmpty ? null : _evalsCalificadas.first;
+    if (_evalsCalificadas.isNotEmpty) return _evalsCalificadas.first;
+    return _evalsDeLista.isEmpty ? null : _evalsDeLista.first;
   }
 
   PortageEvaluacion? get _ultima =>
@@ -356,8 +358,8 @@ class _IndicadoresPadreScreenState extends State<IndicadoresPadreScreen> {
           break;
         }
       }
-      _listaIdSel = listaSel;
-      await _aplicarDetalle(_ultima);
+      _listaIdSel = listaSel ?? (evals.isEmpty ? null : evals.first.listaId);
+      await _aplicarDetalle(_evalMostrada);
 
       if (!mounted) return;
       setState(() {
@@ -378,8 +380,6 @@ class _IndicadoresPadreScreenState extends State<IndicadoresPadreScreen> {
   ) {
     final map = <String, List<PortageIndicador>>{};
     for (final i in inds) {
-      final r = _resDetalle[i.id];
-      if (r == null || r.sinCalificar) continue;
       final key = (i.area == null || i.area!.trim().isEmpty)
           ? 'General'
           : i.area!;
@@ -424,6 +424,13 @@ class _IndicadoresPadreScreenState extends State<IndicadoresPadreScreen> {
                         padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
                         children: [
                           _heroHijo(),
+                          if (_alumno != null) ...[
+                            const SizedBox(height: 12),
+                            EdadNinoBanner(
+                              nombre: _alumno!.nombreCompleto,
+                              nacimiento: _alumno!.fechaNacimiento,
+                            ),
+                          ],
                           const SizedBox(height: 16),
                           if (_alumno != null &&
                               !_alumno!.portageVisiblePadre)
@@ -755,12 +762,22 @@ class _IndicadoresPadreScreenState extends State<IndicadoresPadreScreen> {
           '${_listaNombre.isNotEmpty ? ' · $_listaNombre' : ''}',
           style: GoogleFonts.poppins(fontSize: 12, color: AppColors.gris),
         ),
+        const SizedBox(height: 8),
+        Text(
+          'Salen todos los hitos, también los que la escuela aún no califica. '
+          'Esos pueden practicarlos en casa. La maestra los marca cuando los vea.',
+          style: GoogleFonts.poppins(
+            fontSize: 12,
+            height: 1.35,
+            color: AppColors.gris,
+          ),
+        ),
         const SizedBox(height: 10),
         if (areas.isEmpty)
           _estadoCard(
             Icons.info_outline,
             'Sin detalle',
-            'El seguimiento existe pero no hay indicadores calificados.',
+            'El seguimiento existe pero todavía no tiene indicadores.',
           )
         else
           ...areas.entries.map((e) {
@@ -789,7 +806,14 @@ class _IndicadoresPadreScreenState extends State<IndicadoresPadreScreen> {
                   ),
                   children: e.value.map((ind) {
                     final r = _resDetalle[ind.id];
+                    final sin = r == null || r.sinCalificar;
                     final logrado = PortageEstado.isLogrado(r?.estado);
+                    final color = sin
+                        ? AppColors.morado
+                        : (logrado ? AppColors.exitoPago : Colors.orange.shade800);
+                    final etiqueta = sin
+                        ? 'Para practicar en casa'
+                        : PortageEstado.etiqueta(r.estado);
                     return ListTile(
                       dense: true,
                       title: Text(
@@ -797,8 +821,12 @@ class _IndicadoresPadreScreenState extends State<IndicadoresPadreScreen> {
                         style: GoogleFonts.poppins(fontSize: 13),
                       ),
                       subtitle: Text(
-                        PortageEstado.etiqueta(r?.estado),
-                        style: GoogleFonts.poppins(fontSize: 12),
+                        etiqueta,
+                        style: GoogleFonts.poppins(
+                          fontSize: 12,
+                          color: sin ? AppColors.morado : null,
+                          fontWeight: sin ? FontWeight.w600 : FontWeight.w400,
+                        ),
                       ),
                       trailing: Container(
                         padding: const EdgeInsets.symmetric(
@@ -806,17 +834,14 @@ class _IndicadoresPadreScreenState extends State<IndicadoresPadreScreen> {
                           vertical: 4,
                         ),
                         decoration: BoxDecoration(
-                          color: (logrado ? AppColors.exitoPago : Colors.orange)
-                              .withOpacity(0.15),
+                          color: color.withOpacity(0.15),
                           borderRadius: BorderRadius.circular(8),
                         ),
                         child: Text(
-                          PortageEstado.simbolo(r?.estado),
+                          sin ? 'Casa' : PortageEstado.simbolo(r.estado),
                           style: TextStyle(
                             fontWeight: FontWeight.bold,
-                            color: logrado
-                                ? AppColors.exitoPago
-                                : Colors.orange.shade800,
+                            color: color,
                           ),
                         ),
                       ),

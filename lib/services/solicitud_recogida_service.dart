@@ -29,10 +29,17 @@ class SolicitudRecogidaService {
         .eq('alumno_id', alumnoId)
         .order('created_at', ascending: false)
         .map((rows) {
+          SolicitudRecogida? recienteNoCoincide;
           for (final row in rows) {
-            if (row['estado'] == 'pendiente') {
-              return SolicitudRecogida.fromJson(row);
+            final s = SolicitudRecogida.fromJson(row);
+            if (s.esPendiente) return s;
+            if (s.esNoCoincide && recienteNoCoincide == null) {
+              recienteNoCoincide = s;
             }
+          }
+          if (recienteNoCoincide != null &&
+              DateTime.now().difference(recienteNoCoincide.createdAt).inHours < 18) {
+            return recienteNoCoincide;
           }
           return null;
         });
@@ -42,6 +49,10 @@ class SolicitudRecogidaService {
     required String alumnoId,
     required String padreId,
     String? mensaje,
+    String? personaAutorizadaId,
+    String? quienNombre,
+    String? quienParentesco,
+    bool requiereCodigo = false,
   }) async {
     await _supabase
         .from('solicitudes_recogida')
@@ -54,7 +65,23 @@ class SolicitudRecogidaService {
       'padre_id': padreId,
       'mensaje': mensaje?.trim().isEmpty ?? true ? null : mensaje!.trim(),
       'estado': 'pendiente',
+      'persona_autorizada_id': personaAutorizadaId,
+      'quien_nombre': quienNombre?.trim().isEmpty ?? true ? null : quienNombre!.trim(),
+      'quien_parentesco':
+          quienParentesco?.trim().isEmpty ?? true ? null : quienParentesco!.trim(),
+      'requiere_codigo': requiereCodigo,
     });
+  }
+
+  Future<void> marcarNoCoincide({
+    required String solicitudId,
+    required String atendidaPorId,
+  }) async {
+    await _supabase.from('solicitudes_recogida').update({
+      'estado': 'no_coincide',
+      'atendida_at': DateTime.now().toUtc().toIso8601String(),
+      'atendida_por': atendidaPorId,
+    }).eq('id', solicitudId);
   }
 
   Future<void> cancelar(String solicitudId) async {

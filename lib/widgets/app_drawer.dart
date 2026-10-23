@@ -392,6 +392,13 @@ class _AppDrawerState extends State<AppDrawer> {
                             ),
                             _buildMenuItem(
                               context: context,
+                              icon: Icons.badge_outlined,
+                              title: 'Quién puede recoger',
+                              ruta: '/directora/lista-recogida',
+                              tienePermiso: true,
+                            ),
+                            _buildMenuItem(
+                              context: context,
                               icon: Icons.warning_amber_rounded,
                               title: 'Incidentes',
                               ruta: '/directora/incidentes',
@@ -578,6 +585,13 @@ class _AppDrawerState extends State<AppDrawer> {
                               icon: Icons.door_front_door,
                               title: 'Niños afuera (entrega)',
                               ruta: '/directora/entrega-afuera',
+                              tienePermiso: true,
+                            ),
+                            _buildMenuItem(
+                              context: context,
+                              icon: Icons.badge_outlined,
+                              title: 'Quién puede recoger',
+                              ruta: '/directora/lista-recogida',
                               tienePermiso: true,
                             ),
                             _buildMenuItem(

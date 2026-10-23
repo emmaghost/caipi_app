@@ -13,15 +13,16 @@ Grado _g(String nombre) {
 }
 
 void main() {
-  test('kinder 1-3 generan colegiatura; maternal y estimulacion no', () {
+  test('kinder usa colegiatura; maternal y lactante usan paquete', () {
     expect(_g('Kínder 1').muestraModuloPagos, isTrue);
-    expect(_g('Kinder 2').muestraModuloPagos, isTrue);
-    expect(_g('Kinder 3').generaColegiaturaAutomatica, isTrue);
-    expect(_g('Kinder 4').muestraModuloPagos, isFalse);
-    expect(_g('Maternal').generaColegiaturaAutomatica, isFalse);
+    expect(_g('Kinder 2').generaColegiaturaAutomatica, isTrue);
+    expect(_g('Kinder 3').usaCostosMaternal, isFalse);
+    expect(_g('Maternal 2 vespertino').generaColegiaturaAutomatica, isFalse);
+    expect(_g('Maternal 2 vespertino').usaCostosMaternal, isTrue);
+    expect(_g('LACTANTES Matutino').usaCostosMaternal, isTrue);
+    expect(_g('LACTANTES Matutino').generaColegiaturaAutomatica, isFalse);
+    expect(_g('Bebés').esLactanteOBebes, isTrue);
+    expect(_g('Estimulación Temprana').usaCostosMaternal, isTrue);
     expect(_g('Estimulación Temprana').generaColegiaturaAutomatica, isFalse);
-    expect(_g('Estimulación Temprana').cobroPorClase, isTrue);
-    expect(_g('Maternal').esMaternalOBebes, isTrue);
-    expect(_g('Estimulación Temprana').esMaternalOBebes, isTrue);
   });
 }
