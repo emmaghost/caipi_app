@@ -24,6 +24,7 @@ class _DashboardDirectoraState extends State<DashboardDirectora> {
   /// Grados de la maestra (vacío = sin asignación / aún cargando).
   List<String> _gradoIdsProfesor = const [];
   bool _gradosProfesorListos = false;
+  bool _gruposAbiertos = false;
   final _solicitudService = SolicitudRecogidaService();
 
   @override
@@ -379,6 +380,11 @@ class _DashboardDirectoraState extends State<DashboardDirectora> {
                                   ],
                                 ),
                                 ],
+                                const SizedBox(height: 16),
+                                _ninosPorGrupo(
+                                  alumnos: alumnosSnapshot.data ?? const [],
+                                  grados: gradosSnapshot.data ?? const [],
+                                ),
                               ],
                             );
                           },
@@ -705,6 +711,177 @@ class _DashboardDirectoraState extends State<DashboardDirectora> {
             ),
           );
         },
+      ),
+    );
+  }
+
+  int _ordenGrupo(String nombre) {
+    final n = nombre.toLowerCase();
+    if (n.contains('lactante') || n.contains('bebe') || n.contains('bebé') || n.contains('cuna')) {
+      return 0;
+    }
+    if (n.contains('maternal')) return 1;
+    if (n.contains('kinder') || n.contains('kínder')) return 2;
+    return 3;
+  }
+
+  Widget _ninosPorGrupo({
+    required List<Map<String, dynamic>> alumnos,
+    required List<Map<String, dynamic>> grados,
+  }) {
+    final conteo = <String, int>{};
+    var sinGrupo = 0;
+    for (final a in alumnos) {
+      if (a['activo'] != true) continue;
+      final id = a['grado_id'] as String?;
+      if (id == null || id.isEmpty) {
+        sinGrupo++;
+      } else {
+        conteo[id] = (conteo[id] ?? 0) + 1;
+      }
+    }
+
+    final filas = <({String nombre, int n})>[];
+    for (final g in grados) {
+      final id = g['id'] as String?;
+      if (id == null) continue;
+      final n = conteo[id] ?? 0;
+      if (g['activo'] == false && n == 0) continue;
+      filas.add((nombre: (g['nombre'] as String?)?.trim().isNotEmpty == true
+          ? (g['nombre'] as String).trim()
+          : 'Sin nombre', n: n));
+    }
+    filas.sort((a, b) {
+      final orden = _ordenGrupo(a.nombre).compareTo(_ordenGrupo(b.nombre));
+      if (orden != 0) return orden;
+      return a.nombre.toLowerCase().compareTo(b.nombre.toLowerCase());
+    });
+
+    return Material(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(20),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          InkWell(
+            onTap: () => setState(() => _gruposAbiertos = !_gruposAbiertos),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 14, 12, 14),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      'Niños por grupo',
+                      style: GoogleFonts.poppins(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.negro,
+                      ),
+                    ),
+                  ),
+                  Icon(
+                    _gruposAbiertos
+                        ? Icons.keyboard_arrow_up_rounded
+                        : Icons.keyboard_arrow_down_rounded,
+                    color: AppColors.azul,
+                  ),
+                ],
+              ),
+            ),
+          ),
+          AnimatedSize(
+            duration: const Duration(milliseconds: 200),
+            curve: Curves.easeOut,
+            alignment: Alignment.topCenter,
+            child: _gruposAbiertos
+                ? Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                    child: Column(
+                      children: [
+                        for (final f in filas)
+                          Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 6),
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    f.nombre,
+                                    style: GoogleFonts.poppins(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w500,
+                                      color: f.n == 0 ? AppColors.gris : AppColors.negro,
+                                    ),
+                                  ),
+                                ),
+                                Container(
+                                  constraints: const BoxConstraints(minWidth: 36),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 10,
+                                    vertical: 4,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: f.n == 0
+                                        ? AppColors.grisClaro
+                                        : AppColors.azulCielo.withValues(alpha: 0.18),
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: Text(
+                                    '${f.n}',
+                                    textAlign: TextAlign.center,
+                                    style: GoogleFonts.poppins(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w700,
+                                      color: f.n == 0 ? AppColors.gris : AppColors.azul,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        if (sinGrupo > 0)
+                          Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 6),
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    'Sin grupo',
+                                    style: GoogleFonts.poppins(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                ),
+                                Container(
+                                  constraints: const BoxConstraints(minWidth: 36),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 10,
+                                    vertical: 4,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFFFF7ED),
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: Text(
+                                    '$sinGrupo',
+                                    textAlign: TextAlign.center,
+                                    style: GoogleFonts.poppins(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w700,
+                                      color: AppColors.naranja,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                      ],
+                    ),
+                  )
+                : const SizedBox(width: double.infinity),
+          ),
+        ],
       ),
     );
   }
