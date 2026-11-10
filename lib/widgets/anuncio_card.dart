@@ -4,6 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../config/app_colors.dart';
 import '../models/anuncio.dart';
 import '../utils/mexico_time.dart';
+import 'foto_descargable.dart';
 
 class AnuncioCard extends StatelessWidget {
   final Anuncio anuncio;
@@ -117,23 +118,12 @@ class AnuncioCard extends StatelessWidget {
                   color: Colors.grey[700],
                 ),
               ),
-              if (anuncio.urlFoto != null) ...[
+              if (anuncio.urlsFoto.isNotEmpty) ...[
                 const SizedBox(height: 8),
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(8),
-                  child: ColoredBox(
-                    color: const Color(0xFFF3F0FA),
-                    child: SizedBox(
-                      height: 180,
-                      width: double.infinity,
-                      child: Image.network(
-                        anuncio.urlFoto!,
-                        fit: BoxFit.contain,
-                        errorBuilder: (_, __, ___) => const SizedBox.shrink(),
-                      ),
-                    ),
-                  ),
-                ),
+                for (final url in anuncio.urlsFoto) ...[
+                  FotoDescargable(url: url, height: 180),
+                  const SizedBox(height: 8),
+                ],
               ],
               if (anuncio.fechaEvento != null) ...[
                 const SizedBox(height: 8),
@@ -219,22 +209,11 @@ class AnuncioCard extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(height: 14),
-                    if (anuncio.urlFoto != null) ...[
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(8),
-                        child: ColoredBox(
-                          color: const Color(0xFFF3F0FA),
-                          child: SizedBox(
-                            height: 280,
-                            width: double.infinity,
-                            child: Image.network(
-                              anuncio.urlFoto!,
-                              fit: BoxFit.contain,
-                            ),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 12),
+                    if (anuncio.urlsFoto.isNotEmpty) ...[
+                      for (final url in anuncio.urlsFoto) ...[
+                        FotoDescargable(url: url, height: 280),
+                        const SizedBox(height: 12),
+                      ],
                     ],
                     Text(
                       anuncio.mensajeVisible,

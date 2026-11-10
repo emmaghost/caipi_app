@@ -549,9 +549,9 @@ class ChatService {
           urgente: false,
         ),
     };
-    final foto = MensajeChat.urlFotoEn(mensaje);
-    if (foto != null) {
-      candidatos.add('${MensajeChat.marcadorFoto}$foto');
+    final foto = MensajeChat.urlsFotoEn(mensaje);
+    for (final url in foto) {
+      candidatos.add('${MensajeChat.marcadorFoto}$url');
     }
 
     var borrados = 0;

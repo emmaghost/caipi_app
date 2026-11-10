@@ -76,7 +76,9 @@ class Anuncio {
 
   String get mensajeVisible => MensajeChat.textoSinFoto(mensaje);
 
-  String? get urlFoto => MensajeChat.urlFotoEn(mensaje);
+  List<String> get urlsFoto => MensajeChat.urlsFotoEn(mensaje);
+
+  String? get urlFoto => urlsFoto.isEmpty ? null : urlsFoto.first;
 
   Color get prioridadColor {
     return prioridad == PrioridadAnuncio.alta

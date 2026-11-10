@@ -73,7 +73,7 @@ CREATE OR REPLACE FUNCTION public.reiniciar_password_usuario(
 RETURNS VOID
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public, auth
+SET search_path = public, auth, extensions
 AS $$
 BEGIN
   IF NOT EXISTS (
@@ -89,7 +89,7 @@ BEGIN
 
   UPDATE auth.users
   SET
-    encrypted_password = crypt(trim(p_password), gen_salt('bf')),
+    encrypted_password = extensions.crypt(trim(p_password), extensions.gen_salt('bf'::text)),
     updated_at = now()
   WHERE id = p_usuario_id;
 
@@ -106,7 +106,7 @@ CREATE OR REPLACE FUNCTION public.desactivar_usuario_escuela(p_usuario_id UUID)
 RETURNS VOID
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public, auth
+SET search_path = public, auth, extensions
 AS $$
 DECLARE
   v_email TEXT;
@@ -173,7 +173,7 @@ CREATE OR REPLACE FUNCTION public.crear_usuario_escuela(
 RETURNS UUID
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public, auth
+SET search_path = public, auth, extensions
 AS $$
 DECLARE
   v_user_id   UUID;
@@ -218,7 +218,7 @@ BEGIN
     v_user_id,
     '00000000-0000-0000-0000-000000000000',
     v_email,
-    crypt(p_password, gen_salt('bf')),
+    extensions.crypt(p_password, extensions.gen_salt('bf'::text)),
     now(),
     'authenticated',
     'authenticated',

@@ -39,8 +39,8 @@ class _CrearAnuncioScreenState extends State<CrearAnuncioScreen> {
   bool _enviarComoChat = true;
   List<String> _gradosSeleccionados = [];
   final StorageService _storage = StorageService();
-  File? _fotoArchivo;
-  String? _fotoUrl;
+  final List<File> _fotosNuevas = [];
+  final List<String> _fotosUrls = [];
 
   /// Si no es null, la maestra solo puede anunciar a estos grados.
   List<String>? _gradosPermitidos;
@@ -144,8 +144,10 @@ class _CrearAnuncioScreenState extends State<CrearAnuncioScreen> {
       setState(() {
         _tituloController.text = response['titulo'] as String? ?? '';
         _mensajeController.text = MensajeChat.textoSinFoto(rawMensaje);
-        _fotoUrl = MensajeChat.urlFotoEn(rawMensaje);
-        _fotoArchivo = null;
+        _fotosUrls
+          ..clear()
+          ..addAll(MensajeChat.urlsFotoEn(rawMensaje));
+        _fotosNuevas.clear();
         _fecha = fechaRaw != null
             ? (DateTime.tryParse(fechaRaw.toString()) ?? DateTime.now())
             : DateTime.now();
@@ -594,8 +596,7 @@ class _CrearAnuncioScreenState extends State<CrearAnuncioScreen> {
   }
 
   Widget _buildFotoTarea() {
-    final tieneFoto = _fotoArchivo != null ||
-        (_fotoUrl != null && _fotoUrl!.isNotEmpty);
+    final tieneFoto = _fotosNuevas.isNotEmpty || _fotosUrls.isNotEmpty;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -606,7 +607,7 @@ class _CrearAnuncioScreenState extends State<CrearAnuncioScreen> {
             const SizedBox(width: 8),
             Expanded(
               child: Text(
-                'Foto de la tarea',
+                'Fotos de la tarea',
                 style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
               ),
             ),
@@ -614,44 +615,21 @@ class _CrearAnuncioScreenState extends State<CrearAnuncioScreen> {
         ),
         const SizedBox(height: 4),
         Text(
-          'Opcional. El papá la ve en el anuncio y, si envías el chat, también ahí. Los papás no pueden subir fotos.',
+          'Opcional. Puedes subir varias. El papá las ve en el anuncio y, si envías el chat, también ahí. Quien las vea puede descargarlas. Los papás no pueden subir fotos.',
           style: GoogleFonts.poppins(fontSize: 12, color: AppColors.gris),
         ),
         const SizedBox(height: 10),
-        if (tieneFoto)
-          Stack(
-            alignment: Alignment.topRight,
-            children: [
-              ClipRRect(
-                borderRadius: BorderRadius.circular(12),
-                child: ColoredBox(
-                  color: const Color(0xFFF3F0FA),
-                  child: SizedBox(
-                    height: 280,
-                    width: double.infinity,
-                    child: _fotoArchivo != null
-                        ? Image.file(
-                            _fotoArchivo!,
-                            fit: BoxFit.contain,
-                          )
-                        : Image.network(
-                            _fotoUrl!,
-                            fit: BoxFit.contain,
-                          ),
-                  ),
-                ),
-              ),
-              IconButton(
-                onPressed: () => setState(() {
-                  _fotoArchivo = null;
-                  _fotoUrl = null;
-                }),
-                icon: const Icon(Icons.close, color: Colors.white),
-                style: IconButton.styleFrom(backgroundColor: Colors.black54),
-              ),
-            ],
+        for (var i = 0; i < _fotosUrls.length; i++)
+          _miniaturaFoto(
+            imagen: Image.network(_fotosUrls[i], fit: BoxFit.contain),
+            onQuitar: () => setState(() => _fotosUrls.removeAt(i)),
           ),
-        if (tieneFoto) const SizedBox(height: 10),
+        for (var i = 0; i < _fotosNuevas.length; i++)
+          _miniaturaFoto(
+            imagen: Image.file(_fotosNuevas[i], fit: BoxFit.contain),
+            onQuitar: () => setState(() => _fotosNuevas.removeAt(i)),
+          ),
+        if (tieneFoto) const SizedBox(height: 2),
         Row(
           children: [
             Expanded(
@@ -675,14 +653,48 @@ class _CrearAnuncioScreenState extends State<CrearAnuncioScreen> {
     );
   }
 
+  Widget _miniaturaFoto({
+    required Widget imagen,
+    required VoidCallback onQuitar,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Stack(
+        alignment: Alignment.topRight,
+        children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(12),
+            child: ColoredBox(
+              color: const Color(0xFFF3F0FA),
+              child: SizedBox(
+                height: 220,
+                width: double.infinity,
+                child: imagen,
+              ),
+            ),
+          ),
+          IconButton(
+            onPressed: onQuitar,
+            icon: const Icon(Icons.close, color: Colors.white),
+            style: IconButton.styleFrom(backgroundColor: Colors.black54),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _elegirFoto(bool camara) async {
     final usuario = context.read<AuthService>().currentUser;
     if (usuario == null || usuario.esPadre) return;
-    final archivo = camara
-        ? await _storage.tomarFoto()
-        : await _storage.seleccionarImagenGaleria();
-    if (archivo == null || !mounted) return;
-    setState(() => _fotoArchivo = archivo);
+    if (camara) {
+      final archivo = await _storage.tomarFoto();
+      if (archivo == null || !mounted) return;
+      setState(() => _fotosNuevas.add(archivo));
+      return;
+    }
+    final archivos = await _storage.seleccionarImagenesGaleria();
+    if (archivos.isEmpty || !mounted) return;
+    setState(() => _fotosNuevas.addAll(archivos));
   }
 
   Widget _buildSeccionTitulo(String titulo) {
@@ -768,21 +780,23 @@ class _CrearAnuncioScreenState extends State<CrearAnuncioScreen> {
       final usuario = context.read<AuthService>().currentUser;
       final titulo = _tituloController.text.trim();
       final mensaje = _mensajeController.text.trim();
-      var fotoUrl = _fotoUrl;
-      if (usuario?.esPadre == true) {
-        fotoUrl = null;
-      }
-      if (_fotoArchivo != null && usuario?.esPadre != true) {
-        if (usuario == null) {
-          throw StateError('Sesión no disponible para subir la foto');
+      final urls = <String>[];
+      if (usuario?.esPadre != true) {
+        urls.addAll(_fotosUrls);
+        if (_fotosNuevas.isNotEmpty) {
+          if (usuario == null) {
+            throw StateError('Sesión no disponible para subir la foto');
+          }
+          for (final archivo in _fotosNuevas) {
+            final subida = await _storage.subirFotoChat(archivo, usuario.id);
+            if (subida == null || subida.isEmpty) {
+              throw StateError('No se pudo subir la foto');
+            }
+            urls.add(subida);
+          }
         }
-        final subida = await _storage.subirFotoChat(_fotoArchivo!, usuario.id);
-        if (subida == null || subida.isEmpty) {
-          throw StateError('No se pudo subir la foto');
-        }
-        fotoUrl = subida;
       }
-      final mensajeGuardado = MensajeChat.conFoto(mensaje, fotoUrl);
+      final mensajeGuardado = MensajeChat.conFotos(mensaje, urls);
       final fechaIso = DateTime(
         _fecha.year,
         _fecha.month,
@@ -848,7 +862,7 @@ class _CrearAnuncioScreenState extends State<CrearAnuncioScreen> {
             canal: usuario.esDirectora ? 'directora' : 'profesor',
             staffId: usuario.esDirectora ? null : usuario.id,
           );
-          if (fotoUrl != null && fotoUrl.isNotEmpty) {
+          for (final fotoUrl in urls) {
             await ChatService().enviarMensajeMasivoAPadres(
               remitenteId: usuario.id,
               contenido: '${MensajeChat.marcadorFoto}$fotoUrl',
@@ -946,9 +960,9 @@ class _CrearAnuncioScreenState extends State<CrearAnuncioScreen> {
 
     try {
       final titulo = _tituloController.text.trim();
-      final mensaje = MensajeChat.conFoto(
+      final mensaje = MensajeChat.conFotos(
         _mensajeController.text.trim(),
-        _fotoUrl,
+        _fotosUrls,
       );
       final chatBorrados = await ChatService().eliminarMensajesDeAnuncio(
         titulo: titulo,

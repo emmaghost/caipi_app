@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -11,6 +13,7 @@ import '../../services/chat_horario_service.dart';
 import '../../services/chat_service.dart';
 import '../../services/storage_service.dart';
 import '../../utils/mexico_time.dart';
+import '../../widgets/foto_descargable.dart';
 
 class ChatConversacionScreen extends StatefulWidget {
   final String conversacionId;
@@ -161,6 +164,7 @@ class _ChatConversacionScreenState extends State<ChatConversacionScreen> {
             ListTile(
               leading: const Icon(Icons.photo_library_outlined),
               title: const Text('Elegir de la galería'),
+              subtitle: const Text('Puedes elegir varias'),
               onTap: () => Navigator.pop(ctx, 'galeria'),
             ),
             ListTile(
@@ -174,21 +178,27 @@ class _ChatConversacionScreenState extends State<ChatConversacionScreen> {
     );
     if (origen == null || !mounted) return;
 
-    final archivo = origen == 'camara'
-        ? await _storage.tomarFoto()
-        : await _storage.seleccionarImagenGaleria();
-    if (archivo == null || !mounted) return;
+    final archivos = <File>[];
+    if (origen == 'camara') {
+      final archivo = await _storage.tomarFoto();
+      if (archivo != null) archivos.add(archivo);
+    } else {
+      archivos.addAll(await _storage.seleccionarImagenesGaleria());
+    }
+    if (archivos.isEmpty || !mounted) return;
 
     final caption = _mensajeController.text.trim();
     setState(() => _enviando = true);
     _mensajeController.clear();
 
     try {
-      final url = await _storage.subirFotoChat(archivo, usuario.id);
-      if (url == null || url.isEmpty) {
-        throw StateError('No se pudo subir la imagen');
+      for (final archivo in archivos) {
+        final url = await _storage.subirFotoChat(archivo, usuario.id);
+        if (url == null || url.isEmpty) {
+          throw StateError('No se pudo subir la imagen');
+        }
+        await _enviarContenido('${MensajeChat.marcadorFoto}$url');
       }
-      await _enviarContenido('${MensajeChat.marcadorFoto}$url');
       if (caption.isNotEmpty) {
         await _enviarContenido(caption);
       }
@@ -639,28 +649,7 @@ class _SeparadorFecha extends StatelessWidget {
 }
 
 void _verFoto(BuildContext context, String url) {
-  showDialog<void>(
-    context: context,
-    builder: (ctx) => Dialog(
-      backgroundColor: Colors.black,
-      insetPadding: const EdgeInsets.all(12),
-      child: Stack(
-        children: [
-          InteractiveViewer(
-            child: Image.network(url, fit: BoxFit.contain),
-          ),
-          Positioned(
-            right: 0,
-            top: 0,
-            child: IconButton(
-              onPressed: () => Navigator.pop(ctx),
-              icon: const Icon(Icons.close, color: Colors.white),
-            ),
-          ),
-        ],
-      ),
-    ),
-  );
+  mostrarVisorFoto(context, url);
 }
 
 class _MensajeBubble extends StatelessWidget {
@@ -699,29 +688,47 @@ class _MensajeBubble extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             if (mensaje.urlFoto != null)
-              GestureDetector(
-                onTap: () => _verFoto(context, mensaje.urlFoto!),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(10),
-                  child: ColoredBox(
-                    color: const Color(0xFFF3F0FA),
-                    child: SizedBox(
-                      width: 240,
-                      height: 320,
-                      child: Image.network(
-                        mensaje.urlFoto!,
-                        fit: BoxFit.contain,
-                        errorBuilder: (_, __, ___) => Text(
-                          'No se pudo cargar la imagen',
-                          style: GoogleFonts.poppins(
-                            color: esMio ? Colors.white : AppColors.negro,
-                            fontSize: 13,
+              Stack(
+                alignment: Alignment.bottomRight,
+                children: [
+                  GestureDetector(
+                    onTap: () => _verFoto(context, mensaje.urlFoto!),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(10),
+                      child: ColoredBox(
+                        color: const Color(0xFFF3F0FA),
+                        child: SizedBox(
+                          width: 240,
+                          height: 320,
+                          child: Image.network(
+                            mensaje.urlFoto!,
+                            fit: BoxFit.contain,
+                            errorBuilder: (_, __, ___) => Text(
+                              'No se pudo cargar la imagen',
+                              style: GoogleFonts.poppins(
+                                color: esMio ? Colors.white : AppColors.negro,
+                                fontSize: 13,
+                              ),
+                            ),
                           ),
                         ),
                       ),
                     ),
                   ),
-                ),
+                  Padding(
+                    padding: const EdgeInsets.all(6),
+                    child: IconButton.filled(
+                      tooltip: 'Descargar',
+                      style: IconButton.styleFrom(
+                        backgroundColor: Colors.black54,
+                        foregroundColor: Colors.white,
+                        visualDensity: VisualDensity.compact,
+                      ),
+                      onPressed: () => descargarImagen(context, mensaje.urlFoto!),
+                      icon: const Icon(Icons.download, size: 20),
+                    ),
+                  ),
+                ],
               )
             else
               Text(

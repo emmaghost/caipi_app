@@ -112,13 +112,13 @@ class _AppDrawerState extends State<AppDrawer> {
           Container(
             width: double.infinity,
             decoration: const BoxDecoration(
-              gradient: LinearGradient(
+              gradient: const LinearGradient(
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
                 colors: [
-                  Color(0xFF8B5CF6),
-                  Color(0xFFFF69B4),
-                  Color(0xFFFF8C42),
+                  AppColors.purpura,
+                  AppColors.rosa,
+                  AppColors.naranja,
                 ],
               ),
             ),

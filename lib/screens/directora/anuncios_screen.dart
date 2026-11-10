@@ -12,6 +12,7 @@ import '../../services/chat_service.dart';
 import '../../services/profesor_grupos_service.dart';
 import '../../widgets/app_drawer.dart';
 import '../../widgets/caipi_app_bar_leading.dart';
+import '../../widgets/foto_descargable.dart';
 
 class AnunciosScreen extends StatefulWidget {
   const AnunciosScreen({super.key});
@@ -375,25 +376,14 @@ class _AnuncioCard extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    if (MensajeChat.urlFotoEn(anuncio['mensaje'] as String?) !=
-                        null) ...[
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(8),
-                        child: ColoredBox(
-                          color: const Color(0xFFF3F0FA),
-                          child: SizedBox(
-                            height: 220,
-                            width: double.infinity,
-                            child: Image.network(
-                              MensajeChat.urlFotoEn(
-                                anuncio['mensaje'] as String?,
-                              )!,
-                              fit: BoxFit.contain,
-                            ),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 8),
+                    if (MensajeChat.urlsFotoEn(anuncio['mensaje'] as String?)
+                        .isNotEmpty) ...[
+                      for (final url in MensajeChat.urlsFotoEn(
+                        anuncio['mensaje'] as String?,
+                      )) ...[
+                        FotoDescargable(url: url, height: 220),
+                        const SizedBox(height: 8),
+                      ],
                     ],
                     Text(
                       MensajeChat.textoSinFoto(anuncio['mensaje'] as String? ?? ''),
@@ -589,23 +579,15 @@ class _AnuncioCard extends StatelessWidget {
                 'Mensaje',
                 MensajeChat.textoSinFoto(anuncio['mensaje'] as String? ?? ''),
               ),
-              if (MensajeChat.urlFotoEn(anuncio['mensaje'] as String?) !=
-                  null) ...[
+              if (MensajeChat.urlsFotoEn(anuncio['mensaje'] as String?)
+                  .isNotEmpty) ...[
                 const SizedBox(height: 8),
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(8),
-                  child: ColoredBox(
-                    color: const Color(0xFFF3F0FA),
-                    child: SizedBox(
-                      height: 320,
-                      width: double.infinity,
-                      child: Image.network(
-                        MensajeChat.urlFotoEn(anuncio['mensaje'] as String?)!,
-                        fit: BoxFit.contain,
-                      ),
-                    ),
-                  ),
-                ),
+                for (final url in MensajeChat.urlsFotoEn(
+                  anuncio['mensaje'] as String?,
+                )) ...[
+                  FotoDescargable(url: url, height: 320),
+                  const SizedBox(height: 8),
+                ],
               ],
               const Divider(),
               _buildDetalleItem(

@@ -6,7 +6,7 @@ class StorageService {
   final SupabaseClient _supabase = Supabase.instance.client;
   final ImagePicker _picker = ImagePicker();
 
-  // Seleccionar imagen desde galería
+  // Seleccionar una imagen desde galería
   Future<File?> seleccionarImagenGaleria() async {
     final XFile? image = await _picker.pickImage(
       source: ImageSource.gallery,
@@ -14,11 +14,21 @@ class StorageService {
       maxHeight: 800,
       imageQuality: 70,
     );
-    
+
     if (image != null) {
       return File(image.path);
     }
     return null;
+  }
+
+  /// Varias imágenes de la galería. Vacío si cancelan.
+  Future<List<File>> seleccionarImagenesGaleria() async {
+    final images = await _picker.pickMultiImage(
+      maxWidth: 1600,
+      maxHeight: 1600,
+      imageQuality: 80,
+    );
+    return images.map((image) => File(image.path)).toList();
   }
 
   // Tomar foto con cámara

@@ -53,19 +53,35 @@ class MensajeChat {
         .trim();
   }
 
+  static List<String> urlsFotoEn(String? contenido) {
+    if (contenido == null || contenido.isEmpty) return const [];
+    return _lineaFoto
+        .allMatches(contenido)
+        .map((m) => m.group(1) ?? '')
+        .where((url) => url.startsWith('http'))
+        .toList();
+  }
+
   static String? urlFotoEn(String? contenido) {
-    if (contenido == null || contenido.isEmpty) return null;
-    final url = _lineaFoto.firstMatch(contenido)?.group(1);
-    if (url == null || !url.startsWith('http')) return null;
-    return url;
+    final urls = urlsFotoEn(contenido);
+    if (urls.isEmpty) return null;
+    return urls.first;
+  }
+
+  static String conFotos(String texto, List<String> urls) {
+    final limpio = textoSinFoto(texto);
+    final validas =
+        urls.map((u) => u.trim()).where((u) => u.isNotEmpty).toList();
+    if (validas.isEmpty) return limpio;
+    final marcas = validas.map((u) => '$marcadorFoto$u').join('\n');
+    if (limpio.isEmpty) return marcas;
+    return '$limpio\n$marcas';
   }
 
   static String conFoto(String texto, String? url) {
-    final limpio = textoSinFoto(texto);
     final u = url?.trim() ?? '';
-    if (u.isEmpty) return limpio;
-    if (limpio.isEmpty) return '$marcadorFoto$u';
-    return '$limpio\n$marcadorFoto$u';
+    if (u.isEmpty) return textoSinFoto(texto);
+    return conFotos(texto, [u]);
   }
 
   static String vistaPreviaDe(String? contenido) {
