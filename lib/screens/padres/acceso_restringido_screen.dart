@@ -192,7 +192,7 @@ class _ListaAdeudos extends StatelessWidget {
             ),
             const SizedBox(height: 4),
             Text(
-              'Bloqueo automático ${estado.diasGracia} días después del vencimiento',
+              'Pago puntual del día 1 al 10 del mes.',
               style: GoogleFonts.poppins(fontSize: 11, color: Colors.grey[600]),
             ),
             const Divider(height: 24),

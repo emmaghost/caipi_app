@@ -1,6 +1,6 @@
 -- =============================================================================
 -- Bloqueo de acceso padre por adeudo de colegiatura
--- Regla: 5 días después de la fecha de vencimiento, si sigue sin pagar.
+-- Regla: el pago puntual es del 1 al 10. A partir del día 11 se bloquea.
 -- Si un hijo debe → todos sus papás vinculados quedan restringidos.
 -- Ejecutar en Supabase → SQL Editor
 -- =============================================================================
@@ -42,7 +42,7 @@ AS $$
       AND coalesce(p.estatus, '') NOT IN ('pagado', 'cancelado')
       AND coalesce(p.monto_pagado, 0) < coalesce(p.monto, 0)
       AND p.fecha_vencimiento IS NOT NULL
-      AND CURRENT_DATE > (p.fecha_vencimiento::date + public.dias_gracia_bloqueo_padre())
+      AND CURRENT_DATE >= ((date_trunc('month', p.fecha_vencimiento))::date + 10)
   );
 $$;
 
@@ -141,7 +141,7 @@ BEGIN
       AND coalesce(p.estatus, '') NOT IN ('pagado', 'cancelado')
       AND coalesce(p.monto_pagado, 0) < coalesce(p.monto, 0)
       AND p.fecha_vencimiento IS NOT NULL
-      AND CURRENT_DATE > (p.fecha_vencimiento::date + public.dias_gracia_bloqueo_padre())
+      AND CURRENT_DATE >= ((date_trunc('month', p.fecha_vencimiento))::date + 10)
     ORDER BY p.fecha_vencimiento ASC
   LOOP
     v_adeudos := v_adeudos || jsonb_build_array(

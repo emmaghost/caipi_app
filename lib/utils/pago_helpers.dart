@@ -246,24 +246,17 @@ class PagoHelpers {
         .toList();
   }
 
-  /// ¿Ya pasaron [diasGracia] días desde el vencimiento sin liquidar?
-  /// Ej.: vence 5 mar, gracia 5 → bloqueo desde el 11 mar.
+  /// El pago puntual es del 1 al 10. A partir del día 11 de ese mes se bloquea.
   static bool debeBloquearAccesoApp({
     required DateTime fechaVencimiento,
     required bool pagado,
     DateTime? hoy,
-    int diasGracia = 5,
   }) {
     if (pagado) return false;
     final ref = hoy ?? DateTime.now();
     final hoySolo = DateTime(ref.year, ref.month, ref.day);
-    final limite = DateTime(
-      fechaVencimiento.year,
-      fechaVencimiento.month,
-      fechaVencimiento.day,
-    );
-    final umbral = limite.add(Duration(days: diasGracia));
-    return hoySolo.isAfter(umbral);
+    final dia11 = DateTime(fechaVencimiento.year, fechaVencimiento.month, 11);
+    return !hoySolo.isBefore(dia11);
   }
 
   /// Texto para recordatorio de colegiaturas vencidas (chat o WhatsApp).

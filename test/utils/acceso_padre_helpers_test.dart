@@ -17,7 +17,7 @@ void main() {
       );
     });
 
-    test('no bloquea dentro de los 5 días de gracia', () {
+    test('no bloquea del 1 al 10', () {
       expect(
         PagoHelpers.debeBloquearAccesoApp(
           fechaVencimiento: vencimiento,
@@ -28,7 +28,7 @@ void main() {
       );
     });
 
-    test('bloquea al día 11 (5 días después del 5 mar)', () {
+    test('bloquea a partir del día 11', () {
       expect(
         PagoHelpers.debeBloquearAccesoApp(
           fechaVencimiento: vencimiento,

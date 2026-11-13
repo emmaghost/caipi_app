@@ -326,7 +326,7 @@ class _VerPadreScreenState extends State<VerPadreScreen> {
             ),
             const SizedBox(height: 4),
             Text(
-              'Automático: se restringe 5 días después del vencimiento de colegiatura de cualquier hijo vinculado.',
+              'Automático: el pago puntual es del 1 al 10. A partir del día 11 se restringe si hay colegiatura sin pagar.',
               style: GoogleFonts.poppins(fontSize: 11, color: AppColors.gris),
             ),
             const SizedBox(height: 8),
