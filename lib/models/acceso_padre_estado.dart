@@ -54,13 +54,17 @@ class AccesoPadreEstado {
   factory AccesoPadreEstado.fromJson(dynamic raw) {
     if (raw is! Map) return AccesoPadreEstado.libre();
     final json = Map<String, dynamic>.from(raw);
+    final adeudos = <AdeudoAccesoPadre>[];
     final adeudosRaw = json['adeudos'];
-    final adeudos = adeudosRaw is List
-        ? adeudosRaw
-            .whereType<Map>()
-            .map((e) => AdeudoAccesoPadre.fromJson(Map<String, dynamic>.from(e)))
-            .toList()
-        : <AdeudoAccesoPadre>[];
+    if (adeudosRaw is List) {
+      for (final item in adeudosRaw) {
+        if (item is Map) {
+          adeudos.add(
+            AdeudoAccesoPadre.fromJson(Map<String, dynamic>.from(item)),
+          );
+        }
+      }
+    }
 
     return AccesoPadreEstado(
       restringido: json['restringido'] == true,

@@ -34,7 +34,9 @@
 	<key>NSCameraUsageDescription</key>
 	<string>Necesitamos acceso a la cámara para tomar fotos de los alumnos</string>
 	<key>NSPhotoLibraryUsageDescription</key>
-	<string>Necesitamos acceso a tus fotos para seleccionar imágenes</string>
+	<string>Necesitamos acceso a tus fotos para seleccionar imágenes y guardar las que descargues</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>CAIPI guarda en Fotos las imágenes que descargues</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

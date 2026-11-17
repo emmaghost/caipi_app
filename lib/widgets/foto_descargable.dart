@@ -1,8 +1,8 @@
-import 'package:file_saver/file_saver.dart';
 import 'package:flutter/material.dart';
+import 'package:gal/gal.dart';
 import 'package:http/http.dart' as http;
 
-/// Guarda en el teléfono la imagen que ya está subida. La ve quien tenga la pantalla.
+/// Guarda la imagen en Fotos del teléfono. Solo avisa cuando sí quedó guardada.
 Future<void> descargarImagen(BuildContext context, String url) async {
   final messenger = ScaffoldMessenger.maybeOf(context);
   try {
@@ -10,32 +10,42 @@ Future<void> descargarImagen(BuildContext context, String url) async {
     if (res.statusCode != 200 || res.bodyBytes.isEmpty) {
       throw StateError('No se pudo bajar la imagen');
     }
-    final path = Uri.parse(url).path.toLowerCase();
-    final esPng = path.endsWith('.png');
-    final esWebp = path.endsWith('.webp');
-    final ext = esPng
-        ? 'png'
-        : esWebp
-            ? 'webp'
-            : 'jpg';
-    await FileSaver.instance.saveFile(
-      name: 'caipi_${DateTime.now().millisecondsSinceEpoch}',
-      bytes: res.bodyBytes,
-      fileExtension: ext,
-      mimeType: esPng
-          ? MimeType.png
-          : esWebp
-              ? MimeType.other
-              : MimeType.jpeg,
+    final ext = _extensionDeImagen(res.bodyBytes);
+    await Gal.putImageBytes(
+      res.bodyBytes,
+      name: 'caipi_${DateTime.now().millisecondsSinceEpoch}.$ext',
     );
     messenger?.showSnackBar(
-      const SnackBar(content: Text('Imagen guardada en tu teléfono')),
+      const SnackBar(content: Text('Imagen guardada en Fotos')),
     );
+  } on GalException catch (e) {
+    final texto = e.type == GalExceptionType.permissionDenied
+        ? 'Permite el acceso a Fotos para guardar la imagen'
+        : 'No se pudo guardar la imagen';
+    messenger?.showSnackBar(SnackBar(content: Text(texto)));
   } catch (e) {
     messenger?.showSnackBar(
       SnackBar(content: Text('No se pudo descargar: $e')),
     );
   }
+}
+
+String _extensionDeImagen(List<int> bytes) {
+  if (bytes.length >= 4 &&
+      bytes[0] == 0x89 &&
+      bytes[1] == 0x50 &&
+      bytes[2] == 0x4E &&
+      bytes[3] == 0x47) {
+    return 'png';
+  }
+  if (bytes.length >= 12 &&
+      bytes[0] == 0x52 &&
+      bytes[1] == 0x49 &&
+      bytes[2] == 0x46 &&
+      bytes[3] == 0x46) {
+    return 'webp';
+  }
+  return 'jpg';
 }
 
 void mostrarVisorFoto(BuildContext context, String url) {
