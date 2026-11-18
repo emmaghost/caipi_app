@@ -8,6 +8,7 @@ import '../../services/auth_service.dart';
 import '../../services/profesor_grupos_service.dart';
 import '../../widgets/app_drawer.dart';
 import '../../widgets/panel_solicitudes_recogida_escuela.dart';
+import 'escanear_qr_salida_screen.dart';
 import '../../widgets/caipi_app_bar_leading.dart';
 
 /// Menú dedicado: papás que ya están en la entrada y piden entregar al niño.
@@ -53,6 +54,9 @@ class _EntregaAfueraScreenState extends State<EntregaAfueraScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final user = context.watch<AuthService>().currentUser;
+    final puedeEscanear = user?.esDirectora == true || user?.esProfesor == true;
+
     return Scaffold(
       backgroundColor: AppColors.grisClaro,
       drawer: const AppDrawer(),
@@ -107,6 +111,18 @@ class _EntregaAfueraScreenState extends State<EntregaAfueraScreen> {
                   ),
                 ),
                 const SizedBox(height: 8),
+                if (puedeEscanear) ...[
+                  FilledButton.icon(
+                    onPressed: () => abrirEscanerQrSalida(context),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: AppColors.azulOscuro,
+                      minimumSize: const Size.fromHeight(48),
+                    ),
+                    icon: const Icon(Icons.qr_code_scanner),
+                    label: const Text('Escanear QR'),
+                  ),
+                  const SizedBox(height: 12),
+                ],
                 PanelSolicitudesRecogidaEscuela(
                   gradoIdsFiltro: _gradoIdsFiltro,
                   mostrarVacio: true,

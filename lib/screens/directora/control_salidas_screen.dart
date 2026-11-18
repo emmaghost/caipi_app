@@ -1,7 +1,4 @@
-import 'dart:convert';
-
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
@@ -15,8 +12,8 @@ import '../../models/control_salida.dart';
 import '../../models/grado.dart';
 import '../../services/auth_service.dart';
 import '../../services/profesor_grupos_service.dart';
-import '../../services/solicitud_recogida_service.dart';
 import '../../widgets/app_drawer.dart';
+import 'escanear_qr_salida_screen.dart';
 import '../../widgets/caipi_app_bar_leading.dart';
 
 /// Vista diaria por **grupo (grado)**: todos los alumnos del curso y su entrada/salida del día.
@@ -162,171 +159,8 @@ class _ControlSalidasScreenState extends State<ControlSalidasScreen> {
   }
 
   Future<void> _validarCodigoQr() async {
-    final codigoController = TextEditingController();
-    final codigo = await showDialog<String>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text('Validar QR de recogida', style: GoogleFonts.fredoka()),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Escribe el código de 8 caracteres que muestra el papá o la persona autorizada.',
-              style: GoogleFonts.poppins(fontSize: 13),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: codigoController,
-              autofocus: true,
-              textCapitalization: TextCapitalization.characters,
-              inputFormatters: [
-                FilteringTextInputFormatter.allow(RegExp(r'[A-Za-z0-9]')),
-                LengthLimitingTextInputFormatter(12),
-              ],
-              decoration: const InputDecoration(
-                labelText: 'Código',
-                hintText: 'Ej. A1B2C3D4',
-                border: OutlineInputBorder(),
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancelar'),
-          ),
-          FilledButton(
-            onPressed: () =>
-                Navigator.pop(ctx, codigoController.text.trim().toUpperCase()),
-            child: const Text('Validar'),
-          ),
-        ],
-      ),
-    );
-    if (codigo == null || codigo.isEmpty || !mounted) return;
-
-    final uid = context.read<AuthService>().currentUser?.id;
-    if (uid == null) return;
-
-    try {
-      final raw = await Supabase.instance.client.rpc(
-        'validar_qr_temporal',
-        params: {'p_codigo': codigo, 'p_usuario_id': uid},
-      );
-      Map<String, dynamic> data;
-      if (raw is Map) {
-        data = Map<String, dynamic>.from(raw);
-      } else if (raw is String) {
-        data = Map<String, dynamic>.from(jsonDecode(raw) as Map);
-      } else {
-        throw Exception('Respuesta inesperada del servidor');
-      }
-
-      final valido = data['valido'] == true;
-      if (!valido) {
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'Ese código no sirve: ya se usó, expiró o está mal escrito. '
-              'Pide al papá uno nuevo.',
-            ),
-            backgroundColor: Colors.orange,
-          ),
-        );
-        return;
-      }
-
-      final alumnoId = data['alumno_id'] as String?;
-      final personaId = data['persona_autorizada_id'] as String?;
-      if (alumnoId == null) {
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Ese QR no trae datos del alumno. Genera uno nuevo.'),
-            backgroundColor: Colors.orange,
-          ),
-        );
-        return;
-      }
-
-      final client = Supabase.instance.client;
-      final alumno = await client
-          .from('alumnos')
-          .select('nombre, apellidos')
-          .eq('id', alumnoId)
-          .maybeSingle();
-      final persona = personaId == null
-          ? null
-          : await client
-              .from('personas_autorizadas')
-              .select('nombre')
-              .eq('id', personaId)
-              .maybeSingle();
-      final nombreAlumno = alumno == null
-          ? 'Alumno'
-          : '${alumno['nombre'] ?? ''} ${alumno['apellidos'] ?? ''}'.trim();
-      final nombrePersona = persona?['nombre'] as String? ?? 'Persona autorizada';
-
-      if (!mounted) return;
-      final continuar = await showDialog<bool>(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          title: Text('QR válido', style: GoogleFonts.fredoka()),
-          content: Text(
-            '$nombrePersona puede recoger a $nombreAlumno.\n\n'
-            'El código ya quedó usado. Continúa para registrar la salida.',
-            style: GoogleFonts.poppins(fontSize: 14),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Cerrar'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('Registrar salida'),
-            ),
-          ],
-        ),
-      );
-      if (continuar != true || !mounted) return;
-
-      final ok = await GoRouter.of(context).push<bool>(
-        '/directora/control-salidas/crear',
-        extra: {
-          'fecha': _fechaSeleccionada,
-          'alumnoId': alumnoId,
-          'quienRecogio': nombrePersona,
-          'personaAutorizadaId': personaId,
-          'prellenarSalida': true,
-        },
-      );
-      if (ok == true && mounted) {
-        try {
-          await SolicitudRecogidaService().cerrarPendientesDeAlumno(
-            alumnoId: alumnoId,
-            atendidaPorId: uid,
-            modalidadEntrega: 'qr',
-            quienRecibio: nombrePersona,
-          );
-        } catch (_) {}
-        setState(() => _listaEpoch++);
-      }
-    } catch (_) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'No se pudo validar el código. Revisa que esté bien escrito '
-            'o pide uno nuevo al papá.',
-          ),
-          backgroundColor: Colors.orange,
-        ),
-      );
-    }
+    final alumnoId = await abrirEscanerQrSalida(context);
+    if (alumnoId != null && mounted) setState(() => _listaEpoch++);
   }
 
   Future<void> _abrirRegistroLibre() async {
@@ -470,6 +304,8 @@ class _ControlSalidasScreenState extends State<ControlSalidasScreen> {
   @override
   Widget build(BuildContext context) {
     final auth = context.read<AuthService>();
+    final puedeEscanear =
+        auth.isDirectora || auth.currentUser?.esProfesor == true;
 
     return Scaffold(
       appBar: AppBar(
@@ -500,11 +336,12 @@ class _ControlSalidasScreenState extends State<ControlSalidasScreen> {
           ],
         ),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.qr_code_scanner, color: Colors.white),
-            tooltip: 'Validar código QR',
-            onPressed: _validarCodigoQr,
-          ),
+          if (puedeEscanear)
+            IconButton(
+              icon: const Icon(Icons.qr_code_scanner, color: Colors.white),
+              tooltip: 'Escanear QR',
+              onPressed: _validarCodigoQr,
+            ),
           IconButton(
             icon: const Icon(Icons.calendar_today, color: Colors.white),
             onPressed: _seleccionarFecha,
@@ -651,7 +488,8 @@ class _ControlSalidasScreenState extends State<ControlSalidasScreen> {
                             subtitle: Text('Tu grupo', style: GoogleFonts.poppins(fontSize: 13)),
                           ),
                         ),
-                      _InfoQrSalida(),
+                      if (puedeEscanear)
+                        _InfoQrSalida(onEscanear: _validarCodigoQr),
                       Expanded(
                         child: RefreshIndicator(
                           onRefresh: () async => setState(() => _listaEpoch++),
@@ -817,6 +655,10 @@ class _TarjetaFecha extends StatelessWidget {
 }
 
 class _InfoQrSalida extends StatelessWidget {
+  const _InfoQrSalida({required this.onEscanear});
+
+  final VoidCallback onEscanear;
+
   @override
   Widget build(BuildContext context) {
     return Padding(
@@ -826,18 +668,34 @@ class _InfoQrSalida extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
         child: Padding(
           padding: const EdgeInsets.all(12),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Icon(Icons.qr_code_2, color: AppColors.azulOscuro, size: 28),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  'En la salida puedes validar el QR (ícono arriba) o escribir el código. '
-                  'Al registrar la salida queda marcado «entregado por QR» y se cierra '
-                  'la solicitud de «Niños afuera» si estaba pendiente.',
-                  style: GoogleFonts.poppins(fontSize: 12.5, height: 1.35, color: AppColors.grisOscuro),
-                ),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(Icons.qr_code_scanner, color: AppColors.azulOscuro, size: 28),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      'Escanear QR abre la cámara. Si el código está vigente, '
+                      'la salida queda registrada. Si no, se avisa al papá '
+                      'para que genere uno nuevo.',
+                      style: GoogleFonts.poppins(
+                        fontSize: 12.5,
+                        height: 1.35,
+                        color: AppColors.grisOscuro,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              FilledButton.icon(
+                onPressed: onEscanear,
+                style: FilledButton.styleFrom(backgroundColor: AppColors.azulOscuro),
+                icon: const Icon(Icons.qr_code_scanner),
+                label: const Text('Escanear QR'),
               ),
             ],
           ),

@@ -1,7 +1,4 @@
-import 'dart:convert';
-
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -11,6 +8,7 @@ import '../config/app_colors.dart';
 import '../models/solicitud_recogida.dart';
 import '../services/auth_service.dart';
 import '../services/notificacion_entrega_service.dart';
+import '../screens/directora/escanear_qr_salida_screen.dart';
 import '../services/solicitud_recogida_service.dart';
 import '../utils/mexico_time.dart';
 
@@ -538,150 +536,13 @@ class _FilaSolicitudState extends State<_FilaSolicitud> {
     }
   }
 
-  Future<void> _entregarConQr({required bool notificarPadres}) async {
-    final user = context.read<AuthService>().currentUser;
-    if (user == null) return;
-
-    final codigoController = TextEditingController();
-    final codigo = await showDialog<String>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text('Validar QR', style: GoogleFonts.fredoka()),
-        content: TextField(
-          controller: codigoController,
-          autofocus: true,
-          textCapitalization: TextCapitalization.characters,
-          inputFormatters: [
-            FilteringTextInputFormatter.allow(RegExp(r'[A-Za-z0-9]')),
-            LengthLimitingTextInputFormatter(12),
-          ],
-          decoration: const InputDecoration(
-            labelText: 'Código',
-            hintText: 'Ej. A1B2C3D4',
-            border: OutlineInputBorder(),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancelar'),
-          ),
-          FilledButton(
-            onPressed: () =>
-                Navigator.pop(ctx, codigoController.text.trim().toUpperCase()),
-            child: const Text('Validar'),
-          ),
-        ],
-      ),
+  Future<void> _entregarConQr() async {
+    final alumnoId = await abrirEscanerQrSalida(
+      context,
+      alumnoEsperadoId: widget.solicitud.alumnoId,
     );
-    if (codigo == null || codigo.isEmpty || !mounted) return;
-
-    setState(() => _procesando = true);
-    try {
-      final raw = await Supabase.instance.client.rpc(
-        'validar_qr_temporal',
-        params: {'p_codigo': codigo, 'p_usuario_id': user.id},
-      );
-      Map<String, dynamic> data;
-      if (raw is Map) {
-        data = Map<String, dynamic>.from(raw);
-      } else if (raw is String) {
-        data = Map<String, dynamic>.from(jsonDecode(raw) as Map);
-      } else {
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'No se pudo validar el código. Intenta de nuevo en un momento.',
-            ),
-            backgroundColor: Colors.orange,
-          ),
-        );
-        return;
-      }
-      if (data['valido'] != true) {
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'Ese código no sirve: ya se usó, expiró o está mal escrito. '
-              'Pide al papá uno nuevo.',
-            ),
-            backgroundColor: Colors.orange,
-          ),
-        );
-        return;
-      }
-
-      final alumnoId = data['alumno_id'] as String?;
-      if (alumnoId == null || alumnoId != widget.solicitud.alumnoId) {
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'Ese QR es de otro niño. Escanea o escribe el código correcto.',
-            ),
-            backgroundColor: Colors.orange,
-          ),
-        );
-        return;
-      }
-
-      final personaId = data['persona_autorizada_id'] as String?;
-      String nombrePersona = 'Persona autorizada';
-      if (personaId != null) {
-        final p = await Supabase.instance.client
-            .from('personas_autorizadas')
-            .select('nombre')
-            .eq('id', personaId)
-            .maybeSingle();
-        nombrePersona = p?['nombre'] as String? ?? nombrePersona;
-      }
-
-      await widget.service.marcarAtendida(
-        solicitudId: widget.solicitud.id,
-        atendidaPorId: user.id,
-        modalidadEntrega: 'qr',
-        quienRecibio: nombrePersona,
-      );
-      await _registrarSalidaRapida(
-        quienRecogio: nombrePersona,
-        personaAutorizadaId: personaId,
-        nota: 'Entregado por QR ($codigo)',
-      );
-      await NotificacionEntregaService().avisarNinoRecogido(
-        alumnoId: widget.solicitud.alumnoId,
-        quienRecibio: nombrePersona,
-        fechaSalida: DateTime.now(),
-        notificarPadres: notificarPadres,
-      );
-      if (!mounted) return;
-      widget.onResuelta();
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            notificarPadres
-                ? 'Listo · entregado a $nombrePersona · padres notificados'
-                : 'Listo · entregado a $nombrePersona · sin aviso a padres',
-          ),
-          backgroundColor: Colors.green,
-        ),
-      );
-    } catch (_) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'No se pudo validar el código. Revisa que esté bien escrito '
-              'o pide uno nuevo al papá.',
-            ),
-            backgroundColor: Colors.orange,
-          ),
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _procesando = false);
-    }
+    if (!mounted || alumnoId == null) return;
+    if (alumnoId == widget.solicitud.alumnoId) widget.onResuelta();
   }
 
   Future<void> _borrarSolicitud() async {
@@ -778,6 +639,9 @@ class _FilaSolicitudState extends State<_FilaSolicitud> {
         final conFoto = lista.where((p) => p.foto.isNotEmpty).toList();
         final sinFoto = lista.where((p) => p.foto.isEmpty).toList();
         final vieneConFoto = lista.any((p) => p.esQuienViene && p.foto.isNotEmpty);
+        final usuario = context.read<AuthService>().currentUser;
+        final puedeEscanear =
+            usuario?.esDirectora == true || usuario?.esProfesor == true;
         final texto = pideCodigo
             ? 'No es de la lista. Pide el código antes de entregar.'
             : vieneConFoto
@@ -857,11 +721,12 @@ class _FilaSolicitudState extends State<_FilaSolicitud> {
                   ],
                 ),
               if (!pideCodigo) const SizedBox(height: 8),
-              OutlinedButton.icon(
-                onPressed: _procesando ? null : () => _entregarConQr(notificarPadres: true),
-                icon: const Icon(Icons.qr_code_2),
-                label: const Text('Entregar con código'), // visible también si viene el papá
-              ),
+              if (puedeEscanear)
+                OutlinedButton.icon(
+                  onPressed: _procesando ? null : _entregarConQr,
+                  icon: const Icon(Icons.qr_code_scanner),
+                  label: const Text('Escanear QR'),
+                ),
               Align(
                 alignment: Alignment.centerRight,
                 child: TextButton(

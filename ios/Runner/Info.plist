@@ -32,7 +32,7 @@
 		<string>itms</string>
 	</array>
 	<key>NSCameraUsageDescription</key>
-	<string>Necesitamos acceso a la cámara para tomar fotos de los alumnos</string>
+	<string>CAIPI usa la cámara para fotos de los alumnos y para escanear el QR de recogida</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Necesitamos acceso a tus fotos para seleccionar imágenes y guardar las que descargues</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
