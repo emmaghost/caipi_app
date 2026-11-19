@@ -9,6 +9,7 @@ import 'package:provider/provider.dart';
 import '../../config/app_colors.dart';
 import '../../services/auth_service.dart';
 import '../../services/qr_salida_service.dart';
+import '../../utils/codigo_qr.dart';
 
 /// Abre la cámara. Devuelve el id del niño si la salida quedó registrada.
 Future<String?> abrirEscanerQrSalida(
@@ -42,12 +43,15 @@ class EscanearQrSalidaScreen extends StatefulWidget {
 
 class _EscanearQrSalidaScreenState extends State<EscanearQrSalidaScreen> {
   final _controller = MobileScannerController(
-    detectionSpeed: DetectionSpeed.normal,
+    detectionSpeed: DetectionSpeed.unrestricted,
     facing: CameraFacing.back,
     formats: const [BarcodeFormat.qrCode],
+    autoTorch: true,
   );
   final _servicio = QrSalidaService();
   bool _procesando = false;
+  String? _codigoVisto;
+  DateTime? _vistoEn;
 
   @override
   void dispose() {
@@ -57,12 +61,27 @@ class _EscanearQrSalidaScreenState extends State<EscanearQrSalidaScreen> {
 
   Future<void> _alLeer(BarcodeCapture captura) async {
     if (_procesando) return;
-    final raw = captura.barcodes.isEmpty ? null : captura.barcodes.first.rawValue;
-    if (raw == null || raw.trim().isEmpty) return;
+    String? codigo;
+    for (final codigoLeido in captura.barcodes) {
+      final raw = codigoLeido.rawValue;
+      if (raw == null) continue;
+      codigo = codigoDesdeEscaneo(raw);
+      if (codigo != null) break;
+    }
+    if (codigo == null) return;
+
+    final ahora = DateTime.now();
+    final sigueElMismo = _codigoVisto == codigo &&
+        _vistoEn != null &&
+        ahora.difference(_vistoEn!) < const Duration(milliseconds: 900);
+    _codigoVisto = codigo;
+    _vistoEn = ahora;
+    if (!sigueElMismo) return;
+
     _procesando = true;
     await _controller.stop();
     final resultado = await _servicio.procesar(
-      raw,
+      codigo,
       alumnoEsperadoId: widget.alumnoEsperadoId,
     );
     if (!mounted) return;
@@ -92,6 +111,8 @@ class _EscanearQrSalidaScreenState extends State<EscanearQrSalidaScreen> {
       return;
     }
     _procesando = false;
+    _codigoVisto = null;
+    _vistoEn = null;
     try {
       await _controller.start();
     } catch (_) {}
@@ -171,18 +192,7 @@ class _EscanearQrSalidaScreenState extends State<EscanearQrSalidaScreen> {
               );
             },
           ),
-          IgnorePointer(
-            child: Center(
-              child: Container(
-                width: 240,
-                height: 240,
-                decoration: BoxDecoration(
-                  border: Border.all(color: Colors.white, width: 3),
-                  borderRadius: BorderRadius.circular(20),
-                ),
-              ),
-            ),
-          ),
+          const IgnorePointer(child: _MarcoGrande()),
           Align(
             alignment: Alignment.bottomCenter,
             child: Container(
@@ -193,7 +203,7 @@ class _EscanearQrSalidaScreenState extends State<EscanearQrSalidaScreen> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(
-                    'Apunta al QR que generó el papá. Si no está vigente, se avisa que generen uno nuevo.',
+                    'Acerca el QR. No hace falta centrarlo ni dejarlo quieto.',
                     textAlign: TextAlign.center,
                     style: GoogleFonts.poppins(color: Colors.white, fontSize: 13),
                   ),
@@ -230,6 +240,31 @@ class _EscanearQrSalidaScreenState extends State<EscanearQrSalidaScreen> {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// Guía grande. La cámara lee toda la imagen, no solo el centro.
+class _MarcoGrande extends StatelessWidget {
+  const _MarcoGrande();
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final lado = (constraints.biggest.shortestSide * 0.86)
+            .clamp(280.0, 460.0);
+        return Center(
+          child: Container(
+            width: lado,
+            height: lado,
+            decoration: BoxDecoration(
+              border: Border.all(color: Colors.white, width: 3),
+              borderRadius: BorderRadius.circular(28),
+            ),
+          ),
+        );
+      },
     );
   }
 }
